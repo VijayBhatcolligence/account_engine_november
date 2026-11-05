@@ -1,0 +1,452 @@
+<title>Foundry UI Formula</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Sunny's Foundry formula — Carbon-aligned slide deck.
+   Layout: full-viewport slides, 16-col mental grid, IBM Plex type stack. */
+:root {
+  --bg: #f4f4f4;
+  --surface: #ffffff;
+  --surface-2: #f4f4f4;
+  --border: #e0e0e0;
+  --text: #161616;
+  --text-2: #525252;
+  --text-3: #6f6f6f;
+  --accent: #0f62fe;
+  --accent-light: #d0e2ff;
+  --accent-dark: #002d9c;
+  --purple: #6929c4;
+  --purple-bg: #e8daff;
+  --cyan: #1192e8;
+  --cyan-bg: #bae6ff;
+  --teal: #009d9a;
+  --teal-bg: #9ef0f0;
+  --green: #198038;
+  --green-bg: #a7f0ba;
+  --magenta: #9f1853;
+  --magenta-bg: #ffd6e8;
+  --warm: #8a3800;
+  --warm-bg: #e5e0df;
+  --shell: #161616;
+  --shell-text: #f4f4f4;
+  --font: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", "Menlo", "Consolas", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161616; --surface: #262626; --surface-2: #393939;
+    --border: #393939; --text: #f4f4f4; --text-2: #c6c6c6; --text-3: #a8a8a8;
+    --accent: #78a9ff; --accent-light: #002d9c; --accent-dark: #a6c8ff;
+    --purple: #be95ff; --purple-bg: #31135e;
+    --cyan: #33b1ff; --cyan-bg: #003a6d;
+    --teal: #3ddbd9; --teal-bg: #004144;
+    --green: #42be65; --green-bg: #0e6027;
+    --magenta: #ff7eb6; --magenta-bg: #510224;
+    --warm: #ffb784; --warm-bg: #3c3838;
+    --shell: #262626; --shell-text: #f4f4f4;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #161616; --surface: #262626; --surface-2: #393939;
+  --border: #393939; --text: #f4f4f4; --text-2: #c6c6c6; --text-3: #a8a8a8;
+  --accent: #78a9ff; --accent-light: #002d9c; --accent-dark: #a6c8ff;
+  --purple: #be95ff; --purple-bg: #31135e;
+  --cyan: #33b1ff; --cyan-bg: #003a6d;
+  --teal: #3ddbd9; --teal-bg: #004144;
+  --green: #42be65; --green-bg: #0e6027;
+  --magenta: #ff7eb6; --magenta-bg: #510224;
+  --warm: #ffb784; --warm-bg: #3c3838;
+  --shell: #262626; --shell-text: #f4f4f4;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--font); font-size: 16px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0;
+}
+*, *::before, *::after { box-sizing: border-box; }
+
+.deck { max-width: 900px; margin: 0 auto; padding-block: 32px 64px; }
+
+.slide {
+  background: var(--surface); border: 1px solid var(--border);
+  padding: 40px 48px; margin-bottom: 24px; min-height: 0;
+}
+@media (max-width: 600px) { .slide { padding: 28px 20px; } }
+
+.slide-num {
+  font-family: var(--mono); font-size: 12px; font-weight: 500;
+  color: var(--text-3); letter-spacing: 0.05em; text-transform: uppercase;
+  margin-bottom: 12px;
+}
+h1 { font-size: 32px; font-weight: 700; line-height: 1.15; margin: 0 0 8px; text-wrap: balance; }
+h2 { font-size: 24px; font-weight: 600; line-height: 1.25; margin: 0 0 6px; text-wrap: balance; }
+h3 { font-size: 18px; font-weight: 600; line-height: 1.3; margin: 0 0 4px; }
+.subtitle { font-size: 18px; color: var(--text-2); margin: 0 0 24px; line-height: 1.4; }
+p { margin: 0 0 12px; }
+.lead { font-size: 17px; color: var(--text-2); margin-bottom: 20px; }
+
+.pill {
+  display: inline-block; font-family: var(--mono); font-size: 11px; font-weight: 500;
+  letter-spacing: 0.04em; padding: 2px 10px; border-radius: 12px;
+  vertical-align: middle;
+}
+.pill--accent { background: var(--accent-light); color: var(--accent); }
+.pill--purple { background: var(--purple-bg); color: var(--purple); }
+.pill--cyan { background: var(--cyan-bg); color: var(--cyan); }
+.pill--teal { background: var(--teal-bg); color: var(--teal); }
+.pill--green { background: var(--green-bg); color: var(--green); }
+.pill--magenta { background: var(--magenta-bg); color: var(--magenta); }
+.pill--warm { background: var(--warm-bg); color: var(--warm); }
+
+.tier-row {
+  display: grid; grid-template-columns: 36px 1fr; gap: 12px;
+  align-items: start; margin-bottom: 16px;
+}
+.tier-num {
+  width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+  background: var(--accent); color: #fff; font-weight: 700; font-size: 16px;
+  border-radius: 4px; flex-shrink: 0;
+}
+.tier-body h3 { margin-bottom: 2px; }
+.tier-body p { margin: 0; color: var(--text-2); font-size: 15px; }
+
+.flow-box {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 16px; background: var(--surface-2); border: 1px solid var(--border);
+  margin-top: 20px; font-family: var(--mono); font-size: 13px;
+}
+.flow-box .step {
+  padding: 6px 14px; background: var(--surface); border: 1px solid var(--border);
+}
+.flow-box .arrow { color: var(--accent); font-size: 18px; }
+
+.grid-vis {
+  display: grid; grid-template-columns: 2fr 5fr 3fr;
+  gap: 2px; margin-top: 16px; font-size: 12px; font-family: var(--mono);
+  text-align: center;
+}
+.grid-vis > div {
+  padding: 10px 4px; background: var(--surface-2); border: 1px solid var(--border);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.grid-vis .span-3 { grid-column: 1 / -1; background: var(--accent-light); color: var(--accent); font-weight: 600; }
+.grid-vis .g-left { background: var(--cyan-bg); color: var(--cyan); }
+.grid-vis .g-mid { background: var(--accent-light); color: var(--accent); }
+.grid-vis .g-right { background: var(--purple-bg); color: var(--purple); }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 12px; }
+th { text-align: left; font-weight: 600; padding: 8px 12px; border-bottom: 2px solid var(--border); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
+td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+.mono { font-family: var(--mono); font-size: 13px; }
+
+.rule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+@media (max-width: 600px) { .rule-grid { grid-template-columns: 1fr; } }
+.rule-card {
+  padding: 14px 16px; background: var(--surface-2); border-left: 3px solid var(--accent);
+}
+.rule-card .rn { font-family: var(--mono); font-size: 12px; color: var(--accent); font-weight: 600; margin-bottom: 4px; }
+.rule-card p { margin: 0; font-size: 14px; color: var(--text); }
+
+.task-list { list-style: none; padding: 0; margin: 12px 0 0; }
+.task-list li {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 14px;
+}
+.task-list li:last-child { border-bottom: none; }
+.task-code { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--accent); min-width: 28px; }
+
+.role-block { margin-bottom: 20px; }
+.role-block h3 { margin-bottom: 8px; }
+
+.commit-flow {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0;
+  margin-top: 16px;
+}
+.commit-step {
+  flex: 1; min-width: 120px; padding: 16px; text-align: center;
+  background: var(--surface-2); border: 1px solid var(--border);
+  position: relative;
+}
+.commit-step .cs-num { font-family: var(--mono); font-size: 11px; color: var(--accent); margin-bottom: 4px; }
+.commit-step h3 { font-size: 15px; margin-bottom: 2px; }
+.commit-step p { font-size: 13px; color: var(--text-2); margin: 0; }
+
+.summary-box {
+  padding: 20px 24px; background: var(--accent-light); border-left: 4px solid var(--accent);
+  margin-top: 20px;
+}
+.summary-box p { margin: 0; font-size: 15px; }
+
+.source { font-size: 13px; color: var(--text-3); margin-top: 20px; font-family: var(--mono); }
+</style>
+
+<div class="deck">
+
+  <!-- Slide 1: Title -->
+  <section class="slide">
+    <div class="slide-num">Sunny's Foundry System</div>
+    <h1>The UI Formula</h1>
+    <p class="subtitle">A deterministic method for converting a task specification into a working screen. Given the task and its screen plan, the formula draws the screen without design decisions at build time.</p>
+    <div class="flow-box">
+      <span class="step">task-card.json</span>
+      <span class="arrow">&rarr;</span>
+      <span class="step">screens.json</span>
+      <span class="arrow">&rarr;</span>
+      <span class="step" style="background:var(--accent-light);color:var(--accent);font-weight:600;">Working Screen</span>
+    </div>
+    <p class="source">Source: "Foundry Task Kit" + "Foundry Task Screens" artifacts by Sunny</p>
+  </section>
+
+  <!-- Slide 2: The five tiers -->
+  <section class="slide">
+    <div class="slide-num">Slide 2</div>
+    <h2>Five tiers, one direction</h2>
+    <p class="lead">Small atoms compose into bigger pieces, all the way to the screen.</p>
+
+    <div class="tier-row">
+      <div class="tier-num">1</div>
+      <div class="tier-body"><h3>30 Primitives</h3><p>Carbon Design System atoms: Button, TextInput, DataTable, etc. Each maps to exactly one Carbon component.</p></div>
+    </div>
+    <div class="tier-row">
+      <div class="tier-num">2</div>
+      <div class="tier-body"><h3>41 Components</h3><p>Named UI pieces that do one job in a task. Made of 2&ndash;6 primitives. Grouped: shell, frame, select, record, analysis, entry, commit, send.</p></div>
+    </div>
+    <div class="tier-row">
+      <div class="tier-num">3</div>
+      <div class="tier-body"><h3>11 Patterns</h3><p>Named screen arrangements (FD-01 &ndash; FD-11). Each defines required/optional slots and has variants that set the regions.</p></div>
+    </div>
+    <div class="tier-row">
+      <div class="tier-num">4</div>
+      <div class="tier-body"><h3>9 Slots</h3><p>The fixed positions on every screen (a CSS grid). Every component sits in exactly one slot.</p></div>
+    </div>
+    <div class="tier-row">
+      <div class="tier-num">5</div>
+      <div class="tier-body"><h3>6 Placement Rules</h3><p>Rules that decide which region a component goes into and how it behaves. Deterministic: same input, same screen.</p></div>
+    </div>
+  </section>
+
+  <!-- Slide 3: The 9-slot grid -->
+  <section class="slide">
+    <div class="slide-num">Slide 3</div>
+    <h2>The 9-slot grid</h2>
+    <p class="lead">Every screen is a CSS grid with 9 named positions. Columns: 2fr / 5fr / 3fr.</p>
+
+    <div class="grid-vis">
+      <div class="span-3">task_header</div>
+      <div class="g-left">query_controls</div>
+      <div class="g-mid">primary_workspace</div>
+      <div class="g-right">action_area</div>
+      <div class="g-left">context_panel</div>
+      <div class="g-mid">primary_workspace</div>
+      <div class="g-right">action_area</div>
+      <div class="g-left">context_panel</div>
+      <div class="g-mid">supporting_analysis</div>
+      <div class="g-right">validation_feedback</div>
+      <div class="g-left" style="grid-column:1/2;">step_navigation</div>
+      <div class="g-mid" style="grid-column:2/4;">secondary_context</div>
+    </div>
+
+    <table style="margin-top:20px;">
+      <tr><th>Slot</th><th>Purpose</th></tr>
+      <tr><td class="mono">task_header</td><td>Names the task</td></tr>
+      <tr><td class="mono">query_controls</td><td>What to look at (search, filters)</td></tr>
+      <tr><td class="mono">primary_workspace</td><td>Where the work happens</td></tr>
+      <tr><td class="mono">context_panel</td><td>Background for the selected record</td></tr>
+      <tr><td class="mono">supporting_analysis</td><td>Evidence and analysis</td></tr>
+      <tr><td class="mono">action_area</td><td>Decisions and commits</td></tr>
+      <tr><td class="mono">validation_feedback</td><td>Warnings and results</td></tr>
+      <tr><td class="mono">secondary_context</td><td>Extra context, lowest priority</td></tr>
+      <tr><td class="mono">step_navigation</td><td>Stage navigation (Back / Next)</td></tr>
+    </table>
+  </section>
+
+  <!-- Slide 4: 11 Patterns -->
+  <section class="slide">
+    <div class="slide-num">Slide 4</div>
+    <h2>11 Patterns</h2>
+    <p class="lead">A pattern is a named screen arrangement. Match the task's shape to a pattern; the pattern defines the regions.</p>
+
+    <table>
+      <tr><th>ID</th><th>Pattern</th><th>When to use</th></tr>
+      <tr><td class="mono">FD-01</td><td>Record Explorer</td><td>Find a record and read it</td></tr>
+      <tr><td class="mono">FD-02</td><td>Insight Canvas</td><td>Interpret measures across entities and periods</td></tr>
+      <tr><td class="mono">FD-03</td><td>Attention Queue</td><td>Work through items needing action, most urgent first</td></tr>
+      <tr><td class="mono">FD-04</td><td>Planner Canvas</td><td>Arrange work across time and resources</td></tr>
+      <tr><td class="mono">FD-05</td><td>Scenario Lab</td><td>Compare alternative futures before recommending</td></tr>
+      <tr><td class="mono">FD-06</td><td>Structured Editor</td><td>Enter a bounded record</td></tr>
+      <tr><td class="mono">FD-07</td><td>Guided Sequence</td><td>Work through ordered stages</td></tr>
+      <tr><td class="mono">FD-08</td><td>Bulk Console</td><td>Process many similar records under control</td></tr>
+      <tr><td class="mono">FD-09</td><td>Capture Console</td><td>Scan-first capture at the bay</td></tr>
+      <tr><td class="mono">FD-10</td><td>Decision Workbench</td><td>Weigh evidence, record one accountable decision</td></tr>
+      <tr><td class="mono">FD-11</td><td>Case Workspace</td><td>Investigate an exception, record a finding</td></tr>
+    </table>
+  </section>
+
+  <!-- Slide 5: The 6 placement rules -->
+  <section class="slide">
+    <div class="slide-num">Slide 5</div>
+    <h2>6 Placement Rules</h2>
+    <p class="lead">Once patterns set the regions, these rules decide where each component sits.</p>
+
+    <div class="rule-grid">
+      <div class="rule-card"><div class="rn">Rule 1</div><p>The main work gets the largest region</p></div>
+      <div class="rule-card"><div class="rn">Rule 2</div><p>What is compared together stays visible together</p></div>
+      <div class="rule-card"><div class="rn">Rule 3</div><p>A warning sits next to what it is about</p></div>
+      <div class="rule-card"><div class="rn">Rule 4</div><p>The commit sits at the point of decision</p></div>
+      <div class="rule-card"><div class="rn">Rule 5</div><p>Background goes lowest</p></div>
+      <div class="rule-card"><div class="rn">Rule 6</div><p>Fit the device</p></div>
+    </div>
+
+    <div class="summary-box" style="margin-top:20px;">
+      <p><strong>Example (Rule 3):</strong> In Record a Delivery (SOI-T02), the 200 kg tolerance warning sits inside the PO line it is about, not in a banner at the top. Even on a phone, the warning stays inside that line.</p>
+    </div>
+  </section>
+
+  <!-- Slide 6: The conversion algorithm -->
+  <section class="slide">
+    <div class="slide-num">Slide 6</div>
+    <h2>The conversion: spec to screen</h2>
+    <p class="lead">"Draws the regions, then places each step's components, then marks the placement rules. Then the screen works."</p>
+
+    <div class="tier-row">
+      <div class="tier-num">1</div>
+      <div class="tier-body"><h3>Choose pattern(s)</h3><p>Match the task's characteristics (volume, complexity, urgency) to one of the 11 patterns.</p></div>
+    </div>
+    <div class="tier-row">
+      <div class="tier-num">2</div>
+      <div class="tier-body"><h3>Choose the variant</h3><p>Each pattern has variants for specific conditions (queue vs single, desk vs phone).</p></div>
+    </div>
+    <div class="tier-row">
+      <div class="tier-num">3</div>
+      <div class="tier-body"><h3>Draw the regions</h3><p>The variant defines 2&ndash;3 regions with column widths out of 16 and which slots they hold.</p></div>
+    </div>
+    <div class="tier-row">
+      <div class="tier-num">4</div>
+      <div class="tier-body"><h3>Place each step's components</h3><p>Each component has a slot and region assignment, tied to its step(s) in the task.</p></div>
+    </div>
+    <div class="tier-row">
+      <div class="tier-num">5</div>
+      <div class="tier-body"><h3>Apply placement rules</h3><p>Specific notes override general placement. The 6 rules pin how components sit.</p></div>
+    </div>
+  </section>
+
+  <!-- Slide 7: The commit flow -->
+  <section class="slide">
+    <div class="slide-num">Slide 7</div>
+    <h2>Every task ends the same way</h2>
+    <p class="lead">The commit flow is shared across all 15 tasks. Confirm and receipt are states of the same view, not separate screens.</p>
+
+    <div class="commit-flow">
+      <div class="commit-step">
+        <div class="cs-num">1</div>
+        <h3>Ending Picker</h3>
+        <p>Task endings as tiles: where each goes, the reason, one commit button</p>
+      </div>
+      <div class="commit-step">
+        <div class="cs-num">2</div>
+        <h3>Confirm Dialog</h3>
+        <p>Shows the record, ending, reason and receivers before commit</p>
+      </div>
+      <div class="commit-step">
+        <div class="cs-num">3</div>
+        <h3>Receipt</h3>
+        <p>Outcome as recorded, who has it, what happens next</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Slide 8: Coverage -->
+  <section class="slide">
+    <div class="slide-num">Slide 8</div>
+    <h2>Coverage: 3 roles, 15 tasks</h2>
+    <p class="lead">Each task has a task-card.json (the work) and screens.json (the screen plan). One task also has a phone plan.</p>
+
+    <div class="role-block">
+      <h3><span class="pill pill--purple">Credit Controller</span> Farid &middot; HQ</h3>
+      <ul class="task-list">
+        <li><span class="task-code">T1</span> Decide an order sent for credit review</li>
+        <li><span class="task-code">T2</span> Place a credit hold on a customer</li>
+        <li><span class="task-code">T3</span> Request a credit-hold release</li>
+        <li><span class="task-code">T4</span> Review credit limits</li>
+        <li><span class="task-code">T6</span> Answer whether a customer can take an order</li>
+      </ul>
+    </div>
+
+    <div class="role-block">
+      <h3><span class="pill pill--cyan">Procurement Manager</span> Meena &middot; HQ</h3>
+      <ul class="task-list">
+        <li><span class="task-code">T1</span> Decide PO commercial terms</li>
+        <li><span class="task-code">T5</span> Negotiate purchase rates</li>
+        <li><span class="task-code">T6</span> Review the vendor mix</li>
+        <li><span class="task-code">T7</span> Assess vendor performance</li>
+        <li><span class="task-code">T12</span> Review quotation exceptions</li>
+      </ul>
+    </div>
+
+    <div class="role-block">
+      <h3><span class="pill pill--teal">Stores Officer &mdash; Inbound</span> Suresh &middot; KA-01 Bengaluru</h3>
+      <ul class="task-list">
+        <li><span class="task-code">T1</span> Plan the day's arrivals</li>
+        <li><span class="task-code">T2</span> Record a delivery <span class="pill pill--green" style="margin-left:4px;">+ phone</span></li>
+        <li><span class="task-code">T11</span> Check batches close to expiry</li>
+        <li><span class="task-code">T12</span> Ask for a new item</li>
+        <li><span class="task-code">T16</span> Raise an indent</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Slide 9: 8 task categories -->
+  <section class="slide">
+    <div class="slide-num">Slide 9</div>
+    <h2>8 Task Categories</h2>
+    <p class="lead">Every task is classified into one category. The category determines the color and the kind of work.</p>
+    <table>
+      <tr><th>Code</th><th>Category</th><th>Example task</th></tr>
+      <tr><td><span class="pill pill--cyan">CAT-01</span></td><td>Observe &amp; Analyze</td><td>Assess vendor performance</td></tr>
+      <tr><td><span class="pill pill--teal">CAT-02</span></td><td>Plan &amp; Allocate</td><td>Plan the day's arrivals</td></tr>
+      <tr><td><span class="pill pill--accent">CAT-03</span></td><td>Create &amp; Request</td><td>Raise an indent</td></tr>
+      <tr><td><span class="pill pill--green">CAT-04</span></td><td>Execute &amp; Record</td><td>Record a delivery</td></tr>
+      <tr><td><span class="pill pill--purple">CAT-05</span></td><td>Review &amp; Decide</td><td>Decide an order for credit review</td></tr>
+      <tr><td><span class="pill pill--magenta">CAT-06</span></td><td>Investigate &amp; Resolve</td><td>Review quotation exceptions</td></tr>
+      <tr><td style="white-space:nowrap;"><span class="pill" style="background:var(--surface-2);color:var(--text-2);">CAT-07</span></td><td>Coordinate &amp; Communicate</td><td>Negotiate purchase rates</td></tr>
+      <tr><td><span class="pill pill--warm">CAT-08</span></td><td>Configure &amp; Govern</td><td>Review credit limits</td></tr>
+    </table>
+  </section>
+
+  <!-- Slide 10: How to use -->
+  <section class="slide">
+    <div class="slide-num">Slide 10</div>
+    <h2>How to use this formula for a new task</h2>
+
+    <div class="tier-row">
+      <div class="tier-num">1</div>
+      <div class="tier-body"><h3>Write task-card.json</h3><p>Who does the task, what triggers it, the steps, the characteristics, the endings.</p></div>
+    </div>
+    <div class="tier-row">
+      <div class="tier-num">2</div>
+      <div class="tier-body"><h3>Choose pattern + variant</h3><p>Queue of items &rarr; Attention Queue. One record to enter &rarr; Structured Editor. Bulk review &rarr; Bulk Console. And so on.</p></div>
+    </div>
+    <div class="tier-row">
+      <div class="tier-num">3</div>
+      <div class="tier-body"><h3>List components per step</h3><p>For each step, which components appear and in which slot.</p></div>
+    </div>
+    <div class="tier-row">
+      <div class="tier-num">4</div>
+      <div class="tier-body"><h3>Write placement notes</h3><p>Apply the 6 rules to pin where components sit within their region.</p></div>
+    </div>
+    <div class="tier-row">
+      <div class="tier-num">5</div>
+      <div class="tier-body"><h3>Write screens.json and convert</h3><p>Draw regions, place components, apply rules. The screen works.</p></div>
+    </div>
+
+    <div class="summary-box">
+      <p><strong>Key insight:</strong> The formula is deterministic. Same task-card + same screens.json = same screen, every time. No design decisions at build time. The design decisions are encoded in the patterns, the slots, and the placement rules.</p>
+    </div>
+  </section>
+
+</div>

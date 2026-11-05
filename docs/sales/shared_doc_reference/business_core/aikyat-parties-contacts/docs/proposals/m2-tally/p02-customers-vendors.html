@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proposal 2 · Customers and vendors</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Serif:wght@500;600&amp;display=swap">
+<style>
+  :root{
+    --ink:#16233A; --paper:#FFFFFF; --mist:#F1F4F7; --green:#0E7C6B; --red:#B4531F;
+    --mute:#6B7683; --rule:#D5DCE3;
+    --ser:"IBM Plex Serif",Georgia,serif;
+    --san:"IBM Plex Sans",-apple-system,"Segoe UI",sans-serif;
+    --mon:"IBM Plex Mono",ui-monospace,monospace;
+    color-scheme: light;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0B1017;font-family:var(--san);overflow:hidden}
+  #fit{position:fixed;inset:0;display:grid;place-items:center}
+  .stage{width:1280px;height:720px;position:relative;background:var(--paper);overflow:hidden}
+  .slide{position:absolute;inset:0;display:none;flex-direction:column;padding:56px 70px 60px}
+  .slide.on{display:flex}
+  .kick{font-family:var(--mon);font-size:13px;letter-spacing:.18em;color:var(--mute);text-transform:uppercase}
+  h1{font-family:var(--ser);font-size:50px;font-weight:600;color:var(--ink);line-height:1.1}
+  h2{font-family:var(--ser);font-size:36px;font-weight:600;color:var(--ink);margin-top:8px}
+  .body{flex:1;display:flex;flex-direction:column;justify-content:center;gap:20px;margin-top:18px}
+  p{font-size:19px;line-height:1.5;color:var(--ink)}
+  .note{font-size:16px;color:var(--mute)}
+  code{font-family:var(--mon);font-size:.9em}
+  table{border-collapse:collapse;width:100%}
+  th{font-family:var(--mon);font-size:12px;letter-spacing:.08em;text-transform:uppercase;text-align:left;
+    padding:9px 14px;background:var(--ink);color:#fff;font-weight:500}
+  td{padding:9px 14px;border:1px solid var(--rule);font-size:16.5px;color:var(--ink)}
+  td.v{font-family:var(--mon);font-size:14.5px}
+  tr.add td{background:#EAF5F2} tr.del td{background:#FBF0E8;color:var(--mute);text-decoration:line-through}
+  tr.acc td{background:#F7F8FA;color:var(--mute)}
+  .flow{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+  .step{background:var(--mist);border-radius:6px;padding:18px 16px;display:flex;flex-direction:column;gap:8px}
+  .step .n{font-family:var(--mon);font-size:12px;color:var(--mute);letter-spacing:.1em}
+  .step b{font-family:var(--ser);font-size:20px;color:var(--ink);line-height:1.2}
+  .step p{font-size:15.5px;color:var(--mute)}
+  .step.hi{background:#EAF5F2;outline:2px solid var(--green)}
+  .box{border-radius:6px;padding:15px 22px;font-size:18px;line-height:1.5;color:var(--ink);background:var(--mist)}
+  .box.g{background:#EAF5F2} .box.r{background:#FBF0E8}
+  .ok{color:var(--green);font-weight:600} .no{color:var(--red);font-weight:600}
+  .two{display:grid;grid-template-columns:1.15fr 1fr;gap:22px;align-items:start}
+  .json{font-family:var(--mon);font-size:13.5px;line-height:1.5;background:var(--ink);color:#D6E2F0;
+    border-radius:6px;padding:16px 20px;white-space:pre}
+  .json .c{color:#7F93AD}
+  .foot{position:absolute;left:70px;right:70px;bottom:24px;display:flex;justify-content:space-between;
+    font-family:var(--mon);font-size:11px;letter-spacing:.1em;color:#A6B0BB}
+  #nav{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:12px;align-items:center}
+  #nav button{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);color:#D6DEE8;
+    font-family:var(--mon);font-size:13px;padding:6px 14px;border-radius:3px;cursor:pointer}
+  #count{font-family:var(--mon);font-size:12px;color:#8593A5;min-width:56px;text-align:center}
+  @media print{
+    body{overflow:visible;background:#fff} #fit{position:static;display:block} #nav{display:none}
+    .stage{width:100%;height:auto;transform:none!important}
+    .slide{display:flex!important;position:relative;height:190mm;page-break-after:always}
+  }
+</style>
+</head>
+<body>
+<div id="fit"><div class="stage" id="stage">
+
+<!-- 1 -->
+<section class="slide">
+  <div class="kick">Proposal 2 · M2 Tally migration · 16 Oct 2026</div>
+  <div class="body">
+    <h1>How customers and vendors reach P&amp;C</h1>
+    <p><b>Today:</b> the connector writes each customer and vendor into <code>accounting.party</code> — name, GSTIN, address, email, phone.</p>
+    <div class="box g"><b>Proposal:</b> the Tally connector <b>calls the P&amp;C API</b> once for each customer or vendor ledger.
+      P&amp;C stores the party and returns a <code>party_id</code>. Accounting keeps <b>only that <code>party_id</code></b> plus its own money fields.
+      Running the migration again returns the <b>same</b> <code>party_id</code> — nothing is duplicated.</div>
+    <p class="note">Agreed in the 15 Oct meeting (25:57–26:10): the connector may create parties in P&amp;C. Names, PANs and GSTINs here are examples.</p>
+  </div>
+  <div class="foot"><span>Proposal 2 · Customers and vendors</span><span class="pg"></span></div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="kick">The flow</div>
+  <h2>Five steps, per customer or vendor</h2>
+  <div class="body">
+    <div class="flow">
+      <div class="step"><span class="n">1</span><b>Accounts accepted</b><p>Slice 2 has the Chart of Accounts</p></div>
+      <div class="step"><span class="n">2</span><b>Pick party ledgers</b><p>Under <i>Sundry Debtors</i> = customer · <i>Sundry Creditors</i> = vendor</p></div>
+      <div class="step"><span class="n">3</span><b>Connector calls P&amp;C</b><p>One call per ledger, keyed by the account's source key</p></div>
+      <div class="step hi"><span class="n">4 · STORING STARTS</span><b>P&amp;C stores</b><p>Party, PAN, GSTIN, address, email, phone, customer/vendor — returns <code>party_id</code></p></div>
+      <div class="step"><span class="n">5</span><b>Accounting links</b><p>Saves the <code>party_id</code> on <code>accounting.party</code></p></div>
+    </div>
+    <div class="box r"><b>Before this can run:</b> the operated company must exist in P&amp;C (Proposal 1) — every customer and vendor is a customer or vendor <i>of</i> that company.</div>
+  </div>
+  <div class="foot"><span>Proposal 2 · Customers and vendors</span><span class="pg"></span></div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="kick">Step 3 · what the connector sends</div>
+  <h2>Tally field → where it is stored</h2>
+  <div class="body">
+    <table>
+      <tr><th style="width:34%">Tally (stg_tally)</th><th style="width:36%">Stored in P&amp;C</th><th>Example</th></tr>
+      <tr><td>mailing name</td><td class="v">party.legal_name</td><td>Brahmaputra Stationers Pvt Ltd</td></tr>
+      <tr><td>PAN (INCOMETAXNUMBER)</td><td class="v">party_identifier · IN_PAN</td><td class="v">AABCB0000B</td></tr>
+      <tr><td>GSTIN + state</td><td class="v">party_identifier · IN_GST · IN-AS</td><td class="v">18AABCB0000B1Z2</td></tr>
+      <tr><td>address, state, pincode</td><td class="v">business_location</td><td>12 AT Road, Guwahati 781001</td></tr>
+      <tr><td>email, phone</td><td class="v">contact_point (party's general contact)</td><td class="v">accounts@example.in</td></tr>
+      <tr><td>Sundry Creditors / Debtors</td><td class="v">party_standing · supplier / customer</td><td class="v">supplier of OP-1</td></tr>
+      <tr class="acc"><td>ledger name</td><td><b>stays in Accounting</b> — the account's name</td><td>Brahmaputra Stat. (Guw)</td></tr>
+      <tr class="acc"><td>bank details, credit period, credit limit</td><td><b>stays in Accounting</b> — money terms, not identity</td><td class="v">—</td></tr>
+    </table>
+  </div>
+  <div class="foot"><span>Proposal 2 · Customers and vendors</span><span class="pg"></span></div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="kick">Step 3 · the API call</div>
+  <h2>One call, safe to repeat</h2>
+  <div class="body">
+    <div class="two">
+<div class="json"><span class="c">POST /api/v1/workspaces/{workspace_id}/parties</span>
+<span class="c">Idempotency-Key: account:&lt;ledger GUID&gt;</span>
+{
+  "party_kind": "organization",
+  "legal_name": "Brahmaputra Stationers Pvt Ltd",
+  "identifiers": [
+    {"scheme": "IN_PAN", "value": "AABCB0000B"},
+    {"scheme": "IN_GST", "scope": "IN-AS",
+     "value": "18AABCB0000B1Z2"}
+  ],
+  "standing": "supplier",
+  "location": {"address": "...", "pincode": "781001"},
+  "email": "accounts@example.in",
+  "phone": "+91 00000 00000",
+  "source": {"book": "...", "ledger_guid": "..."}
+}
+
+<span class="c">→ 201  {"party_id": "P-7", "result": "created"}</span>
+<span class="c">→ 200  {"party_id": "P-7", "result": "unchanged"}  (re-run)</span></div>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div class="box"><b>Who calls:</b> the Tally connector, with its own service token.</div>
+        <div class="box"><b>The key</b> is Accounting's own account key (<code>account:&lt;ledger GUID&gt;</code>). Same key → same <code>party_id</code>, every time.</div>
+        <div class="box"><b>The source</b> (book + ledger GUID) is kept in P&amp;C as evidence, so every party traces back to Tally.</div>
+        <div class="box note" style="font-size:15.5px">Idempotency keys are already used by Accounting, Finance and Mail.</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Proposal 2 · Customers and vendors</span><span class="pg"></span></div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="kick">Step 5 · how Accounting refers to it</div>
+  <h2>accounting.party</h2>
+  <div class="body">
+    <table>
+      <tr><th>column</th><th>change</th><th>example</th></tr>
+      <tr><td class="v">id · account_id</td><td>keep — one party row per party account</td><td class="v">AP-7 · ACC-412</td></tr>
+      <tr class="add"><td class="v">party_id</td><td><b>add</b> — the party in P&amp;C</td><td class="v">P-7</td></tr>
+      <tr><td class="v">bank_details</td><td>keep — Accounting's</td><td class="v">{…}</td></tr>
+      <tr class="del"><td class="v">legal_name · display_name</td><td>remove — read from P&amp;C</td><td class="v">—</td></tr>
+      <tr class="del"><td class="v">tax_id · state</td><td>remove — read GSTIN and its state from P&amp;C</td><td class="v">—</td></tr>
+      <tr class="del"><td class="v">email · phone · address</td><td>remove — read from P&amp;C</td><td class="v">—</td></tr>
+    </table>
+    <div class="box">The same party can be <b>both customer and vendor</b>: one <code>party_id</code>, two standings in P&amp;C, two accounts in Accounting.</div>
+  </div>
+  <div class="foot"><span>Proposal 2 · Customers and vendors</span><span class="pg"></span></div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="kick">Running the migration again</div>
+  <h2>Repeat runs and duplicates</h2>
+  <div class="body">
+    <table>
+      <tr><th style="width:46%">What happens</th><th>Result</th></tr>
+      <tr><td>Same ledger, same data</td><td><span class="ok">Same party_id</span> — nothing new stored</td></tr>
+      <tr><td>Same ledger, a new GSTIN in a later year</td><td>GSTIN <b>added</b> to the same party</td></tr>
+      <tr><td>Same ledger, a different PAN than stored</td><td><span class="no">Not overwritten</span> — flagged for review</td></tr>
+      <tr><td>Two ledgers with the same full GSTIN</td><td>Two parties, <b>flagged as possible duplicate</b> — never merged automatically</td></tr>
+      <tr><td>Same PAN, GSTINs in different states</td><td>Kept <b>separate</b>, as Accounting does today; a person may combine them later</td></tr>
+    </table>
+  </div>
+  <div class="foot"><span>Proposal 2 · Customers and vendors</span><span class="pg"></span></div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="kick">To build · open points</div>
+  <h2>What this needs</h2>
+  <div class="body">
+    <table>
+      <tr><th style="width:26%">Who</th><th>What</th></tr>
+      <tr><td><b>P&amp;C</b></td><td>The <code>POST /parties</code> API with idempotency key, and a read API for Accounting</td></tr>
+      <tr><td><b>Accounting</b></td><td>Add <code>party_id</code> to <code>accounting.party</code>; drop the fields now held in P&amp;C</td></tr>
+      <tr><td><b>Connector</b></td><td>Call P&amp;C per customer/vendor ledger; save the returned <code>party_id</code></td></tr>
+      <tr><td><b>KM</b></td><td>Wording for the <i>customer</i> and <i>supplier</i> standing types</td></tr>
+    </table>
+    <div class="box r"><b>Open:</b> employees in Tally ledgers (HR first?) · who reviews flagged duplicates</div>
+  </div>
+  <div class="foot"><span>Proposal 2 · Customers and vendors</span><span class="pg"></span></div>
+</section>
+
+</div></div>
+
+<div id="nav">
+  <button id="prev" aria-label="Previous slide">&larr;</button>
+  <span id="count"></span>
+  <button id="next" aria-label="Next slide">&rarr;</button>
+</div>
+
+<script>
+(function(){
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var i = 0, stage = document.getElementById('stage'), count = document.getElementById('count');
+  slides.forEach(function(s, k){ var pg = s.querySelector('.pg'); if (pg) pg.textContent = (k + 1) + ' / ' + slides.length; });
+  function show(n){
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach(function(s, k){ s.classList.toggle('on', k === i); });
+    count.textContent = (i + 1) + ' / ' + slides.length;
+  }
+  function fit(){ stage.style.transform = 'scale(' + Math.min(window.innerWidth / 1280, (window.innerHeight - 54) / 720) + ')'; }
+  document.getElementById('next').onclick = function(){ show(i + 1); };
+  document.getElementById('prev').onclick = function(){ show(i - 1); };
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { show(i + 1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { show(i - 1); e.preventDefault(); }
+  });
+  window.addEventListener('resize', fit);
+  fit(); show(0);
+})();
+</script>
+</body>
+</html>

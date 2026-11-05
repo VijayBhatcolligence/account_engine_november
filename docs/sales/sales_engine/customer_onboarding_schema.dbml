@@ -1,0 +1,539 @@
+// Task T12 · Create a customer (Sales hands the form) — the database · rev 3 (5-Nov-2026)
+// For dbdiagram.io: paste this whole file into the left editor.
+//
+// SOURCES (who wins, in order)
+//   Fields   the CA's Customer Master onboarding form (Swasthik, 1. Customer_Master_Onboarding_Form_1.xls: A–F, B1)
+//            as built in the app (app/sales, src/onboarding/rules.ts: 52 fields)
+//   Model    Manoj's vendor model (Vendor Creation Walkthrough_manoj_schema.html): same entities, names and flow,
+//            customer side. VendorRequest → CustomerRequest · CreditorAccount → DebtorAccount · Party (P&C)
+//   Ledgers  the CA's chart of accounts (Swasthik, 1. Global_Chart_of_Accounts_Updated_1.xls): debtor ledgers
+//            107010–107130 (Indian GAAP) / 110010–110130 (Ind AS); customers numbered separately (C000001 …)
+//   Party    Business Core, Parties and Contacts (schema pc, migrations 002–007): followed, never changed
+//
+// THE FLOW (Manoj's, one transaction)
+//   Teja (AE) types the paper form → submits → three checkers approve their part (the app's routing):
+//   Rajan (account), Farid (credit limit), Venkat (GST / TCS). On the LAST approval, ONE transaction:
+//   P&C RegisterCustomer (party, identifiers, locations, standing, contact) + OpenDebtorAccount + finish the request.
+//   If anything fails, nothing is saved and the request stays submitted. Nothing posts to the books.
+//
+// NAMING RULES (AI-friendly: a name says what the row is, without reading the code)
+//   1. Tables are singular business nouns, owner-prefixed by schema: fin.debtor_account, pc.party.
+//      Customer-side words mirror the vendor side exactly: vendor_request ↔ customer_request, creditor_* ↔ debtor_*.
+//   2. A primary key is <table>_id (request_id, history_id inside history tables). A pointer keeps the target's name:
+//      party_id, debtor_account_id. Its role is a prefix: opened_from_request_id, approved_by_contact_id.
+//   3. Reference data is keyed by a readable *_code (debtor_category_code, account_code), never a number.
+//   4. Booleans read as a yes/no question: gst_registered, export_customer, posting_blocked, is_default, is_primary.
+//   5. Amounts end in _amount, dates in _from / _until / _date, instants in _at; people are *_contact_id (P&C contacts).
+//   6. Every row has workspace_id (row-level security); every change writes a *_history row with row_snapshot.
+//   7. One fact, one place: a value worked out from another (tax type, header) is not stored; the category holds
+//      the CA's ledger, GST and TCS words; the account copies only what it must keep if the category later changes.
+//
+// Lines: black = foreign key inside one owner · grey = an id from the other owner (P&C's rule: a plain value, no join).
+// Example ids in notes (OP-1, P-1, DA-1 …) are the walkthrough's labels; real ids are uuids.
+
+// =====================================================================
+// pc · Parties and Contacts (Business Core's tables, NOT ours: the 11 this task reads or writes)
+// =====================================================================
+
+Table pc.operated_party {
+  operated_party_id uuid [pk, note: 'OP-1: our company, the one this workspace runs']
+  workspace_id text [not null]
+  party_id uuid [not null, note: 'P-OUR = Aikyat Technologies']
+  since date
+  until date
+  Note: 'P&C says which party is our company. THE company key in Finance (as on the vendor side): no legal_entity_id, no separate book key.'
+}
+
+Table pc.private_anchor {
+  anchor_id uuid [pk]
+  workspace_id text [not null]
+  anchor_kind text [not null, note: 'organization | person']
+  created_at timestamptz [not null]
+  Note: 'A hidden identity row behind every party and contact; its id becomes party_id / contact_id. Finance never reads it.'
+}
+
+Table pc.party {
+  party_id uuid [pk, note: 'same value as its private_anchor']
+  workspace_id text [not null]
+  party_kind text [not null, note: 'person | organization']
+  legal_name text
+  legal_form_code text [note: 'pc.legal_form: IN_PVT_LTD … (only IN_PVT_LTD is seeded today)']
+  recorded_at timestamptz
+  updated_at timestamptz
+  Note: 'Who the customer is, as a legal person.'
+}
+
+Table pc.party_trade_name {
+  trade_name_id uuid [pk]
+  workspace_id text [not null]
+  party_id uuid [not null]
+  name text [not null, note: 'the form\'s Customer Name']
+  since date
+  until date
+}
+
+Table pc.party_identifier {
+  party_identifier_id uuid [pk]
+  workspace_id text [not null]
+  party_id uuid [not null]
+  scheme_code text [not null, note: 'IN_PAN | IN_GST']
+  jurisdiction_scope_code text [not null, note: 'IN for PAN; the GST state for a GSTIN, e.g. IN-TN']
+  value text
+  standing_code text [note: 'GST: active | suspended | cancelled | none_held']
+  since date
+  until date
+  Note: 'PAN and EVERY GSTIN (main + B1) of the customer. Not unique by design: a match never merges by itself. No location column.'
+}
+
+Table pc.business_location {
+  business_location_id uuid [pk]
+  workspace_id text [not null]
+  party_id uuid [not null]
+  display_name text [not null, note: 'Registered office · Chennai branch · Ship-to']
+  address_lines "text[]"
+  locality text [note: 'city']
+  administrative_area_code text [note: 'IN-KA']
+  postal_code text
+  country_code text
+  since date
+  until date [note: 'a closed place gets an until; never deleted']
+  Note: 'A physical place of the customer: the registered address, each B1 branch address, a shipping address. Carries no GSTIN.'
+}
+
+Table pc.party_standing {
+  party_standing_id uuid [pk]
+  workspace_id text [not null]
+  party_id uuid [not null]
+  operated_party_id uuid [not null]
+  standing_type_code text [not null, note: 'customer (to be seeded in P&C: no standing types are seeded yet)']
+  trade_name_id uuid
+  since date
+  until date
+  Note: 'P-1 is a customer OF our company OP-1. A party already our vendor gets a second standing, never a second party.'
+}
+
+Table pc.contact {
+  contact_id uuid [pk, note: 'same value as its private_anchor']
+  workspace_id text [not null]
+  contact_kind text [not null, note: 'person | system']
+  display_name text [not null]
+  accountable_party_id uuid
+  destination_role text
+  Note: 'The customer\'s contact person, and our own staff (Teja, Rajan, Farid, Venkat, Arun): every *_contact_id in Finance points here.'
+}
+
+Table pc.contact_party_association {
+  association_id uuid [pk]
+  workspace_id text [not null]
+  contact_id uuid [not null]
+  party_id uuid [not null]
+  capacity_code text [not null, note: 'customer_contact (to be seeded)']
+  since date
+  until date
+}
+
+Table pc.contact_point {
+  contact_point_id uuid [pk]
+  workspace_id text [not null]
+  contact_id uuid [not null]
+  channel_kind text [not null, note: 'phone | email']
+  route_value text
+  business_location_id uuid
+  since date
+  until date
+}
+
+Table pc.record_history {
+  history_id uuid [pk]
+  workspace_id text [not null]
+  record_type text [not null]
+  record_id text [not null]
+  version_number integer [not null]
+  operation text [not null]
+  row_snapshot jsonb [not null]
+  performer_contact_id uuid
+  recorded_at timestamptz
+  Note: 'P&C\'s own history: one row per P&C record written.'
+}
+
+Ref: pc.operated_party.party_id > pc.party.party_id
+Ref: pc.party.party_id - pc.private_anchor.anchor_id
+Ref: pc.contact.contact_id - pc.private_anchor.anchor_id
+Ref: pc.party_trade_name.party_id > pc.party.party_id
+Ref: pc.party_identifier.party_id > pc.party.party_id
+Ref: pc.business_location.party_id > pc.party.party_id
+Ref: pc.party_standing.party_id > pc.party.party_id
+Ref: pc.party_standing.operated_party_id > pc.operated_party.operated_party_id
+Ref: pc.party_standing.trade_name_id > pc.party_trade_name.trade_name_id
+Ref: pc.contact_party_association.contact_id > pc.contact.contact_id
+Ref: pc.contact_party_association.party_id > pc.party.party_id
+Ref: pc.contact_point.contact_id > pc.contact.contact_id
+Ref: pc.contact_point.business_location_id > pc.business_location.business_location_id
+Ref: pc.record_history.performer_contact_id > pc.contact.contact_id
+
+// =====================================================================
+// fin · Finance: reference data (set up before this task; read only here)
+// =====================================================================
+
+Table fin.ledger_account {
+  account_code text [pk, note: 'the CA\'s 6-digit code: [group 1][sub-group 2][ledger 3], e.g. 107010']
+  display_name text [not null, note: 'Trade Receivables – Domestic']
+  kind text [not null, note: 'asset | liability | equity | income | expense']
+  parent_account_code text [note: 'the group above it']
+  is_group boolean [not null, default: false]
+  is_control boolean [not null, default: false, note: 'only party sub-ledgers post to it']
+  Note: '''The chart of accounts: groups and ledgers in one table. SHARED with the vendor side (Manoj\'s table, same columns).
+Seed (task S2, Chart of accounts): the CA\'s chart. Debtor control ledgers 107010–107130 (Indian GAAP) or 110010–110130 (Ind AS):
+the framework decides the code (gap G4). Employee advances: 105030 (not a trade receivable).'''
+}
+
+Table fin.debtor_category {
+  debtor_category_code text [pk, note: 'DOMESTIC_B2B_REGULAR …']
+  display_name text [not null, note: 'Domestic B2B Trade Debtor – Regular']
+  ledger_account_code text [not null, note: 'the control ledger the category names: nobody picks a ledger on the form']
+  customer_type_code text [note: 'b2b | b2c | b2g: what the category implies (a warning if the form differs)']
+  international boolean [not null, default: false, note: 'an export category: Export customer must be Yes']
+  related_party boolean [not null, default: false, note: 'Ind AS 24 disclosure + elimination']
+  gst_treatment_note text [note: 'the CA\'s words, e.g. Zero-rated (with LUT/Bond, or with IGST + refund)']
+  tcs_section_code text [note: '394(1) | 394 | SEC52_CGST | NULL = not applicable']
+  tcs_rate_note text
+  credit_period_note text [note: 'the CA\'s words: 30 Days · As per contract / Advance']
+  default_credit_days integer [note: 'only when the CA gives one number (30, 45)']
+  notes text
+  sort_order integer [not null]
+  Note: '''The CA\'s Debtor Category Master: 16 rows, the twin of fin.creditor_category (20 rows).
+It drives the form\'s "System suggestions". The invoice task reads gst_treatment / tcs from here (as the vendor bill reads creditor_category).
+Seed, category → ledger (Indian GAAP · Ind AS):
+DOMESTIC_B2B_REGULAR 107010 · 110010 | DOMESTIC_B2C_RETAIL 107020 · 110020 | DOMESTIC_B2G 107030 · 110030 | EXPORT_GOODS 107040 · 110040
+EXPORT_SERVICES 107040 · 110040 | SEZ_UNIT 107050 · 110050 | DEEMED_EXPORT 107060 · 110060 | ECOMMERCE_MARKETPLACE 107070 · 110070
+RELATED_PARTY_DOMESTIC 107080 · 110080 | RELATED_PARTY_OVERSEAS 107090 · 110090 | DEALER_DISTRIBUTOR 107100 · 110100
+SCRAP_SPECIFIED_GOODS 107110 · 110110 | LUXURY_GOODS 107120 · 110120 | TOUR_PACKAGE 107130 · 110130
+COMPOSITION_SCHEME 107010 · 110010 (Trade Receivables – Domestic) | EMPLOYEE_ADVANCES 105030 (Employee Advances Receivable)'''
+}
+
+Table fin.gst_state_code {
+  gst_code text [pk, note: '29']
+  iso_3166_2 text [not null, note: 'IN-KA']
+  display_name text [not null]
+  legacy boolean [not null, default: false]
+  Note: 'Turns the first two digits of a GSTIN into a state. SHARED with the vendor side (41 rows). Our GST home state (Karnataka, 29) is a company setting.'
+}
+
+Ref: fin.ledger_account.parent_account_code > fin.ledger_account.account_code
+Ref: fin.debtor_category.ledger_account_code > fin.ledger_account.account_code
+
+// =====================================================================
+// fin · CustomerRequest: what Teja typed, and who approved which part
+// =====================================================================
+
+Table fin.customer_request {
+  request_id uuid [pk, note: 'R-101']
+  workspace_id text [not null]
+  operated_party_id uuid [not null, note: 'our company OP-1']
+  request_kind text [not null, default: 'create']
+  stage text [not null, default: 'draft', note: 'draft | submitted | active | returned | rejected']
+  version_number integer [not null, default: 1]
+  paper_form_number text [not null, note: 'CRF-0021: the paper Sales handed over']
+  handed_over_by_contact_id uuid [not null, note: 'Arun (Sales Executive)']
+
+  // A. Basic details
+  customer_name text [note: 'Customer Name → pc.party_trade_name']
+  legal_name text [note: '→ pc.party']
+  constitution_code text [note: 'individual | proprietorship | partnership | llp | company | huf | trust_society | government | foreign_entity | other → party_kind + legal_form_code']
+  customer_type_code text [note: 'the form\'s Customer Category: b2b | b2c | b2g']
+  debtor_category_code text [note: 'drives the suggestions; gives the ledger']
+  pan text [note: '→ pc.party_identifier IN_PAN']
+  resident_status text [note: 'resident | non_resident']
+  account_name text [note: 'NULL = customer_name; unique in the books']
+
+  // B. GST & tax compliance (+ B1)
+  gst_registered boolean
+  gstin text [note: 'the main GSTIN → pc.party_identifier IN_GST']
+  gst_registration_type text [note: 'regular | composition | sez | government | unregistered | other']
+  gst_registration_count integer [note: 'how many in additional_gst_registrations']
+  additional_gst_registrations jsonb [note: 'B1: [{gstin, registration_type, address_lines, locality, postal_code, remarks}]: read and saved with the form only']
+  billing_gstin text [note: 'Default / Billing GSTIN; NULL = the main one']
+  export_customer boolean
+  sez_customer boolean
+  e_invoice_applicable text [note: 'yes | no | not_applicable']
+  tcs_applicability_confirmed text [note: 'yes | no | not_applicable']
+
+  // C. Address & contact
+  address_lines "text[]" [note: '→ pc.business_location (Registered office)']
+  locality text
+  administrative_area_code text [note: 'IN-KA']
+  postal_code text
+  country_code text
+  shipping_address_lines "text[]" [note: 'only if different → pc.business_location (Ship-to)']
+  contact_person text [note: '→ pc.contact']
+  contact_phone text [note: '→ pc.contact_point (phone)']
+  contact_email text [note: '→ pc.contact_point (email)']
+
+  // D. Credit & collection terms, and the billing instructions (task card T12)
+  credit_or_cash text [note: 'credit | cash']
+  credit_limit_amount "numeric(18,2)" [note: '→ fin.debtor_credit_limit']
+  payment_terms_code text [note: 'immediate | net_15 | net_30 | net_45 | net_60 | net_90 | other']
+  credit_days integer
+  security_deposit_amount "numeric(18,2)"
+  collection_owner_contact_id uuid
+  currency_code text [default: 'INR']
+  bill_wise_tracking boolean [default: true]
+  po_reference_rule text [note: 'every_invoice | none']
+  invoice_delivery_channel text [note: 'email | portal | with_goods | courier']
+  invoice_format_note text
+
+  // E. Export / cross-border receipts (only if export_customer)
+  ad_bank_name text
+  export_category_code text [note: 'goods | services | goods_services']
+  lut_number text
+  lut_valid_until date
+  realisation_mode_code text [note: 'advance | brc_firc | lc | other']
+  firc_brc_tracking boolean
+  edpms_softex_reference text
+
+  // F. Documents & remarks
+  gst_certificate_attached boolean
+  pan_copy_attached boolean
+  msme_certificate_attached boolean
+  remarks text
+
+  // Lifecycle: written only by the actions
+  created_by_contact_id uuid [not null, note: 'Teja']
+  submitted_by_contact_id uuid
+  submitted_at timestamptz
+  submission_number integer [not null, default: 0, note: '+1 at each submit; approvals belong to one submission']
+  accepted_warnings "text[]" [note: 'warnings Teja accepted at submit']
+  return_reason text [note: 'stage = returned: the paper went back to Sales']
+  party_id uuid [note: 'set when Teja uses a party P&C already holds, else at activation']
+  debtor_account_id uuid [note: 'set at activation: a plain pointer (a second foreign key would make a circle)']
+  activated_at timestamptz
+  recorded_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (workspace_id, operated_party_id, stage) [name: 'customer_request_queue_ix', note: 'Needs me · With checkers · Done']
+  }
+  Note: '''One customer form, as typed: the twin of fin.vendor_request. It keeps what was typed even after approval.
+Typed fields are nullable: a draft may be half filled; the checks run at Submit (the form\'s mandatory rules).
+Not stored (worked out each time): tax type (GSTIN state vs our home state), the header above the ledger, the
+GST / TCS words (from the category). CHECKs: stage list; returned ⇒ return_reason; active ⇒ party_id and debtor_account_id.'''
+}
+
+Table fin.customer_request_approval {
+  approval_id uuid [pk, note: 'AP-1 …']
+  workspace_id text [not null]
+  request_id uuid [not null]
+  submission_number integer [not null]
+  approval_part_code text [not null, note: 'account | credit_limit | tax']
+  approver_role_code text [not null, note: 'accounts_manager | credit_controller | compliance_officer']
+  approver_contact_id uuid [note: 'who decided (Rajan · Farid · Venkat)']
+  outcome text [not null, default: 'pending', note: 'pending | approved | sent_back | rejected']
+  decided_at timestamptz
+  reason text [note: 'needed for sent_back and rejected']
+  approved_values jsonb [note: 'the fields of this part as approved: an unchanged part stays approved on resubmit']
+
+  Indexes {
+    (request_id, submission_number, approval_part_code) [unique]
+  }
+  Note: '''The app routes one submit to three checkers, each their part (task card T12: the Credit Controller checks the limit).
+Vendor side has one decision column set (decided_by, decision); the customer has three parts, so a child table.
+Rule: approver_contact_id <> customer_request.submitted_by_contact_id. The LAST approval runs the one transaction.'''
+}
+
+Table fin.customer_request_history {
+  history_id uuid [pk, note: 'RH-1 …']
+  workspace_id text [not null]
+  request_id uuid [not null]
+  version_number integer [not null]
+  operation text [not null, note: 'create | save | submit | send_back | return_form | reject | activate']
+  performer_contact_id uuid
+  reason text
+  row_snapshot jsonb [not null, note: 'the full request row at this version']
+  recorded_at timestamptz [not null, default: `now()`]
+  Note: 'One row per version of the request (as fin.vendor_request_history).'
+}
+
+Ref: fin.customer_request.debtor_category_code > fin.debtor_category.debtor_category_code
+Ref: fin.customer_request_approval.request_id > fin.customer_request.request_id
+Ref: fin.customer_request_history.request_id > fin.customer_request.request_id
+Ref: fin.customer_request.operated_party_id > pc.operated_party.operated_party_id [color: #9ca3af]
+Ref: fin.customer_request.party_id > pc.party.party_id [color: #9ca3af]
+Ref: fin.customer_request.handed_over_by_contact_id > pc.contact.contact_id [color: #9ca3af]
+Ref: fin.customer_request_approval.approver_contact_id > pc.contact.contact_id [color: #9ca3af]
+
+// =====================================================================
+// fin · DebtorAccount: the customer's AR sub-ledger account in our books
+// =====================================================================
+
+Table fin.debtor_account {
+  debtor_account_id uuid [pk, note: 'DA-1']
+  workspace_id text [not null]
+  operated_party_id uuid [not null, note: 'our company OP-1']
+  party_id uuid [not null, note: 'the customer P-1']
+  party_standing_id uuid [note: 'its customer standing PS-1']
+  opened_from_request_id uuid [not null]
+  customer_code text [not null, note: 'C000001: the CA\'s own series, never built from the ledger code']
+  account_name text [not null]
+  debtor_category_code text [not null]
+  control_ledger_code text [not null, note: 'copied from the category at opening; a later change is dated in the history (gap G6)']
+  customer_type_code text [not null, note: 'b2b | b2c | b2g']
+  resident_status text [not null]
+  export_customer boolean [not null, default: false]
+  sez_customer boolean [not null, default: false]
+  e_invoice_applicable text [not null]
+  tcs_applicability_confirmed text [not null]
+  credit_or_cash text [not null]
+  payment_terms_code text [not null]
+  credit_days integer [note: 'NULL for a cash customer']
+  security_deposit_amount "numeric(18,2)"
+  collection_owner_contact_id uuid
+  currency_code text [not null, default: 'INR']
+  bill_wise_tracking boolean [not null, default: true]
+  po_reference_rule text [not null]
+  invoice_delivery_channel text [not null]
+  invoice_format_note text
+  ad_bank_name text
+  export_category_code text
+  lut_number text
+  lut_valid_until date
+  realisation_mode_code text
+  firc_brc_tracking boolean
+  edpms_softex_reference text
+  posting_blocked boolean [not null, default: false]
+  sales_blocked boolean [not null, default: false, note: 'no new orders or invoices (a credit hold is the Credit Controller\'s task)']
+  remarks text
+  version_number integer [not null, default: 1]
+  opened_at timestamptz [not null]
+  closed_at timestamptz [note: 'NULL = open']
+
+  Indexes {
+    (workspace_id, operated_party_id, party_id) [unique, name: 'one_debtor_account_per_party', note: 'one customer account per party per company, however many GSTINs']
+    (workspace_id, operated_party_id, customer_code) [unique]
+    (workspace_id, operated_party_id, account_name) [unique]
+  }
+  Note: '''The twin of fin.creditor_account. Finance keeps the id and the money facts; the identity stays in P&C.
+No balance column and no journal row: the balance is zero until the first invoice, whose line will carry
+control_ledger_code and debtor_account_id (the invoice task designs that table).'''
+}
+
+Table fin.debtor_tax_registration {
+  debtor_tax_registration_id uuid [pk, note: 'TR-1 …']
+  workspace_id text [not null]
+  debtor_account_id uuid [not null]
+  party_identifier_id uuid [not null, note: 'the GSTIN row in P&C (IN_GST)']
+  registration_type text [not null, note: 'regular | composition | sez | government | other']
+  is_default boolean [not null, default: false, note: 'the form\'s Default / Billing GSTIN']
+  remarks text
+  since date
+  until date
+
+  Indexes {
+    (debtor_account_id, party_identifier_id) [unique]
+    (debtor_account_id) [unique, name: 'one_default_registration', note: 'WHERE is_default AND until IS NULL']
+  }
+  Note: 'How the account treats each GSTIN (twin of fin.creditor_tax_registration). The number stays in P&C; Finance keeps the type and the default.'
+}
+
+Table fin.debtor_billing_location {
+  debtor_billing_location_id uuid [pk, note: 'BL-1 … (the app calls it a branch)']
+  workspace_id text [not null]
+  debtor_account_id uuid [not null]
+  business_location_id uuid [not null, note: 'the customer\'s place in P&C']
+  debtor_tax_registration_id uuid [note: 'the GSTIN it is billed under; NULL = billed as unregistered']
+  is_primary boolean [not null, default: false, note: 'the main place of that registration: an invoice under it defaults here']
+  since date [not null]
+  until date [note: 'deactivated: no new invoices to it']
+  remarks text
+
+  Indexes {
+    (debtor_account_id, business_location_id) [unique, name: 'one_open_billing_location', note: 'WHERE until IS NULL']
+    (debtor_tax_registration_id) [unique, name: 'one_primary_per_registration', note: 'WHERE is_primary AND until IS NULL']
+  }
+  Note: '''EXTRA to the vendor model (good to have): which customer place we bill, under which of its GSTINs.
+P&C links a GSTIN to a party, not to a place; its model leaves "registration, or accounting branch" to the domain.
+One GSTIN can serve several places (two cities in one state); a place has one GSTIN at a time.
+Invoice default = the default registration → its primary billing location. A B1 GSTIN with no address has a registration
+row and no billing location yet (added later). If P&C adopts registration_place (Branch Design, gap G8), the
+registration link here becomes a P&C read.'''
+}
+
+Table fin.debtor_credit_limit {
+  debtor_credit_limit_id uuid [pk, note: 'CL-1']
+  workspace_id text [not null]
+  debtor_account_id uuid [not null]
+  credit_limit_amount "numeric(18,2)" [not null]
+  currency_code text [not null, default: 'INR']
+  effective_from date [not null]
+  effective_until date [note: 'NULL = the current limit']
+  approved_by_contact_id uuid [not null, note: 'the Credit Controller (Farid)']
+  source_request_id uuid [note: 'the request that set it']
+  reason text
+
+  Indexes {
+    (debtor_account_id) [unique, name: 'one_current_limit', note: 'WHERE effective_until IS NULL']
+  }
+  Note: 'EXTRA to the vendor model: a dated credit limit, never overwritten. T12\'s other trigger (a new limit from the Credit Controller) adds a row and closes the old one.'
+}
+
+Table fin.debtor_account_history {
+  history_id uuid [pk, note: 'AH-1']
+  workspace_id text [not null]
+  debtor_account_id uuid [not null]
+  version_number integer [not null]
+  operation text [not null, note: 'open | change | add_billing_location | end_billing_location | set_default_registration | change_control_ledger | change_credit_limit | block | close']
+  performer_contact_id uuid
+  reason text
+  row_snapshot jsonb [not null]
+  recorded_at timestamptz [not null, default: `now()`]
+  Note: 'One row per version of the account (as fin.creditor_account_history).'
+}
+
+Ref: fin.debtor_account.opened_from_request_id > fin.customer_request.request_id
+Ref: fin.debtor_account.debtor_category_code > fin.debtor_category.debtor_category_code
+Ref: fin.debtor_account.control_ledger_code > fin.ledger_account.account_code
+Ref: fin.debtor_tax_registration.debtor_account_id > fin.debtor_account.debtor_account_id
+Ref: fin.debtor_billing_location.debtor_account_id > fin.debtor_account.debtor_account_id
+Ref: fin.debtor_billing_location.debtor_tax_registration_id > fin.debtor_tax_registration.debtor_tax_registration_id
+Ref: fin.debtor_credit_limit.debtor_account_id > fin.debtor_account.debtor_account_id
+Ref: fin.debtor_credit_limit.source_request_id > fin.customer_request.request_id
+Ref: fin.debtor_account_history.debtor_account_id > fin.debtor_account.debtor_account_id
+Ref: fin.debtor_account.party_id > pc.party.party_id [color: #9ca3af]
+Ref: fin.debtor_account.operated_party_id > pc.operated_party.operated_party_id [color: #9ca3af]
+Ref: fin.debtor_account.party_standing_id > pc.party_standing.party_standing_id [color: #9ca3af]
+Ref: fin.debtor_account.collection_owner_contact_id > pc.contact.contact_id [color: #9ca3af]
+Ref: fin.debtor_tax_registration.party_identifier_id > pc.party_identifier.party_identifier_id [color: #9ca3af]
+Ref: fin.debtor_billing_location.business_location_id > pc.business_location.business_location_id [color: #9ca3af]
+Ref: fin.debtor_credit_limit.approved_by_contact_id > pc.contact.contact_id [color: #9ca3af]
+
+// =====================================================================
+// fin · the link to the accounting engine
+// =====================================================================
+
+Table fin.outbox {
+  event_id uuid [pk, note: 'EV-1: the idempotency key']
+  workspace_id text [not null]
+  event_type text [not null, note: 'DebtorAccountOpened · DebtorBillingLocationAdded · DebtorCreditLimitChanged …']
+  event_version integer [not null, default: 1]
+  aggregate_type text [not null, note: 'debtor_account']
+  aggregate_id uuid [not null]
+  payload jsonb [not null]
+  occurred_at timestamptz [not null]
+  published_at timestamptz [note: 'NULL = not yet sent']
+  Note: '''EXTRA, kept: the event is the only link from a slice to the accounting engine (our engine model).
+The engine logs DebtorAccountOpened as seen and posts nothing (a master, not a transaction). Written in the same transaction.'''
+}
+
+// =====================================================================
+// Decisions in this revision, and what stays open
+// =====================================================================
+// 1. Company key = pc.operated_party.operated_party_id (as the vendor side). rev 2's fin.book (book_party_id) is removed:
+//    more books per company is task S1 (gap G1). The team's idea holds: P&C's id, no legal_entity_id.
+// 2. One transaction on the last approval (Manoj's flow): no reactions, no hold stage, no handled_event / action_receipt.
+// 3. Three approval parts (the app): fin.customer_request_approval. Closes gap G9 by design, to confirm with the role owner.
+// 4. The category decides ledger, GST and TCS (as the vendor side). The app's "Edit" on those suggestion rows has no column:
+//    if the CA wants per-customer overrides, add them on fin.debtor_account. Open with the CA.
+// 5. A control account per category (gap G6) is now the category's ledger_account_code; moving an account is a dated
+//    history row (change_control_ledger) plus a transfer entry by the engine.
+// 6. P&C must seed: standing type customer, capacity customer_contact, legal forms beyond IN_PVT_LTD
+//    (partnership, LLP, HUF, trust / society, government, foreign), and confirm the party_relationship type for customer groups (gap G5).
+// 7. The app shows the LUT as one field (here lut_number + lut_valid_until) and the collection owner as text (here a contact).

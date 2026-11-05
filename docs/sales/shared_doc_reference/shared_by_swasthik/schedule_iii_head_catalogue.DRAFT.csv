@@ -1,0 +1,66 @@
+head_code,head_name,parent_head_code,sort_order,statement,assignable,is_active,division
+BS-EL,EQUITY AND LIABILITIES,,1,balance_sheet,false,true,I
+BS-EL-1,1. Shareholders' funds,BS-EL,1,balance_sheet,false,true,I
+BS-EL-1a,(a) Share capital,BS-EL-1,1,balance_sheet,true,true,I
+BS-EL-1b,(b) Reserves and Surplus,BS-EL-1,2,balance_sheet,true,true,I
+BS-EL-1c,(c) Money received against share warrants,BS-EL-1,3,balance_sheet,true,true,I
+BS-EL-2,2. Share application money pending allotment,BS-EL,2,balance_sheet,true,true,I
+BS-EL-3,3. Non-current liabilities,BS-EL,3,balance_sheet,false,true,I
+BS-EL-3a,(a) Long-term borrowings,BS-EL-3,1,balance_sheet,true,true,I
+BS-EL-3b,(b) Deferred tax liabilities (Net),BS-EL-3,2,balance_sheet,true,true,I
+BS-EL-3c,(c) Other long term liabilities,BS-EL-3,3,balance_sheet,true,true,I
+BS-EL-3d,(d) Long-term provisions,BS-EL-3,4,balance_sheet,true,true,I
+BS-EL-4,4. Current liabilities,BS-EL,4,balance_sheet,false,true,I
+BS-EL-4a,(a) Short-term borrowings,BS-EL-4,1,balance_sheet,true,true,I
+BS-EL-4b,(b) Trade Payables,BS-EL-4,2,balance_sheet,true,true,I
+BS-EL-4bA,(A) total outstanding dues of micro enterprises and small enterprises,BS-EL-4b,1,balance_sheet,true,true,I
+BS-EL-4bB,(B) total outstanding dues of creditors other than micro enterprises and small enterprises,BS-EL-4b,2,balance_sheet,true,true,I
+BS-EL-4c,(c) Other current liabilities,BS-EL-4,3,balance_sheet,true,true,I
+BS-EL-4d,(d) Short-term provisions,BS-EL-4,4,balance_sheet,true,true,I
+BS-AS,ASSETS,,2,balance_sheet,false,true,I
+BS-AS-1,1. Non-current assets,BS-AS,1,balance_sheet,false,true,I
+BS-AS-1a,"(a) Property, Plant and Equipment",BS-AS-1,1,balance_sheet,false,true,I
+BS-AS-1ai,(i) Tangible assets,BS-AS-1a,1,balance_sheet,true,true,I
+BS-AS-1aii,(ii) Intangible assets,BS-AS-1a,2,balance_sheet,true,true,I
+BS-AS-1aiii,(iii) Capital Work-in-progress,BS-AS-1a,3,balance_sheet,true,true,I
+BS-AS-1aiv,(iv) Intangible assets under development,BS-AS-1a,4,balance_sheet,true,true,I
+BS-AS-1b,(b) Non-current investments,BS-AS-1,2,balance_sheet,true,true,I
+BS-AS-1c,(c) Deferred tax assets (Net),BS-AS-1,3,balance_sheet,true,true,I
+BS-AS-1d,(d) Long-term loans and advances,BS-AS-1,4,balance_sheet,true,true,I
+BS-AS-1e,(e) Other non-current assets,BS-AS-1,5,balance_sheet,true,true,I
+BS-AS-2,2. Current assets,BS-AS,2,balance_sheet,false,true,I
+BS-AS-2a,(a) Current investments,BS-AS-2,1,balance_sheet,true,true,I
+BS-AS-2b,(b) Inventories,BS-AS-2,2,balance_sheet,true,true,I
+BS-AS-2c,(c) Trade receivables,BS-AS-2,3,balance_sheet,true,true,I
+BS-AS-2d,(d) Cash and cash equivalents,BS-AS-2,4,balance_sheet,true,true,I
+BS-AS-2e,(e) Short-term loans and advances,BS-AS-2,5,balance_sheet,true,true,I
+BS-AS-2f,(f) Other current assets,BS-AS-2,6,balance_sheet,true,true,I
+PL,STATEMENT OF PROFIT AND LOSS,,1,profit_and_loss,false,true,I
+PL-I,I. Revenue from operations,PL,1,profit_and_loss,true,true,I
+PL-II,II. Other income,PL,2,profit_and_loss,true,true,I
+PL-III,III. Total Revenue (I + II),PL,3,profit_and_loss,false,true,I
+PL-IV,IV. Expenses:,PL,4,profit_and_loss,false,true,I
+PL-IV-COM,Cost of materials consumed,PL-IV,1,profit_and_loss,true,true,I
+PL-IV-PUR,Purchases of Stock-in-Trade,PL-IV,2,profit_and_loss,true,true,I
+PL-IV-CHG,Changes in inventories of finished goods work-in-progress and Stock-in-Trade,PL-IV,3,profit_and_loss,true,true,I
+PL-IV-EMP,Employee benefits expense,PL-IV,4,profit_and_loss,true,true,I
+PL-IV-FIN,Finance costs,PL-IV,5,profit_and_loss,true,true,I
+PL-IV-DEP,Depreciation and amortization expense,PL-IV,6,profit_and_loss,true,true,I
+PL-IV-OTH,Other expenses,PL-IV,7,profit_and_loss,true,true,I
+PL-IV-TOT,Total expenses,PL-IV,8,profit_and_loss,false,true,I
+PL-V,V. Profit before exceptional and extraordinary items and tax (III - IV),PL,5,profit_and_loss,false,true,I
+PL-VI,VI. Exceptional items,PL,6,profit_and_loss,true,true,I
+PL-VII,VII. Profit before extraordinary items and tax (V - VI),PL,7,profit_and_loss,false,true,I
+PL-VIII,VIII. Extraordinary Items,PL,8,profit_and_loss,true,true,I
+PL-IX,IX. Profit before tax (VII - VIII),PL,9,profit_and_loss,false,true,I
+PL-X,X. Tax expense:,PL,10,profit_and_loss,false,true,I
+PL-X-1,(1) Current tax,PL-X,1,profit_and_loss,true,true,I
+PL-X-2,(2) Deferred tax,PL-X,2,profit_and_loss,true,true,I
+PL-XI,XI. Profit (Loss) for the period from continuing operations,PL,11,profit_and_loss,false,true,I
+PL-XII,XII. Profit/(loss) from discontinuing operations,PL,12,profit_and_loss,true,true,I
+PL-XIII,XIII. Tax expense of discontinuing operations,PL,13,profit_and_loss,true,true,I
+PL-XIV,XIV. Profit/(loss) from Discontinuing operations (after tax) (XII - XIII),PL,14,profit_and_loss,false,true,I
+PL-XV,XV. Profit (Loss) for the period (XI + XIV),PL,15,profit_and_loss,false,true,I
+PL-XVI,XVI. Earnings per equity share:,PL,16,profit_and_loss,false,true,I
+PL-XVI-1,(1) Basic,PL-XVI,1,profit_and_loss,false,true,I
+PL-XVI-2,(2) Diluted,PL-XVI,2,profit_and_loss,false,true,I

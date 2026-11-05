@@ -1,0 +1,571 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Vendor Backend Walkthrough</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: sticky concept bar + stepper, the swimlane (scrolls sideways in its frame), then the explanation panel.
+   Every concept has one fixed glyph and one hue, used in the bar, in the drawing and in the panel. */
+:root {
+  --bg: #f5f6f8; --surface: #ffffff; --fg: #1b2430; --muted: #5b6676; --line: #d6dbe3; --code-bg: #eef1f5; --now: #d9731a;
+  --c-capability: #6b7280; --c-entity: #5b6676; --c-stage: #1b2430; --c-action: #1b2430; --c-gate: #b3372f; --c-warn: #9a6b00;
+  --c-rule: #6d4fa3; --c-event: #2f5d8a; --c-reaction: #2e7d5b; --c-query: #a3621a; --c-authority: #8a2f6a; --c-proof: #4b5563;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12161c; --surface: #1a2029; --fg: #e3e8ef; --muted: #9aa5b4; --line: #2e3744; --code-bg: #0f1318; --now: #f0a05a;
+  --c-capability: #9aa0ad; --c-entity: #9aa5b4; --c-stage: #e3e8ef; --c-action: #e3e8ef; --c-gate: #ec7d74; --c-warn: #e0b44a;
+  --c-rule: #b89ae6; --c-event: #8fb7e3; --c-reaction: #6cc59c; --c-query: #e0a55c; --c-authority: #e08ac0; --c-proof: #a7b0bd; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #12161c; --surface: #1a2029; --fg: #e3e8ef; --muted: #9aa5b4; --line: #2e3744; --code-bg: #0f1318; --now: #f0a05a;
+  --c-capability: #9aa0ad; --c-entity: #9aa5b4; --c-stage: #e3e8ef; --c-action: #e3e8ef; --c-gate: #ec7d74; --c-warn: #e0b44a;
+  --c-rule: #b89ae6; --c-event: #8fb7e3; --c-reaction: #6cc59c; --c-query: #e0a55c; --c-authority: #e08ac0; --c-proof: #a7b0bd; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 14.5px; line-height: 1.5; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.wrap { max-width: 1280px; margin: 0 auto; padding-block: 26px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 16px; }
+header { display: flex; flex-direction: column; gap: 8px; }
+h1, h2, h3 { font-family: var(--display); margin: 0; line-height: 1.15; text-wrap: balance; }
+h1 { font-size: 2.1rem; }
+h2 { font-size: 1.4rem; }
+h3 { font-size: 1.05rem; }
+p { margin: 0; max-width: 72ch; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--c-event); }
+.muted { color: var(--muted); }
+code { font-family: var(--mono); font-size: 12px; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+
+/* top controls */
+.controls { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 8px 10px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--line); }
+.rowlab { font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); min-width: 68px; }
+.row { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chips button { font-family: var(--body); font-size: 13px; font-weight: 500; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px 4px 6px; cursor: pointer; display: inline-flex; gap: 7px; align-items: center; }
+.chips button svg { width: 18px; height: 18px; overflow: visible; }
+.chips button[aria-pressed="true"] { border-color: var(--chip, var(--fg)); box-shadow: inset 0 0 0 1px var(--chip, var(--fg)); color: var(--chip, var(--fg)); }
+.steps button { font-family: var(--display); font-size: 14px; font-weight: 600; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 11px; cursor: pointer; display: inline-flex; gap: 8px; align-items: center; }
+.steps button .n { font-family: var(--mono); font-size: 11px; color: var(--muted); font-weight: 500; }
+.steps button[aria-current="step"] { border-color: var(--now); box-shadow: inset 0 0 0 1px var(--now); }
+.steps button[aria-current="step"] .n { color: var(--now); }
+button:focus-visible { outline: 2px solid var(--c-event); outline-offset: 2px; }
+.nav button { font-family: var(--body); font-size: 13px; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 11px; cursor: pointer; }
+.nav button:disabled { opacity: .4; cursor: default; }
+.nav .hint { font-size: 12px; color: var(--muted); align-self: center; }
+
+/* figure */
+figure { margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.frame { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.frame svg { display: block; min-width: 1200px; width: 100%; height: auto; color: var(--fg); }
+figcaption { font-size: 13px; color: var(--muted); }
+
+/* step mode */
+g[data-s], [data-c] { transition: opacity .3s ease; }
+.smode g.future { opacity: .08; }
+.smode g.seen { opacity: .38; }
+.smode g.now .stage, .smode g.now .box, .smode g.now .box-re, .smode g.now .end { stroke: var(--now); stroke-width: 2.2; }
+.smode g.now .act, .smode g.now .act-re { stroke: var(--now); stroke-width: 2.2; }
+/* concept mode */
+.cmode [data-c] { opacity: .1; }
+.cmode [data-c].c-now { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { g[data-s], [data-c] { transition: none; } }
+
+.lane { fill: currentColor; opacity: .035; }
+.lane-label { font-family: var(--display); font-size: 14px; font-weight: 700; fill: currentColor; }
+.lane-sub { font-family: var(--body); font-size: 11px; fill: var(--muted); }
+.stage { fill: var(--surface); stroke: var(--c-stage); stroke-width: 1.8; }
+.end { fill: var(--surface); stroke: var(--c-stage); stroke-width: 1.2; opacity: .85; }
+.ent { fill: none; stroke: var(--c-entity); stroke-width: 1; stroke-dasharray: 2 3; }
+.tent { font-family: var(--mono); font-size: 10.5px; fill: var(--c-entity); }
+.box { fill: var(--surface); stroke: currentColor; stroke-width: 1; }
+.box-re { fill: var(--surface); stroke: var(--c-reaction); stroke-width: 1.4; stroke-dasharray: 5 3; }
+.box-q { fill: var(--surface); stroke: var(--c-query); stroke-width: 1.2; }
+.box-h { fill: var(--surface); stroke: var(--muted); stroke-width: 1; stroke-dasharray: 5 3; }
+.gate { fill: var(--surface); stroke: var(--c-gate); stroke-width: 1; stroke-dasharray: 3 3; }
+.pill { fill: var(--surface); stroke: var(--c-action); stroke-width: 1; }
+.rule { fill: var(--surface); stroke: var(--c-rule); stroke-width: 1; }
+.t { font-family: var(--body); font-size: 12px; fill: currentColor; }
+.tb { font-family: var(--display); font-size: 14px; font-weight: 700; fill: currentColor; }
+.ts { font-family: var(--body); font-size: 11px; fill: var(--muted); }
+.tstop { font-family: var(--mono); font-size: 10.5px; fill: var(--c-gate); }
+.twarn { font-family: var(--mono); font-size: 10.5px; fill: var(--c-warn); }
+.tev { font-family: var(--mono); font-size: 11px; font-weight: 500; fill: var(--c-event); }
+.trule { font-family: var(--mono); font-size: 10.5px; fill: var(--c-rule); }
+.tq { font-family: var(--display); font-size: 13px; font-weight: 700; fill: var(--c-query); }
+.tauth { font-family: var(--mono); font-size: 10.5px; font-weight: 500; fill: var(--c-authority); }
+.tproof { font-family: var(--mono); font-size: 10.5px; fill: var(--c-proof); }
+.tre { font-family: var(--display); font-size: 13px; font-weight: 700; fill: var(--c-reaction); }
+.act { stroke: var(--c-action); stroke-width: 1.6; fill: none; }
+.act-re { stroke: var(--c-action); stroke-width: 1.6; fill: none; stroke-dasharray: 6 4; }
+.ev { stroke: var(--c-event); stroke-width: 1.9; fill: none; }
+.rd { stroke: var(--c-query); stroke-width: 1; fill: none; stroke-dasharray: 2 4; }
+.who { stroke: var(--c-authority); stroke-width: 1; fill: none; opacity: .5; }
+.mk { fill: var(--c-action); } .mke { fill: var(--c-event); } .mkq { fill: var(--c-query); }
+.auth { fill: var(--surface); stroke: var(--c-authority); stroke-width: 1; }
+
+/* glyph symbols take color from a fill/stroke set on <use> */
+.g-stage { fill: none; stroke: var(--c-stage); stroke-width: 1.8; }
+.g-action { stroke: var(--c-action); fill: var(--c-action); }
+.g-gate { fill: var(--c-gate); }
+.g-rule { fill: none; stroke: var(--c-rule); stroke-width: 1.3; }
+.g-rule-t { font-family: var(--mono); font-size: 10px; font-weight: 500; fill: var(--c-rule); }
+.g-event { fill: var(--c-event); }
+.g-reaction { fill: none; stroke: var(--c-reaction); stroke-width: 1.6; }
+.g-reaction-h { fill: var(--c-reaction); }
+.g-query { fill: none; stroke: var(--c-query); stroke-width: 1.4; }
+.g-query-p { fill: var(--c-query); }
+.g-auth { fill: none; stroke: var(--c-authority); stroke-width: 1.4; }
+.g-proof { stroke: var(--c-proof); stroke-width: 1.6; fill: none; }
+.g-entity { fill: none; stroke: var(--c-entity); stroke-width: 1.2; stroke-dasharray: 2 2; }
+.g-cap { fill: var(--c-capability); opacity: .35; }
+
+/* panel */
+.panel { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; }
+.panel > div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.panel .lead { font-size: 15px; }
+.blocks { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.blocks li { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 10px; align-items: start; padding-top: 8px; border-top: 1px solid var(--line); font-size: 13.5px; }
+.blocks li:first-child { border-top: 0; padding-top: 0; }
+.k { font-family: var(--mono); font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }
+.k svg { width: 13px; height: 13px; overflow: visible; }
+.blocks b { font-weight: 600; }
+.order { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; }
+.not { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; color: var(--muted); }
+.notice { border-left: 3px solid var(--now); padding: 2px 0 2px 12px; font-size: 13.5px; }
+.visual { display: flex; gap: 14px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; }
+.visual svg { width: 56px; height: 40px; overflow: visible; flex: none; }
+.visual p { font-size: 13px; }
+@media (max-width: 800px) { .panel { grid-template-columns: 1fr; } .blocks li { grid-template-columns: 1fr; gap: 4px; } }
+@media (max-width: 600px) { h1 { font-size: 1.6rem; } }
+</style>
+
+<!-- glyph library: one fixed visual per concept, reused in the bar, the drawing and the panel -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="g-capability" viewBox="0 0 18 18"><rect class="g-cap" x="1" y="4" width="16" height="10" rx="2"/><rect x="1" y="4" width="16" height="10" rx="2" fill="none" stroke="var(--c-capability)" stroke-width="1.2"/></symbol>
+    <symbol id="g-entity" viewBox="0 0 18 18"><rect class="g-entity" x="1.5" y="2.5" width="15" height="13" rx="2"/><rect x="5" y="7" width="8" height="4" rx="1" fill="var(--c-entity)"/></symbol>
+    <symbol id="g-stage" viewBox="0 0 18 18"><rect class="g-stage" x="1.5" y="4" width="15" height="10" rx="2.5"/></symbol>
+    <symbol id="g-action" viewBox="0 0 18 18"><line x1="1" y1="9" x2="12" y2="9" stroke="var(--c-action)" stroke-width="1.8"/><polygon class="g-action" points="11,5 17,9 11,13"/></symbol>
+    <symbol id="g-gate" viewBox="0 0 18 18"><polygon class="g-gate" points="6,1.5 12,1.5 16.5,6 16.5,12 12,16.5 6,16.5 1.5,12 1.5,6"/><rect x="5" y="8" width="8" height="2" fill="#fff"/></symbol>
+    <symbol id="g-warn" viewBox="0 0 18 18"><polygon points="9,1.5 17,16.5 1,16.5" fill="var(--c-warn)"/><rect x="8.2" y="6" width="1.6" height="5.5" fill="#fff"/><rect x="8.2" y="12.8" width="1.6" height="1.6" fill="#fff"/></symbol>
+    <symbol id="g-rule" viewBox="0 0 18 18"><circle class="g-rule" cx="9" cy="9" r="7.5"/><text class="g-rule-t" x="9" y="12.5" text-anchor="middle">ƒ</text></symbol>
+    <symbol id="g-event" viewBox="0 0 18 18"><rect x="2" y="2" width="1.8" height="14" fill="var(--c-event)"/><polygon class="g-event" points="3.8,2.5 16,6 3.8,9.5"/></symbol>
+    <symbol id="g-reaction" viewBox="0 0 18 18"><path class="g-reaction" d="M14.5 9 A5.5 5.5 0 1 1 11 3.9"/><polygon class="g-reaction-h" points="9.5,1 14,4.2 9.5,7"/></symbol>
+    <symbol id="g-query" viewBox="0 0 18 18"><path class="g-query" d="M1.5 9 C4 4.5 14 4.5 16.5 9 C14 13.5 4 13.5 1.5 9 Z"/><circle class="g-query-p" cx="9" cy="9" r="2.4"/></symbol>
+    <symbol id="g-authority" viewBox="0 0 18 18"><circle class="g-auth" cx="9" cy="6" r="3.2"/><path class="g-auth" d="M2.5 16 C3 11.5 15 11.5 15.5 16"/></symbol>
+    <symbol id="g-proof" viewBox="0 0 18 18"><path class="g-proof" d="M3 4 H15 M3 8 H15 M3 12 H11"/><rect x="2" y="2" width="14" height="14" rx="1.5" fill="none" stroke="var(--c-proof)" stroke-width="1" opacity=".5"/></symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">UX2E · vendor creation · T7 and T15 · scope of 2 Nov 2026 · the onboarding sheet, no rules</div>
+  <h1>Vendor Backend Walkthrough</h1>
+  <p>Two ways in. <b>By concept:</b> press a concept above the picture and every place it appears lights up, with its definition and its glyph. <b>By step:</b> press a step and the picture reveals only what that step adds. Each concept keeps one shape and one colour everywhere on this page.</p>
+</header>
+
+<div class="controls">
+  <div class="row"><span class="rowlab">Concept</span><div class="chips" id="chips"></div></div>
+  <div class="row"><span class="rowlab">Step</span><div class="chips steps" id="steps"></div>
+    <div class="nav"><button id="prev" type="button">←</button><button id="next" type="button">→</button><span class="hint">arrow keys move between steps</span></div></div>
+</div>
+
+<figure>
+<div class="frame">
+<svg id="fig" viewBox="0 0 1300 512" role="img" aria-label="Swimlane of vendor creation: the request moves Draft, Submitted, Approved, Active in the Finance band; the Accounts Executive submits, the Accounts Manager decides, the engine registers the supplier in Parties and Contacts and opens the vendor account, a second entity.">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk" d="M0 0 L10 5 L0 10 z"/></marker>
+    <marker id="ae" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mke" d="M0 0 L10 5 L0 10 z"/></marker>
+    <marker id="aq" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mkq" d="M0 0 L10 5 L0 10 z"/></marker>
+  </defs>
+
+  <!-- bands = capabilities -->
+  <g data-s="0">
+    <rect class="lane" x="100" y="20" width="1190" height="72" rx="6"/>
+    <g data-c="capability"><rect class="lane" x="100" y="100" width="1190" height="284" rx="6"/>
+      <use href="#g-capability" x="10" y="108" width="16" height="16"/><text class="lane-label" x="30" y="121">Finance</text>
+      <text class="lane-sub" x="10" y="140">owns the request, the</text><text class="lane-sub" x="10" y="154">account, credit terms</text></g>
+    <g data-c="capability"><rect class="lane" x="100" y="392" width="1190" height="106" rx="6"/>
+      <use href="#g-capability" x="10" y="400" width="16" height="16"/><text class="lane-label" x="30" y="413">Parties and</text><text class="lane-label" x="30" y="430">Contacts</text>
+      <text class="lane-sub" x="10" y="449">owns the party</text></g>
+    <text class="lane-label" x="10" y="48">People</text>
+    <text class="lane-sub" x="10" y="64">who presses</text>
+  </g>
+
+  <!-- STEP 1 -->
+  <g data-s="1">
+    <g data-c="authority"><rect class="auth" x="120" y="34" width="210" height="46" rx="5"/>
+      <use href="#g-authority" x="128" y="40" width="16" height="16"/><text class="tb" x="150" y="53">Accounts Executive</text>
+      <text class="ts" x="130" y="70">job accounts_executive · types, submits, returns</text>
+      <line class="who" x1="225" y1="80" x2="225" y2="118"/></g>
+    <g data-c="entity"><rect class="ent" x="110" y="118" width="960" height="150" rx="8"/>
+      <use href="#g-entity" x="114" y="106" width="14" height="14"/><text class="tent" x="132" y="117">entity: vendor request</text>
+      <text class="tent" x="1066" y="117" text-anchor="end">fin.vendor_request · parts: B1 GST rows, FEMA block</text></g>
+    <g data-c="stage"><rect class="stage" x="120" y="130" width="210" height="120" rx="6"/>
+      <use href="#g-stage" x="128" y="137" width="16" height="16"/><text class="tb" x="150" y="151">Draft</text>
+      <text class="ts" x="130" y="168">start stage · the AE is still working</text></g>
+    <g data-c="action"><rect class="pill" x="130" y="176" width="190" height="20" rx="10"/>
+      <use href="#g-action" x="137" y="179" width="14" height="14"/><text class="t" x="156" y="190">Save · working, stays in Draft</text></g>
+    <g data-c="entity"><text class="ts" x="130" y="216">sections A–G typed; nothing worked out</text></g>
+    <g data-c="proof"><use href="#g-proof" x="130" y="229" width="13" height="13"/><text class="tproof" x="148" y="240">history: who typed what, when</text></g>
+  </g>
+
+  <!-- STEP 2 -->
+  <g data-s="2">
+    <g data-c="action"><line class="act" x1="330" y1="185" x2="428" y2="185" marker-end="url(#a)"/>
+      <text class="t" x="379" y="175" text-anchor="middle" font-weight="600">Submit</text></g>
+    <g data-c="authority"><rect class="auth" x="358" y="191" width="42" height="15" rx="7"/><use href="#g-authority" x="362" y="193" width="11" height="11"/><text class="tauth" x="376" y="202">AE</text></g>
+    <g data-c="stage"><rect class="stage" x="430" y="150" width="130" height="70" rx="6"/>
+      <use href="#g-stage" x="438" y="157" width="16" height="16"/><text class="tb" x="460" y="171">Submitted</text>
+      <text class="ts" x="440" y="188">facts frozen; with</text><text class="ts" x="440" y="202">the Accounts Manager</text></g>
+    <g data-c="event"><use href="#g-event" x="440" y="228" width="13" height="13"/><text class="tev" x="457" y="239">RequestSubmitted.v1</text><text class="ts" x="457" y="252">→ the AM's list</text></g>
+    <g data-c="proof"><use href="#g-proof" x="440" y="256" width="12" height="12"/><text class="tproof" x="457" y="266">who submitted, warnings accepted</text></g>
+    <g data-c="gate"><rect class="gate" x="240" y="268" width="185" height="140" rx="5"/>
+      <use href="#g-gate" x="247" y="274" width="12" height="12"/><text class="tstop" x="263" y="284">details missing (A–G)</text>
+      <use href="#g-gate" x="247" y="287" width="12" height="12"/><text class="tstop" x="263" y="297">PAN GSTIN PIN IFSC format</text>
+      <use href="#g-gate" x="247" y="300" width="12" height="12"/><text class="tstop" x="263" y="310">GSTIN≠PAN · state unknown</text>
+      <use href="#g-gate" x="247" y="313" width="12" height="12"/><text class="tstop" x="263" y="323">dup GSTIN · name in use</text>
+      <use href="#g-gate" x="247" y="326" width="12" height="12"/><text class="tstop" x="263" y="336">known party · our vendor</text>
+      <use href="#g-gate" x="247" y="339" width="12" height="12"/><text class="tstop" x="263" y="349">MSME over 45 days</text>
+      <use href="#g-gate" x="247" y="352" width="12" height="12"/><text class="tstop" x="263" y="362">gold/silver advance</text>
+      <use href="#g-gate" x="247" y="365" width="12" height="12"/><text class="tstop" x="263" y="375">bank acct in use · Q1 off</text>
+      <use href="#g-warn" x="247" y="378" width="12" height="12"/><text class="twarn" x="263" y="388">8 warns: MSME, proof, G…</text>
+      <text class="ts" x="248" y="403">GST portal, bank gates: deferred</text></g>
+    <g data-c="query"><path class="rd" d="M380 445 H340 V410" marker-end="url(#aq)"/>
+      <text class="ts" x="346" y="440">read by the gates</text>
+      <rect class="box-q" x="380" y="410" width="220" height="70" rx="5"/>
+      <use href="#g-query" x="388" y="418" width="16" height="16"/><text class="tq" x="410" y="431">Party lookup</text>
+      <text class="ts" x="390" y="448">by GSTIN or PAN: already a party,</text>
+      <text class="ts" x="390" y="462">already our supplier, other GSTINs</text>
+      <text class="ts" x="390" y="476">seen by: AE, AM</text></g>
+  </g>
+
+  <!-- STEP 3 -->
+  <g data-s="3">
+    <g data-c="authority"><rect class="auth" x="430" y="34" width="360" height="46" rx="5"/>
+      <use href="#g-authority" x="438" y="40" width="16" height="16"/><text class="tb" x="460" y="53">Accounts Manager</text>
+      <text class="ts" x="440" y="70">job accounts_manager · decides · never the one who submitted</text>
+      <line class="who" x1="495" y1="80" x2="495" y2="118"/></g>
+    <g data-c="action"><line class="act" x1="560" y1="185" x2="658" y2="185" marker-end="url(#a)"/>
+      <text class="t" x="609" y="175" text-anchor="middle" font-weight="600">Decide: approve</text></g>
+    <g data-c="authority"><rect class="auth" x="588" y="191" width="42" height="15" rx="7"/><use href="#g-authority" x="592" y="193" width="11" height="11"/><text class="tauth" x="606" y="202">AM</text></g>
+    <g data-c="stage"><rect class="stage" x="660" y="150" width="130" height="70" rx="6"/>
+      <use href="#g-stage" x="668" y="157" width="16" height="16"/><text class="tb" x="690" y="171">Approved</text>
+      <text class="ts" x="670" y="188">the AM said yes;</text><text class="ts" x="670" y="202">no vendor yet; may hold</text></g>
+    <g data-c="proof"><use href="#g-proof" x="670" y="229" width="12" height="12"/><text class="tproof" x="686" y="239">who decided, why</text></g>
+    <g data-c="action"><path class="act" d="M470 150 V112 H312 V128" marker-end="url(#a)"/>
+      <text class="ts" x="390" y="107" text-anchor="middle">Decide: send back · AM · reason</text></g>
+    <g data-c="event"><use href="#g-event" x="128" y="96" width="12" height="12"/><text class="tev" x="144" y="106">RequestSentBack.v1</text></g>
+    <g data-c="action"><line class="act" x1="520" y1="220" x2="520" y2="328" marker-end="url(#a)"/>
+      <text class="ts" x="527" y="292">Decide: reject · AM · reason</text></g>
+    <g data-c="event"><use href="#g-event" x="527" y="300" width="12" height="12"/><text class="tev" x="543" y="310">RequestRejected.v1</text></g>
+    <g data-c="stage"><rect class="end" x="430" y="330" width="130" height="38" rx="5"/>
+      <use href="#g-stage" x="438" y="341" width="16" height="16"/><text class="tb" x="460" y="354">Rejected</text><text class="ts" x="520" y="354">end</text></g>
+    <g data-c="query"><rect class="box-q" x="880" y="272" width="180" height="96" rx="5"/>
+      <use href="#g-query" x="888" y="279" width="15" height="15"/><text class="tq" x="908" y="291">Finance shows</text>
+      <text class="t" x="890" y="308">Requests to decide · AM</text>
+      <text class="t" x="890" y="323">One request in full · maker, AM</text>
+      <text class="t" x="890" y="338">My requests · AE, own rows</text>
+      <text class="t" x="890" y="353">Creditor categories · AE</text></g>
+  </g>
+
+  <!-- STEP 4 -->
+  <g data-s="4">
+    <g data-c="event"><line class="ev" x1="760" y1="220" x2="760" y2="408" marker-end="url(#ae)"/>
+      <use href="#g-event" x="768" y="250" width="13" height="13"/><text class="tev" x="785" y="261">VendorApproved.v1</text>
+      <text class="ts" x="768" y="275">carries the identity facts</text></g>
+    <g data-c="entity"><rect class="ent" x="650" y="398" width="200" height="92" rx="8"/>
+      <use href="#g-entity" x="654" y="386" width="14" height="14"/><text class="tent" x="672" y="397">entity: party · pc.party</text></g>
+    <g data-c="reaction"><rect class="box-re" x="660" y="410" width="160" height="70" rx="5"/>
+      <use href="#g-reaction" x="668" y="416" width="15" height="15"/><text class="tre" x="688" y="428">Register the supplier</text>
+      <text class="ts" x="670" y="446">party · GSTINs · Udyam · locations</text>
+      <text class="ts" x="670" y="460">· contact · standing, in one go</text></g>
+    <g data-c="gate"><use href="#g-gate" x="670" y="465" width="11" height="11"/><text class="tstop" x="685" y="474">DUPLICATE_PARTY → failed</text></g>
+    <g data-c="event"><line class="ev" x1="805" y1="410" x2="805" y2="194" marker-end="url(#ae)"/>
+      <use href="#g-event" x="812" y="292" width="13" height="13"/><text class="tev" x="829" y="303">SupplierRecorded.v1</text>
+      <text class="ts" x="812" y="317">starts Open</text></g>
+    <g data-c="action"><line class="act-re" x1="790" y1="185" x2="898" y2="185" marker-end="url(#a)"/>
+      <text class="t" x="844" y="175" text-anchor="middle" font-weight="600">Open the vendor</text></g>
+    <g data-c="reaction"><use href="#g-reaction" x="818" y="190" width="12" height="12"/><text class="ts" x="834" y="200">reaction · engine, on the</text><text class="ts" x="834" y="213">AM's approval</text></g>
+    <g data-c="gate"><use href="#g-gate" x="800" y="219" width="11" height="11"/><text class="tstop" x="815" y="228">supplier not recorded</text></g>
+    <g data-c="stage"><rect class="stage" x="900" y="150" width="160" height="70" rx="6"/>
+      <use href="#g-stage" x="908" y="157" width="16" height="16"/><text class="tb" x="930" y="171">Active</text>
+      <text class="ts" x="910" y="188">end stage of the request;</text><text class="ts" x="910" y="202">the account now exists →</text></g>
+    <g data-c="action"><line class="act-re" x1="1060" y1="185" x2="1088" y2="185" marker-end="url(#a)"/>
+      <text class="ts" x="1074" y="177" text-anchor="middle">creates</text></g>
+    <g data-c="entity"><rect class="ent" x="1082" y="118" width="206" height="150" rx="8"/>
+      <use href="#g-entity" x="1086" y="106" width="14" height="14"/><text class="tent" x="1104" y="117">entity: vendor account</text></g>
+    <g data-c="stage"><rect class="stage" x="1092" y="130" width="186" height="120" rx="6"/>
+      <use href="#g-stage" x="1100" y="137" width="16" height="16"/><text class="tb" x="1122" y="151">Vendor account · open</text>
+      <text class="ts" x="1102" y="170">table fin.vendor_account</text>
+      <text class="ts" x="1102" y="184">one per party per company</text>
+      <text class="ts" x="1102" y="198">extends pc.party by party_id</text>
+      <text class="ts" x="1102" y="214">category · credit days · currency</text>
+      <text class="ts" x="1102" y="228">MSME · TDS answers · FEMA · bank</text>
+      <text class="ts" x="1102" y="244">what bills will post to</text></g>
+    <g data-c="event"><use href="#g-event" x="910" y="235" width="13" height="13"/><text class="tev" x="927" y="246">VendorOpened.v1</text><text class="ts" x="927" y="259">task ends</text></g>
+    <g data-c="event"><use href="#g-event" x="860" y="418" width="12" height="12"/><text class="tev" x="876" y="428">SupplierRegistrationFailed.v1</text>
+      <text class="ts" x="876" y="443">written when Register stops;</text>
+      <text class="ts" x="876" y="457">Finance holds the request,</text>
+      <text class="ts" x="876" y="471">the AM rejects it or it is retried</text></g>
+  </g>
+
+  <!-- STEP 5 -->
+  <g data-s="5">
+    <g data-c="action"><line class="act" x1="175" y1="250" x2="175" y2="298" marker-end="url(#a)"/>
+      <text class="ts" x="120" y="352">Return the form</text><text class="ts" x="120" y="365">AE · reason</text></g>
+    <g data-c="event"><use href="#g-event" x="120" y="371" width="12" height="12"/><text class="tev" x="136" y="381">FormReturned.v1</text></g>
+    <g data-c="stage"><rect class="end" x="120" y="300" width="110" height="38" rx="5"/>
+      <use href="#g-stage" x="128" y="311" width="16" height="16"/><text class="tb" x="150" y="324">Returned</text></g>
+    <g data-c="action"><path class="act" d="M672 220 V350 H562" marker-end="url(#a)"/>
+      <text class="ts" x="680" y="366">Decide: reject a held request · AM · reason</text></g>
+  </g>
+</svg>
+</div>
+<figcaption id="cap"></figcaption>
+</figure>
+
+<div class="panel">
+  <div>
+    <div class="eyebrow" id="p-eyebrow"></div>
+    <h2 id="p-title"></h2>
+    <div class="visual" id="p-visual" hidden><svg id="p-visual-svg" viewBox="0 0 18 18"></svg><p id="p-visual-text"></p></div>
+    <p class="lead" id="p-lead"></p>
+    <ul class="blocks" id="p-blocks"></ul>
+  </div>
+  <div>
+    <h3 id="p-side-title"></h3>
+    <ol class="order" id="p-order"></ol>
+    <h3 id="p-not-title">Deliberately not here</h3>
+    <ul class="not" id="p-not"></ul>
+    <div class="notice" id="p-notice"></div>
+  </div>
+</div>
+
+<p class="muted" style="font-size:13px">Revised 2 Nov 2026 to the onboarding sheet and the "no rules" decision; it matches the database design (finance-engine/schema/vendor-request-er.html) and the model text (finance-engine/modeling/vendor_backend_in_ux2e.md, rev 3). Companions: the static <a href="https://claude.ai/artifact/BVNEKD4q73XMQ6T2F9mDsV">Vendor Backend Flow</a> and the <a href="https://claude.ai/artifact/VWtufbziWxw2RwaRQj4HZU">Backend Ownership Grid</a> are older and still show Compliance as a third owner and the pre-sheet field list.</p>
+</div>
+
+<script>
+(function () {
+  var CONCEPTS = [
+    { id: 'capability', name: 'Capability', glyph: 'g-capability', q: 'Which part of the engine keeps this information, and so is the only one allowed to change it?',
+      visual: 'A horizontal band. Everything drawn inside it is kept by that owner; an arrow that leaves the band is always an event.',
+      here: ['<b>Finance</b> keeps the vendor request with its B1 GST rows and FEMA block, its history, the vendor account and its bank accounts, credit terms, and its reference data: creditor categories, ledger headers, GST state codes. No settings or permissions table yet: the 45-day limit and the job map are constants in code.', '<b>Parties and Contacts</b> keeps the party: legal form, trade name, PAN, every GSTIN, Udyam, locations, contacts, supplier standing.', 'The People band is not a capability: it only says who presses.'],
+      code: ['A folder backend/capabilities/&lt;owner&gt;/ and a database schema per owner (fin, pc).', 'A column for an own fact; only an id column for another owner’s fact.'],
+      not: ['A Compliance owner: removed 2 Nov; Finance keeps the typed MSME and TDS answers.', 'Procurement: its facts arrive on paper, outside this backend.'],
+      notice: 'Rule of the picture: two bands, two crossings, both events.' },
+    { id: 'entity', name: 'Entity', glyph: 'g-entity', q: 'What thing does the work act on, and what stages can it be in?',
+      visual: 'A dotted frame around the thing and all of its stages. One entity = one table = one unit of transaction.',
+      here: ['<b>Vendor request</b> (Finance): stages Draft → Submitted → Approved → Active, ending also at Returned and Rejected. Parts: the B1 GST registrations, the FEMA block (all or nothing, only for a non-resident or import vendor), history.', '<b>Vendor account</b> (Finance): created at Active; one per party per company; an extension record keyed by pc.party’s id; its bank accounts are a part.', '<b>Party</b> (Parties and Contacts): identifiers are not unique by design; the PAN, every GSTIN and the Udyam become identifiers, one location per GSTIN state; gains the standing "supplier".'],
+      code: ['One model in models.py and one table; one child table per part.', 'A unique constraint for the never-twice key; an extension record keyed by the other owner’s id.'],
+      not: ['No check rows yet: that part arrives with the deferred verifications.'],
+      notice: 'The request and the vendor are two entities on purpose: the AM decides on the request; the vendor exists only after the engine opens it.' },
+    { id: 'stage', name: 'Stage', glyph: 'g-stage', q: 'Where is the entity right now, and what can move it on?',
+      visual: 'A rounded box with a heavy outline. Thin outline = an end stage. A stage is a resting state you can read off the row at any moment.',
+      here: ['<b>Draft</b> (start) · <b>Submitted</b> · <b>Approved</b> · <b>Active</b> (end) · <b>Returned</b> (end) · <b>Rejected</b> (end).', 'Vendor account: open → closed (closing belongs to T17).', 'Party: no stage; "supplier" is a standing fact.'],
+      code: ['A stage column with a check that allows only those values.', 'A constant MOVES per entity: from, action, to, allowed job, maker may decide.'],
+      not: ['A hold ("approved, waiting for review") is a reason fact inside Approved, not a stage (misfit 5).'],
+      notice: 'Stages are adjectives (submitted); actions are verbs (submit); events are news (RequestSubmitted). The word tells you which you are looking at.' },
+    { id: 'action', name: 'Action', glyph: 'g-action', q: 'What changes the facts? Only an action may.',
+      visual: 'An arrow between stages, labelled with the verb. Solid = a person runs it; dashed = the engine runs it on someone’s decision. A pill inside a stage is a working action: it changes content but not the stage.',
+      here: ['Working: <b>Save</b> (in Draft), <b>Hold request</b> (in Approved, run by a reaction).', 'Stage-moving by a person: <b>Submit</b>, <b>Return the form</b>, <b>Decide</b> (approve / reject / send back: one action, three outcomes).', 'Stage-moving by the engine: <b>Register the supplier</b> (Parties), <b>Open the vendor</b> (Finance).'],
+      code: ['A function in actions.py; a request schema; one route POST /&lt;owner&gt;/&lt;entities&gt;/{id}/&lt;action&gt;.', 'Body in a fixed order: authority, stage check, gates, change + proof, event, receipt. Change and event in one transaction.'],
+      not: ['A button that only opens or filters a page is a query, not an action.'],
+      notice: 'Submit is the action; RequestSubmitted is the event it writes. The action can be refused; the event cannot.' },
+    { id: 'gate', name: 'Gate', glyph: 'g-gate', q: 'What must be true before the action runs? Stop = refused; warn = refused until the caller accepts it by code.',
+      visual: 'A red dashed box under the arrow it guards. Octagon = stop. Triangle = warn. Each line names the code; the value comes from the entity, a check row, another owner’s query or a setting.',
+      here: ['On Submit, stops: <code>MISSING_REQUIRED_DETAILS</code> (the sheet’s mandatory fields plus the conditional ones that apply), the format codes for PAN, GSTIN, PIN, IFSC, Udyam and mobile, <code>GSTIN_WITHOUT_PAN</code>, <code>GST_STATE_CODE_UNKNOWN</code> (fin.gst_state_code), <code>GSTIN_REPEATED</code>, <code>PARTY_ALREADY_KNOWN</code> (Party lookup: the PAN or any GSTIN is already on a party), <code>ALREADY_OUR_VENDOR</code> (Party lookup: already our supplier), <code>VENDOR_NAME_IN_USE</code> (Finance’s own accounts), <code>MSME_CREDIT_DAYS_OVER_LIMIT</code> (45 days, a constant for now), <code>GOLD_SILVER_ADVANCE</code>, <code>BANK_ACCOUNT_IN_USE</code> (no source until Q1).', 'On Submit, warns: <code>NOT_GST_REGISTERED</code>, <code>MSME_UNKNOWN</code>, <code>MSME_VS_CATEGORY</code>, <code>NON_RESIDENT_STATE_GSTIN</code>, <code>B1_ROW_CANCELLED</code>, <code>BANK_PROOF_MISSING</code>, <code>ADVANCE_NEEDS_GUARANTEE</code>, <code>RESTRICTED_IMPORT</code>.', 'On Return and Decide: stop <code>NO_REASON_GIVEN</code>. On Register: stop <code>DUPLICATE_PARTY</code>, which Submit’s known-party stop should make unreachable; if it fires, the reaction writes SupplierRegistrationFailed and Finance holds the request for the AM. No review inside Parties (2 Nov).', 'On Open: stop <code>SUPPLIER_NOT_RECORDED</code>. (<code>LEDGER_HEADER_MISSING</code> withdrawn: no ledger is chosen at onboarding.)'],
+      code: ['Stop: refuse with the code, nothing written. Warn: refuse unless the caller lists the code as accepted; accepted codes go into history.', 'One test per gate.'],
+      not: ['"Maker may not decide" is not a gate: it reads the caller, so it lives in the stage-move list.', 'The four verification gates (GSTIN active, suspended, name differs, bank name unconfirmed): deferred.'],
+      notice: 'Gates sit on stage-moving actions. Save has none: a half-filled form may be saved.' },
+    { id: 'rule', name: 'Rule', glyph: 'g-rule', q: 'Which rule works out the value the screen fills in by itself, and who owns that rule?',
+      visual: 'A purple ƒ badge would mark a value the system works out. None is drawn: in this task no value on the request is worked out by the system.',
+      here: ['<b>None in this task</b> (decided 2 Nov 2026). The sheet’s worked-out values, the suggested ledger, GST treatment, TDS section and rate, tax head and evidence of import, belong to the bill and journal-entry task.', 'The form reads the state from a GSTIN’s first two digits as a typo guard on the screen; it is not stored and nothing acts on it.', 'The reference data those later rules will read already exists: fin.creditor_category (20 rows) and fin.gst_state_code (41 rows), seeded by migration.'],
+      code: ['Nothing in this task.', 'Later, with the bill task: a rule function; the result and rule_version as columns; the rule’s values in reference data.'],
+      not: ['Overriding a rule’s result with a reason (Q3): withdrawn with the rules.'],
+      notice: 'Rule is named in the procedure but has no block in "Blocks to code" (misfit 1); not needed until the bill task is modelled.' },
+    { id: 'event', name: 'Event', glyph: 'g-event', q: 'What happened that someone else needs to know?',
+      visual: 'A blue flag beside the name, and a blue arrow wherever the news crosses a band. Past tense, subject first. Written by exactly one action, in that action’s transaction.',
+      here: ['<b>RequestSubmitted</b> → the AM’s list (person). <b>RequestSentBack</b>, <b>RequestRejected</b>, <b>FormReturned</b> → the AE’s list; the last two end the request.', '<b>VendorApproved</b> → Parties registers the supplier (reaction needed to finish). <b>SupplierRecorded</b> → Finance opens the vendor (reaction needed to finish).', '<b>SupplierRegistrationFailed</b>, <b>VendorOpenFailed</b>: the "cannot finish" events; Finance holds the request and the AM rejects it or it is retried. <b>VendorOpened</b>: the task ends.'],
+      code: ['An event type in events.py with a version; an outbox row written in the same transaction as the action.', 'The dispatcher delivers it later; a handler may see it twice.'],
+      not: ['Save writes no event: nobody else needs to know a draft changed.', 'Nothing here posts to the books.'],
+      notice: 'Only an event crosses a band. If a design needs an arrow between owners that is not an event, something is writing into another owner’s facts.' },
+    { id: 'reaction', name: 'Reaction', glyph: 'g-reaction', q: 'What does another owner do, by itself, when it hears an event?',
+      visual: 'A green dashed box with a circular arrow. It calls only its own owner’s action, and it names whose decision it acts on and which event it writes when it cannot finish.',
+      here: ['<b>register_supplier</b> (Parties) on VendorApproved → Register the supplier; cannot finish → SupplierRegistrationFailed.', '<b>open_vendor</b> (Finance) on SupplierRecorded → Open the vendor; cannot finish → VendorOpenFailed.', '<b>hold_request</b> (Finance) on SupplierRegistrationFailed or VendorOpenFailed → Hold request. A held request ends only by the AM’s reject, or by a retry once the cause is fixed.'],
+      code: ['A handler in reactions.py registered with the dispatcher; a record of handled event ids; a test with the event arriving twice.'],
+      not: ['No screen and no endpoint: a reaction is never called from a role app.', 'The engine is not a person; it has no row in the People band.'],
+      notice: 'A reaction that stops has nobody to refuse to, so every stop it can hit becomes an event the request’s owner can see (misfit 3).' },
+    { id: 'query', name: 'Query', glyph: 'g-query', q: 'What can the people in this task read, without changing anything?',
+      visual: 'An amber box with an eye, and a dotted amber line wherever a gate or a rule reads it. Reading another owner’s data always goes through that owner’s query, never its tables.',
+      here: ['Parties: <b>Party lookup</b> by GSTIN or PAN (AE, AM; read by Submit’s gates).', 'Finance: <b>Requests to decide</b> (AM, incl. held), <b>One request in full</b> (maker and AM; bank number masked for others), <b>My requests</b> (AE, own rows; needed only because send back exists), <b>Creditor categories</b> (the dropdown list).', 'Not in this task: a Vendor list for other roles. Nothing here reads it; the purchase-order task adds it. A gate checking Finance’s own accounts (vendor name in use) reads the table directly, no query needed.'],
+      code: ['A function in queries.py; a response schema; one route GET /&lt;owner&gt;/&lt;query-name&gt;; filters and hidden fields per job; indexes on what it filters.'],
+      not: ['Reads other tasks need later (Procurement’s view of the vendor) are found when those tasks are run.'],
+      notice: 'The "Already our vendor" message while typing is a query, not a gate. The gate is what refuses at Submit, using the same query.' },
+    { id: 'authority', name: 'Authority', glyph: 'g-authority', q: 'Who may do or see this, in which job?',
+      visual: 'A magenta person tag on the actor and on each arrow a person runs. It is the first check inside every action and query; a hidden button enforces nothing.',
+      here: ['<b>accounts_executive</b>: Save, Submit, Return the form; My requests; Party lookup.', '<b>accounts_manager</b>: Decide; Requests to decide; One request in full; never the one who submitted (<code>MAKER_CANNOT_DECIDE</code>).', 'Engine-run steps carry no job; they carry the decision they act on: the AM’s approval, by event id.'],
+      code: ['A map of job to allowed actions and queries, a constant in code for now, checked first in every action and query. The caller’s job comes from the identity layer, outside this design.', 'The stage-move list carries the allowed job and "maker may not decide".'],
+      not: ['finance_controller arrives with T17 (bank change).'],
+      notice: 'The Authority block has no attribute for an engine-run step; "acts on: decision and event id" is a proposed one (misfit 4).' },
+    { id: 'proof', name: 'Proof', glyph: 'g-proof', q: 'What do we keep so anyone can later see who did what, when and why?',
+      visual: 'A grey ledger glyph under the stage where a row is written. One history table per entity, append-only, written by every action.',
+      here: ['Draft: who typed what, when. Submit: who submitted, which warnings were accepted.', 'Decide: who decided, when, outcome, reason. Every later automatic step points back to this row.', 'Register and Open: which approval they acted on (decided_by, event id).'],
+      code: ['fin.vendor_request_history, pc.record_history: always added, never modelled per task.'],
+      not: ['Nothing is ever edited or deleted in history.'],
+      notice: 'Proof is what makes "the engine did it" answerable: it says on whose decision.' }
+  ];
+
+  var STEPS = [
+    { id: 'overview', short: 'Overview', title: 'The whole task at once',
+      cap: 'Overview: the whole backend at once. Two arrows cross between owners, and both are events.',
+      lead: 'Four steps take a paper form to an active vendor. Two are pressed by people (Submit, Decide), two are run by the engine (Register, Open) on the Accounts Manager’s approval. Nothing posts to the books.',
+      blocks: [['capability', 'Two owners: Finance keeps the request, the account, the credit terms and the settings it needs; Parties and Contacts keeps the party.'], ['entity', 'The vendor request, with stages Draft → Submitted → Approved → Active, ending also at Returned or Rejected.'], ['event', 'A band boundary is crossed only by an event. No owner writes into another owner’s facts.']],
+      sideTitle: 'Read it as the task runs',
+      order: ['AE types the onboarding sheet, sections A to G, into Draft; nothing is worked out for them.', 'Submit runs the gates; the request is Submitted.', 'AM decides: approve, reject, or send back.', 'Engine registers the supplier in Parties, then opens the vendor in Finance.'],
+      not: ['GST portal check and bank verification: future enhancements.', 'The sheet’s suggestions (ledger, GST treatment, TDS section, tax head): the bill task, not onboarding (2 Nov).', 'A Compliance owner: removed; Finance keeps the typed MSME and TDS answers.', 'Udyam check, bank change, payment hold, Finance Controller: T17.'],
+      notice: 'Press a concept to see every place it appears, or a step to see only what it adds.' },
+    { id: 'step-1', short: 'Type and save', title: 'Step 1 · The Accounts Executive types the paper form in',
+      cap: 'Step 1: a request exists, in Draft. Only the person who typed it has seen it.',
+      lead: 'Nothing has happened in the business sense. A form exists in the system in its first stage, saved from the first keystroke. It is a request about a vendor, not a vendor.',
+      blocks: [['capability', '<b>Finance</b> is the one keeper of the request.'], ['entity', 'The <b>vendor request</b>, <code>fin.vendor_request</code>, with its parts: the B1 GST registration rows, the FEMA block (only for a non-resident or import vendor), its history.'], ['stage', '<b>Draft</b>, the start stage.'], ['action', '<b>Save</b>, working: changes content, leaves the stage alone, no gates, no event.'], ['authority', 'Job <code>accounts_executive</code> may Save; checked first.'], ['proof', 'A history row: who, when, what changed.']],
+      sideTitle: 'Inside Save', order: ['Authority', 'Stage: is it Draft?', 'Write the facts, the B1 rows, the FEMA block', 'History row'],
+      not: ['No gate: a half-filled form can be saved.', 'No event: nobody else needs to know.', 'No value worked out by the system: the ledger, GST and TDS treatment come with the bill task.', 'No verification of GSTIN or bank (deferred).'],
+      notice: 'Name, PAN, GSTIN and bank details are typed as the vendor’s claim; Parties owns the identity only once the supplier is registered (misfit 2).' },
+    { id: 'step-2', short: 'Submit', title: 'Step 2 · Submit: the first stage move',
+      cap: 'Step 2: Submit runs the gates, then stage, history and event change together or not at all.',
+      lead: 'One press. Either nothing changes, or three things change in one transaction: the stage, a history row, and an event in the outbox.',
+      blocks: [['action', '<b>Submit</b>: Draft → Submitted. Where the rules sit.'], ['authority', '<code>draft · submit · submitted · accounts_executive</code>; the maker may submit.'], ['gate', 'Stops: the sheet’s required fields (mandatory plus the conditional ones that apply), formats, GSTIN without the PAN, unknown state code, repeated GSTIN, party already known (the PAN or any GSTIN on an existing party), already our vendor, vendor name in use, MSME over 45 days, gold / silver advance; bank account in use listed but unenforced. Warns: not GST registered, MSME unknown, MSME against category, non-resident with a state GSTIN, cancelled B1 row, bank proof missing, advance needs a guarantee, restricted import.'], ['query', '<b>Party lookup</b> from Parties feeds the two party gates; the vendor-name gate reads Finance’s own accounts; the 45-day limit is a constant for now; the state codes are Finance reference data.'], ['event', '<code>RequestSubmitted.v1</code>, same transaction as the stage change. What follows: a person, the AM.'], ['proof', 'Who submitted, when, which warnings were accepted.']],
+      sideTitle: 'Inside Submit, always this order', order: ['Authority', 'Stage move: is it Draft?', 'Gates: stops, then warns against the accepted list', 'Change + proof', 'Event', 'Receipt'],
+      not: ['No "not the same person" rule here.', 'No check that the GSTIN or bank account is real.', 'No reaction: the request waits for a person.'],
+      notice: 'Submit is an action; RequestSubmitted is the event it writes. The action can be refused, the event cannot.' },
+    { id: 'step-3', short: 'Decide', title: 'Step 3 · Decide: one action, three outcomes',
+      cap: 'Step 3: the Accounts Manager approves, rejects or sends back; only approve starts automatic work.',
+      lead: 'The AM reads the request in full and presses one of three. One function, three branches, one place for the gates, the authority and the proof.',
+      blocks: [['query', '<b>Requests to decide</b>, <b>One request in full</b> (full bank number only to the maker and the AM).'], ['action', '<b>Decide</b>: approve → Approved, reject → Rejected, send back → Draft.'], ['authority', '<code>accounts_manager</code>, and <b>never the submitter</b> (<code>MAKER_CANNOT_DECIDE</code>).'], ['gate', '<code>NO_REASON_GIVEN</code> on reject and send back.'], ['event', '<code>VendorApproved</code> (reaction follows), <code>RequestRejected</code> (ends), <code>RequestSentBack</code> (the AE picks it up).'], ['proof', 'Who decided, when, outcome, reason: the row every later automatic step points to.']],
+      sideTitle: 'Inside Decide', order: ['Authority: accounts_manager, not the submitter', 'Stage move: is it Submitted?', 'Gate: reason present on reject and send back', 'Change + proof: stage by branch', 'Event: the one matching the branch', 'Receipt'],
+      not: ['No editing by the AM: send back with a reason instead.', 'No second approver in this task.', 'No vendor yet: Approved means the AM said yes.'],
+      notice: '"Maker may not decide" is a property of the move, not the person; it lives in the stage-move list, not the gate table.' },
+    { id: 'step-4', short: 'Register and open', title: 'Step 4 · The engine finishes what the AM decided',
+      cap: 'Step 4: two reactions, one per band, each triggered by the other’s event. The vendor exists.',
+      lead: 'No person presses anything. Parties reacts to VendorApproved and registers the supplier; Finance reacts to SupplierRecorded and opens the vendor account. The request ends Active.',
+      blocks: [['event', '<code>VendorApproved.v1</code> carries the identity facts across the band.'], ['reaction', '<b>register_supplier</b> (Parties) calls Register the supplier: the party and its legal form, the trade name, the PAN, every GSTIN and the Udyam as identifiers, one location per GSTIN state (via fin.gst_state_code), the contact, the supplier standing; all rows in one transaction, so nothing partial is ever left behind.'], ['gate', '<code>DUPLICATE_PARTY</code>: never a second party. It should not fire, because Submit already stops a known PAN or GSTIN; if it does, there is no caller to refuse to, so the reaction writes SupplierRegistrationFailed and Finance holds the request for the AM.'], ['event', '<code>SupplierRecorded.v1</code> with the party id and the ids written.'], ['reaction', '<b>open_vendor</b> (Finance) calls Open the vendor: Approved → Active; creates the vendor account, an extension of pc.party, with the category code, resident status, currency, credit days, the MSME and TDS answers, the FEMA block, and the bank row with bank name, branch and proof flag. No ledger, treatment or section is copied.'], ['gate', '<code>SUPPLIER_NOT_RECORDED</code> → VendorOpenFailed → hold.'], ['event', '<code>VendorOpened.v1</code>: the task ends.'], ['authority', 'Both reactions act on the AM’s approval (event id), not on a job.']],
+      sideTitle: 'Inside a reaction', order: ['Already handled this event id? Then stop.', 'Call my own owner’s action (authority, stage, gates, change, proof, event as usual).', 'If the action stopped, write the "cannot finish" event instead.'],
+      not: ['No screen, no endpoint.', 'Nothing in the books: a sub-ledger account is created, no entry posted.'],
+      notice: 'The band between Finance and Parties is crossed exactly twice, and both crossings are events.' },
+    { id: 'step-5', short: 'Endings and holds', title: 'Step 5 · The ways it does not become a vendor',
+      cap: 'Step 5: every ending is a person’s decision; a hold keeps an approved request visible until the AM acts.',
+      lead: 'Every way the task can end has a follow-up. Returned and Rejected end the request; send back loops it; a hold keeps it in Approved with a reason the AM can see, after a registration or open failure.',
+      blocks: [['action', '<b>Return the form</b>: Draft → Returned, by the AE, with a reason. The AE declining the paper.'], ['event', '<code>FormReturned.v1</code>; the paper goes back by hand.'], ['action', '<b>Decide: reject</b> → Rejected; <b>send back</b> → Draft (a loop, not an ending).'], ['action', '<b>Hold request</b>, working, run by a reaction: records the failure reason on the Approved request.'], ['action', '<b>Decide: reject</b> on a held request: Approved → Rejected, by the AM, with a reason. The engine never closes a request by itself.'], ['stage', 'Start: Draft. Ends: Active, Returned, Rejected.']],
+      sideTitle: 'The done-check', order: ['Every stage move has exactly one action and one job.', 'Every event has a follow-up: a person, a reaction, or "the request ends".', 'Every automatic step names the decision it acts on.'],
+      not: ['Deactivating or blocking an active vendor: T17.', 'Reminders and deadlines: deferred by the procedure.'],
+      notice: 'Open with the role owner: in this scope the AM approves typed, unverified GSTIN and bank details; role file T7 expects verification evidence.' }
+  ];
+
+  var fig = document.getElementById('fig');
+  var stepGroups = Array.prototype.slice.call(fig.querySelectorAll('g[data-s]'));
+  var conceptEls = Array.prototype.slice.call(fig.querySelectorAll('[data-c]'));
+  var chipsEl = document.getElementById('chips');
+  var stepsEl = document.getElementById('steps');
+  var mode = 'step', current = 0, concept = null;
+  var byId = {}; CONCEPTS.forEach(function (c) { byId[c.id] = c; });
+
+  function glyph(id, size) {
+    return '<svg viewBox="0 0 18 18" width="' + size + '" height="' + size + '" aria-hidden="true"><use href="#' + id + '"/></svg>';
+  }
+  CONCEPTS.forEach(function (c) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.setAttribute('aria-pressed', 'false'); b.style.setProperty('--chip', 'var(--c-' + c.id + ')');
+    b.innerHTML = glyph(c.glyph, 18) + c.name;
+    b.addEventListener('click', function () { showConcept(c.id, true); });
+    chipsEl.appendChild(b);
+  });
+  STEPS.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = '<span class="n">' + i + '</span>' + s.short;
+    b.addEventListener('click', function () { showStep(i, true); });
+    stepsEl.appendChild(b);
+  });
+
+  function kchip(id) {
+    var c = byId[id];
+    return '<span class="k" style="color:var(--c-' + id + ');border-color:var(--c-' + id + ')">' + glyph(c.glyph, 13) + c.name + '</span>';
+  }
+  function setList(id, items) { document.getElementById(id).innerHTML = items.map(function (o) { return '<li>' + o + '</li>'; }).join(''); }
+
+  function showStep(i, push) {
+    mode = 'step'; current = Math.max(0, Math.min(STEPS.length - 1, i)); concept = null;
+    fig.classList.remove('cmode'); fig.classList.toggle('smode', current !== 0);
+    conceptEls.forEach(function (el) { el.classList.remove('c-now'); });
+    stepGroups.forEach(function (g) {
+      var n = parseInt(g.getAttribute('data-s'), 10);
+      g.classList.remove('now', 'seen', 'future');
+      if (current === 0 || n === 0) return;
+      g.classList.add(n === current ? 'now' : (n < current ? 'seen' : 'future'));
+    });
+    var s = STEPS[current];
+    document.getElementById('cap').textContent = s.cap;
+    document.getElementById('p-eyebrow').textContent = current === 0 ? 'Overview' : 'Step ' + current + ' of 5';
+    document.getElementById('p-title').textContent = s.title;
+    document.getElementById('p-visual').hidden = true;
+    document.getElementById('p-lead').textContent = s.lead;
+    document.getElementById('p-blocks').innerHTML = s.blocks.map(function (b) { return '<li>' + kchip(b[0]) + '<span>' + b[1] + '</span></li>'; }).join('');
+    document.getElementById('p-side-title').textContent = s.sideTitle;
+    setList('p-order', s.order);
+    document.getElementById('p-not-title').textContent = 'Deliberately not here';
+    setList('p-not', s.not);
+    document.getElementById('p-notice').textContent = s.notice;
+    Array.prototype.forEach.call(stepsEl.children, function (b, j) { if (j === current) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current'); });
+    Array.prototype.forEach.call(chipsEl.children, function (b) { b.setAttribute('aria-pressed', 'false'); });
+    document.getElementById('prev').disabled = current === 0;
+    document.getElementById('next').disabled = current === STEPS.length - 1;
+    if (push) { try { location.hash = s.id; } catch (e) {} }
+  }
+
+  function showConcept(id, push) {
+    var c = byId[id]; if (!c) return;
+    mode = 'concept'; concept = id;
+    fig.classList.remove('smode'); fig.classList.add('cmode');
+    stepGroups.forEach(function (g) { g.classList.remove('now', 'seen', 'future'); });
+    conceptEls.forEach(function (el) { el.classList.toggle('c-now', el.getAttribute('data-c') === id); });
+    document.getElementById('cap').textContent = c.name + ': every place it appears in this task is lit; everything else is faint.';
+    document.getElementById('p-eyebrow').textContent = 'Concept';
+    document.getElementById('p-title').textContent = c.name;
+    var v = document.getElementById('p-visual'); v.hidden = false;
+    document.getElementById('p-visual-svg').innerHTML = '<use href="#' + c.glyph + '"/>';
+    document.getElementById('p-visual-text').textContent = c.visual;
+    document.getElementById('p-lead').textContent = c.q;
+    document.getElementById('p-blocks').innerHTML = c.here.map(function (h) { return '<li>' + kchip(id) + '<span>' + h + '</span></li>'; }).join('');
+    document.getElementById('p-side-title').textContent = 'What it becomes in code';
+    setList('p-order', c.code);
+    document.getElementById('p-not-title').textContent = 'Not in this scope';
+    setList('p-not', c.not);
+    document.getElementById('p-notice').textContent = c.notice;
+    Array.prototype.forEach.call(chipsEl.children, function (b, j) { b.setAttribute('aria-pressed', CONCEPTS[j].id === id ? 'true' : 'false'); });
+    Array.prototype.forEach.call(stepsEl.children, function (b) { b.removeAttribute('aria-current'); });
+    document.getElementById('prev').disabled = true; document.getElementById('next').disabled = true;
+    if (push) { try { location.hash = 'concept-' + id; } catch (e) {} }
+  }
+
+  function fromHash() {
+    var h = (location.hash || '').replace('#', '');
+    if (h.indexOf('concept-') === 0 && byId[h.slice(8)]) { showConcept(h.slice(8), false); return; }
+    var i = 0; STEPS.forEach(function (s, j) { if (s.id === h) i = j; });
+    showStep(i, false);
+  }
+  document.getElementById('prev').addEventListener('click', function () { showStep(current - 1, true); });
+  document.getElementById('next').addEventListener('click', function () { showStep(current + 1, true); });
+  document.addEventListener('keydown', function (e) {
+    if (e.target && /input|textarea|button/i.test(e.target.tagName) && e.target.tagName !== 'BUTTON') return;
+    if (mode !== 'step') return;
+    if (e.key === 'ArrowRight') showStep(current + 1, true);
+    if (e.key === 'ArrowLeft') showStep(current - 1, true);
+  });
+  window.addEventListener('hashchange', fromHash);
+  fromHash();
+})();
+</script>
+
+</body></html>

@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proposal 1 · The operated company</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Serif:wght@500;600&amp;display=swap">
+<style>
+  :root{
+    --ink:#16233A; --paper:#FFFFFF; --mist:#F1F4F7; --green:#0E7C6B; --red:#B4531F;
+    --mute:#6B7683; --rule:#D5DCE3;
+    --ser:"IBM Plex Serif",Georgia,serif;
+    --san:"IBM Plex Sans",-apple-system,"Segoe UI",sans-serif;
+    --mon:"IBM Plex Mono",ui-monospace,monospace;
+    color-scheme: light;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0B1017;font-family:var(--san);overflow:hidden}
+  #fit{position:fixed;inset:0;display:grid;place-items:center}
+  .stage{width:1280px;height:720px;position:relative;background:var(--paper);overflow:hidden}
+  .slide{position:absolute;inset:0;display:none;flex-direction:column;padding:56px 70px 60px}
+  .slide.on{display:flex}
+  .kick{font-family:var(--mon);font-size:13px;letter-spacing:.18em;color:var(--mute);text-transform:uppercase}
+  h1{font-family:var(--ser);font-size:50px;font-weight:600;color:var(--ink);line-height:1.1}
+  h2{font-family:var(--ser);font-size:36px;font-weight:600;color:var(--ink);margin-top:8px}
+  .body{flex:1;display:flex;flex-direction:column;justify-content:center;gap:22px;margin-top:20px}
+  p{font-size:19px;line-height:1.5;color:var(--ink)}
+  .note{font-size:16px;color:var(--mute)}
+  code{font-family:var(--mon);font-size:.9em}
+  .tname{font-family:var(--mon);font-size:15px;font-weight:600;color:var(--ink);margin-bottom:6px}
+  table{border-collapse:collapse;width:100%}
+  th{font-family:var(--mon);font-size:12px;letter-spacing:.08em;text-transform:uppercase;text-align:left;
+    padding:9px 14px;background:var(--ink);color:#fff;font-weight:500}
+  td{padding:10px 14px;border:1px solid var(--rule);font-size:17px;color:var(--ink)}
+  td.v{font-family:var(--mon);font-size:15px}
+  tr.add td{background:#EAF5F2} tr.del td{background:#FBF0E8;color:var(--mute);text-decoration:line-through}
+  .flow{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+  .step{background:var(--mist);border-radius:6px;padding:18px 16px;display:flex;flex-direction:column;gap:8px}
+  .step .n{font-family:var(--mon);font-size:12px;color:var(--mute);letter-spacing:.1em}
+  .step b{font-family:var(--ser);font-size:20px;color:var(--ink);line-height:1.2}
+  .step p{font-size:15.5px;color:var(--mute)}
+  .step.hi{background:#EAF5F2;outline:2px solid var(--green)}
+  .box{border-radius:6px;padding:16px 22px;font-size:18px;line-height:1.5;color:var(--ink);background:var(--mist)}
+  .box.g{background:#EAF5F2} .box.r{background:#FBF0E8}
+  .ok{color:var(--green);font-weight:600} .no{color:var(--red);font-weight:600}
+  .foot{position:absolute;left:70px;right:70px;bottom:24px;display:flex;justify-content:space-between;
+    font-family:var(--mon);font-size:11px;letter-spacing:.1em;color:#A6B0BB}
+  #nav{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:12px;align-items:center}
+  #nav button{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);color:#D6DEE8;
+    font-family:var(--mon);font-size:13px;padding:6px 14px;border-radius:3px;cursor:pointer}
+  #count{font-family:var(--mon);font-size:12px;color:#8593A5;min-width:56px;text-align:center}
+  @media print{
+    body{overflow:visible;background:#fff} #fit{position:static;display:block} #nav{display:none}
+    .stage{width:100%;height:auto;transform:none!important}
+    .slide{display:flex!important;position:relative;height:190mm;page-break-after:always}
+  }
+</style>
+</head>
+<body>
+<div id="fit"><div class="stage" id="stage">
+
+<!-- 1 -->
+<section class="slide">
+  <div class="kick">Proposal 1 · M2 Tally migration · 15 Oct 2026</div>
+  <div class="body">
+    <h1>Who creates the operated company?</h1>
+    <p><b>Today:</b> the Tally connector creates the company (<code>legal_entity</code>) and its PAN/GSTIN from the Tally book.</p>
+    <div class="box g"><b>Proposal:</b> AIBD collects the company's details at onboarding, the client accepts them, and they are stored once in <b>Parties &amp; Contacts</b>.
+      Accounting refers to the company by its <code>party_id</code>. The Tally connector only <b>checks</b> each book against it.</div>
+    <p class="note">Company names, PANs and GSTINs here are examples, not real data.</p>
+  </div>
+  <div class="foot"><span>Proposal 1 · The operated company</span><span class="pg"></span></div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="kick">The flow</div>
+  <h2>Five steps</h2>
+  <div class="body">
+    <div class="flow">
+      <div class="step"><span class="n">1</span><b>Workspace created</b><p>Control Plane</p></div>
+      <div class="step"><span class="n">2</span><b>AIBD collects details</b><p>From incorporation, PAN and GST certificates</p></div>
+      <div class="step hi"><span class="n">3 · STORING STARTS</span><b>Client accepts</b><p>Company saved in P&amp;C and gets its <code>party_id</code></p></div>
+      <div class="step"><span class="n">4</span><b>Accounting set up</b><p><code>legal_entity</code> created with that <code>party_id</code></p></div>
+      <div class="step"><span class="n">5</span><b>Tally book migrated</b><p>Connector checks PAN/GSTIN against P&amp;C</p></div>
+    </div>
+    <div class="box r"><b>Rule:</b> Accounting and the connector cannot start until step 3 is done — there is no <code>party_id</code> to refer to before that.</div>
+  </div>
+  <div class="foot"><span>Proposal 1 · The operated company</span><span class="pg"></span></div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="kick">Step 3 · what P&amp;C stores</div>
+  <h2>The company and its identifiers</h2>
+  <div class="body">
+    <div>
+      <div class="tname">pc.party</div>
+      <table>
+        <tr><th>party_id</th><th>party_kind</th><th>legal_name</th><th>legal_form_code</th></tr>
+        <tr><td class="v">P-1</td><td class="v">organization</td><td>Kaveri Precision Works Private Limited</td><td class="v">IN_PVT_LTD</td></tr>
+      </table>
+    </div>
+    <div>
+      <div class="tname">pc.party_identifier</div>
+      <table>
+        <tr><th>party_id</th><th>scheme_code</th><th>scope</th><th>value</th><th>standing</th></tr>
+        <tr><td class="v">P-1</td><td class="v">IN_PAN</td><td class="v">IN</td><td class="v">AAACK0000K</td><td class="v">—</td></tr>
+        <tr><td class="v">P-1</td><td class="v">IN_GST</td><td class="v">IN-KA (Karnataka)</td><td class="v">29AAACK0000K1Z5</td><td class="v">active</td></tr>
+        <tr><td class="v">P-1</td><td class="v">IN_GST</td><td class="v">IN-AS (Assam)</td><td class="v">18AAACK0000K1Z3</td><td class="v">active</td></tr>
+      </table>
+    </div>
+    <div>
+      <div class="tname">pc.operated_party</div>
+      <table>
+        <tr><th>operated_party_id</th><th>party_id</th><th>meaning</th></tr>
+        <tr><td class="v">OP-1</td><td class="v">P-1</td><td>This workspace runs this company</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="foot"><span>Proposal 1 · The operated company</span><span class="pg"></span></div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="kick">Step 4 · how Accounting refers to it</div>
+  <h2>accounting.legal_entity</h2>
+  <div class="body">
+    <table>
+      <tr><th>column</th><th>change</th><th>example</th></tr>
+      <tr><td class="v">id</td><td>keep — branch, fiscal_year, account still point here</td><td class="v">LE-1</td></tr>
+      <tr class="add"><td class="v">party_id</td><td><b>add</b> — the company in P&amp;C</td><td class="v">P-1</td></tr>
+      <tr><td class="v">functional_currency</td><td>keep</td><td class="v">INR</td></tr>
+      <tr class="del"><td class="v">name</td><td>remove — read from P&amp;C</td><td class="v">—</td></tr>
+    </table>
+    <div class="box"><code>accounting.legal_entity_identifier</code> is <b>no longer needed</b> — PAN and GSTIN are read from P&amp;C using <code>party_id</code>.</div>
+    <div class="box"><code>party_id</code> is stored as a plain value and read through the P&amp;C API — <b>no database join</b> between the two products.</div>
+  </div>
+  <div class="foot"><span>Proposal 1 · The operated company</span><span class="pg"></span></div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="kick">Step 5 · the Tally connector</div>
+  <h2>Check the book, never create the company</h2>
+  <div class="body">
+    <table>
+      <tr><th style="width:50%">The connector finds</th><th>It does</th></tr>
+      <tr><td>Company not yet in P&amp;C</td><td><span class="no">Stop</span> — wait for step 3</td></tr>
+      <tr><td>Book's PAN/GSTIN match P&amp;C</td><td><span class="ok">Migrate</span></td></tr>
+      <tr><td>Book's PAN matches a different company, or none</td><td><span class="no">Stop</span> — wrong book</td></tr>
+      <tr><td>Book has a GSTIN that P&amp;C does not</td><td>Send it to P&amp;C for the client to accept</td></tr>
+    </table>
+  </div>
+  <div class="foot"><span>Proposal 1 · The operated company</span><span class="pg"></span></div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="kick">To build · open points</div>
+  <h2>What this needs</h2>
+  <div class="body">
+    <table>
+      <tr><th style="width:26%">Who</th><th>What</th></tr>
+      <tr><td><b>P&amp;C</b></td><td>A way to receive the company's details, a client acceptance step, and a read API for Accounting</td></tr>
+      <tr><td><b>Accounting</b></td><td>Add <code>party_id</code>, drop <code>name</code> and <code>legal_entity_identifier</code>; connector checks instead of creating</td></tr>
+      <tr><td><b>AIBD</b></td><td>Send collected details to P&amp;C — done by hand until AIBD exists</td></tr>
+    </table>
+    <div class="box r"><b>Open:</b> who on the client side may accept · clients who never go through AIBD · TAN and CIN are not yet in P&amp;C</div>
+  </div>
+  <div class="foot"><span>Proposal 1 · The operated company</span><span class="pg"></span></div>
+</section>
+
+</div></div>
+
+<div id="nav">
+  <button id="prev" aria-label="Previous slide">&larr;</button>
+  <span id="count"></span>
+  <button id="next" aria-label="Next slide">&rarr;</button>
+</div>
+
+<script>
+(function(){
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var i = 0, stage = document.getElementById('stage'), count = document.getElementById('count');
+  slides.forEach(function(s, k){ var pg = s.querySelector('.pg'); if (pg) pg.textContent = (k + 1) + ' / ' + slides.length; });
+  function show(n){
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach(function(s, k){ s.classList.toggle('on', k === i); });
+    count.textContent = (i + 1) + ' / ' + slides.length;
+  }
+  function fit(){ stage.style.transform = 'scale(' + Math.min(window.innerWidth / 1280, (window.innerHeight - 54) / 720) + ')'; }
+  document.getElementById('next').onclick = function(){ show(i + 1); };
+  document.getElementById('prev').onclick = function(){ show(i - 1); };
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { show(i + 1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { show(i - 1); e.preventDefault(); }
+  });
+  window.addEventListener('resize', fit);
+  fit(); show(0);
+})();
+</script>
+</body>
+</html>

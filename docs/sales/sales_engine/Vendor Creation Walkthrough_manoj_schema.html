@@ -1,0 +1,375 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Vendor Creation Walkthrough</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+/* Layout: one reading column for the story; each table is a filled register that scrolls inside itself. Schema colours match the ER page. */
+:root {
+  --bg: #f1f4f8; --surface: #ffffff; --surface-2: #e8edf4; --fg: #17202e; --muted: #566274; --line: #cfd7e2;
+  --fin: #4f46e5; --fin-soft: #e7e6fc; --pc: #0f766e; --pc-soft: #d8f0ed; --acct: #b45309; --acct-soft: #f8e7d3;
+  --ref: #52607a; --ref-soft: #e1e6ee; --hit: #ffd84d; --hit-fg: #241c00; --on-accent: #ffffff;
+  --display: "Archivo", "Segoe UI", Arial, sans-serif; --body: "Public Sans", "Segoe UI", Arial, sans-serif; --mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11161f; --surface: #1a212d; --surface-2: #232c3a; --fg: #e9edf3; --muted: #a2adbd; --line: #36414f;
+  --fin: #a5a2ff; --fin-soft: #2a2858; --pc: #4fd1c5; --pc-soft: #123c3a; --acct: #f2a65a; --acct-soft: #46301a;
+  --ref: #aab6c8; --ref-soft: #2b3442; --hit: #ffd84d; --hit-fg: #241c00; --on-accent: #10151d; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #11161f; --surface: #1a212d; --surface-2: #232c3a; --fg: #e9edf3; --muted: #a2adbd; --line: #36414f;
+  --fin: #a5a2ff; --fin-soft: #2a2858; --pc: #4fd1c5; --pc-soft: #123c3a; --acct: #f2a65a; --acct-soft: #46301a;
+  --ref: #aab6c8; --ref-soft: #2b3442; --hit: #ffd84d; --hit-fg: #241c00; --on-accent: #10151d; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 400 16px/1.6 var(--body); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 0 96px; }
+main { max-width: 1120px; margin: 0 auto; display: grid; gap: 56px; min-width: 0; }
+main > * { min-width: 0; }
+header { padding-block: 44px 0; display: grid; gap: 14px; }
+h1, h2, h3 { font-family: var(--display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(32px, 5.5vw, 52px); font-weight: 800; letter-spacing: -.02em; max-width: 18ch; }
+h2 { font-size: clamp(23px, 3.2vw, 30px); font-weight: 700; }
+h3 { font-size: 17px; font-weight: 700; }
+p { margin: 0; max-width: 72ch; }
+.lead { font-size: 18px; max-width: 66ch; }
+.muted { color: var(--muted); }
+code, .mono { font-family: var(--mono); font-size: .86em; overflow-wrap: anywhere; }
+section { display: grid; gap: 20px; min-width: 0; }
+section > * { min-width: 0; }
+.tallies { display: flex; flex-wrap: wrap; gap: 10px 28px; padding-top: 6px; }
+.tally b { font: 800 26px/1 var(--display); margin-right: 6px; font-variant-numeric: tabular-nums; }
+.cast { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0; border-block: 1px solid var(--line); }
+.cast > div { padding: 12px 18px 12px 0; }
+.cast dt { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.cast dd { margin: 2px 0 0; font-weight: 600; }
+.note { background: var(--surface-2); border-radius: 6px; padding: 14px 16px; display: grid; gap: 8px; }
+.note ul, .plain { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 76ch; }
+.step-head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: start; }
+.num { font: 800 15px/1 var(--display); width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--fg); color: var(--bg); font-variant-numeric: tabular-nums; }
+.step-head div { display: grid; gap: 6px; min-width: 0; }
+.who { font-size: 14px; color: var(--muted); }
+.txn { border: 2px solid var(--acct); border-radius: 10px; padding: 18px; display: grid; gap: 48px; min-width: 0; }
+.txn > * { min-width: 0; }
+.txn-label { font-weight: 700; color: var(--acct); margin-bottom: -28px; }
+.tables { display: grid; gap: 22px; min-width: 0; }
+.tables > * { min-width: 0; }
+.t { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; min-width: 0; }
+.t-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.t-name { font: 700 14px var(--mono); overflow-wrap: anywhere; }
+.t.fin .t-name { color: var(--fin); } .t.pc .t-name { color: var(--pc); } .t.acct .t-name { color: var(--acct); } .t.ref .t-name { color: var(--ref); }
+.t-count { font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 99px; background: var(--surface-2); white-space: nowrap; }
+.t-desc { flex-basis: 100%; font-size: 14px; color: var(--muted); }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; font: 500 12px var(--mono); color: var(--muted); padding: 8px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: bottom; }
+td { padding: 8px 14px; border-bottom: 1px solid var(--line); font-family: var(--mono); white-space: nowrap; vertical-align: top; font-variant-numeric: tabular-nums; }
+tbody tr:last-child td { border-bottom: 0; }
+td.null { color: var(--muted); font-style: italic; }
+td.changed { background: var(--acct-soft); }
+.rec td { white-space: normal; overflow-wrap: anywhere; }
+.rec td:first-child { width: 31%; color: var(--muted); }
+.rec td:last-child { font-family: var(--body); font-size: 13px; color: var(--muted); }
+.rec .sec td { background: var(--surface-2); font: 600 12px var(--body); color: var(--fg); padding-block: 5px; }
+.chip { font: 500 12.5px var(--mono); border: 1px solid var(--line); background: transparent; color: var(--fg); border-radius: 4px; padding: 0 6px; cursor: pointer; white-space: nowrap; line-height: 1.6; }
+.chip.key { background: var(--fg); border-color: var(--fg); color: var(--bg); font-weight: 700; }
+.chip:hover { border-color: var(--fin); }
+.chip:focus-visible, button:focus-visible { outline: 3px solid var(--fin); outline-offset: 2px; }
+.chip.hit, .chip.key.hit { background: var(--hit); border-color: var(--hit); color: var(--hit-fg); }
+.key-demo { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 14px; }
+.link-list { display: grid; gap: 10px; }
+.link { display: grid; gap: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; }
+.link .path { font: 500 13px var(--mono); overflow-wrap: anywhere; }
+.link .why { font-size: 14px; color: var(--muted); }
+.map-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.map { display: block; width: 100%; min-width: 860px; height: auto; }
+.map text { font-family: var(--mono); font-size: 12.5px; fill: var(--fg); }
+.map .lane { font-family: var(--display); font-size: 14px; font-weight: 700; }
+.map .lb { font-size: 10.5px; fill: var(--muted); }
+.map rect { stroke-width: 1.5; rx: 5; }
+.map .bfin { fill: var(--fin-soft); stroke: var(--fin); } .map .bpc { fill: var(--pc-soft); stroke: var(--pc); } .map .bacct { fill: var(--acct-soft); stroke: var(--acct); } .map .bref { fill: var(--ref-soft); stroke: var(--ref); }
+.map path { fill: none; stroke-width: 1.5; }
+.map .lf { stroke: var(--fin); } .map .lp { stroke: var(--pc); } .map .la { stroke: var(--acct); } .map .lr { stroke: var(--ref); }
+.chain { display: grid; gap: 12px; }
+.q { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; display: grid; gap: 6px; }
+.q b { font-family: var(--display); }
+.q .path { font: 500 13px/2 var(--mono); overflow-wrap: anywhere; }
+.q .ans { font-size: 15px; }
+#bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--fg); color: var(--bg); padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+#bar .in { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: start; }
+#bar .txt { font-size: 14px; min-width: 0; max-height: 30vh; overflow-y: auto; }
+#bar code { font-size: 12.5px; }
+#bar b { font-family: var(--mono); color: var(--hit); }
+#bar button { font: 600 14px var(--body); background: transparent; color: var(--bg); border: 1px solid var(--bg); border-radius: 4px; padding: 3px 11px; cursor: pointer; }
+@media (max-width: 600px) { .txn { padding: 12px; } .rec td:first-child { width: 42%; } }
+@media (prefers-reduced-motion: no-preference) { .chip { transition: background-color .12s, border-color .12s; } }
+</style>
+
+<main>
+<header>
+  <h1>How a vendor gets created</h1>
+  <p class="lead">Follow one vendor, ABC Technologies, from the Accounts Executive's request to the created vendor. Every table is filled with the same sample data, so you can see exactly how the rows connect.</p>
+  <div class="tallies">
+    <span class="tally"><b>34</b>new rows at approval</span>
+    <span class="tally"><b>15</b>tables receive them</span>
+    <span class="tally"><b>1</b>transaction</span>
+    <span class="tally"><b>0</b>accounting entries posted</span>
+  </div>
+</header>
+
+<section>
+  <dl class="cast">
+    <div><dt>Vendor</dt><dd>ABC Technologies, IT hardware supplier</dd></div>
+    <div><dt>Our company</dt><dd>Kaveri Foods</dd></div>
+    <div><dt>Raises the request</dt><dd>Ravi, Accounts Executive</dd></div>
+    <div><dt>Approves it</dt><dd>Meena, Accounts Manager</dd></div>
+  </dl>
+  <div class="note">
+    <h3>How to read this page</h3>
+    <div class="key-demo rich">
+      <span>{CA-1:key} this row's own ID</span>
+      <span>{P-1} an ID that points to another row</span>
+    </div>
+    <p><b>Click any ID to light it up everywhere on the page.</b> A bar at the bottom lists where it's created and where it's used. That's the fastest way to see a relationship.</p>
+    <ul>
+      <li>All names, numbers and codes are made up. Real IDs are long UUIDs; short ones are easier to follow.</li>
+      <li>To keep tables readable, the page leaves out <code>workspace_id</code>, <code>recorded_at</code>, <code>updated_at</code> and empty <code>since</code> / <code>until</code> dates. The history rows' <code>row_snapshot</code> holds the full row as JSON.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <h2>The map</h2>
+  <p>Three entities own the tables. Reference data is used by them and belongs to none of them. Each line points from the row holding the ID to the row it refers to.</p>
+  <div class="map-wrap">
+  <svg class="map" viewBox="0 0 1050 590" role="img" aria-label="Tables grouped by entity. The vendor request links to the creditor account, and the creditor account links to the party, its standing and its identifiers. Reference tables sit below.">
+    <text class="lane" x="20" y="24">VendorRequest</text><text class="lane" x="400" y="24">CreditorAccount</text><text class="lane" x="780" y="24">Party</text><text class="lane" x="20" y="345">Reference data: no entity</text>
+    <path class="lf" d="M260 89H400"/><path class="lf" d="M140 70V40H760V131H780"/>
+    <path class="la" d="M640 84H700V126H780"/><path class="la" d="M640 96H730V287H780"/><path class="la" d="M640 209H680V235H780"/>
+    <path class="la" d="M640 110H660V399H640"/><path class="la" d="M640 103H652V489H640"/>
+    <path class="lr" d="M520 418V470"/><path class="lr" d="M400 480H386V498H400"/>
+    <path class="lf" d="M260 98H330V399H400"/><path class="lf" d="M260 105H300V399H260"/>
+    <path class="la" d="M400 149H385V89H400M385 149V209H400M385 209V269H400"/><path class="lf" d="M20 149H8V89H20"/>
+    <path class="lp" d="M1020 79H1038V131H1020M1038 183H1020M1038 235H1020M1038 287H1020M1038 339H1020M1038 443H1020M1038 131V443"/>
+    <path class="lp" d="M780 443H766V391H780M766 495H780M766 547H780M766 391V547"/>
+    <text class="lb" x="270" y="82">opened_from / account ID</text><text class="lb" x="420" y="34">party_id, set at approval</text><text class="lb" x="662" y="78">party_id</text><text class="lb" x="662" y="228">party_identifier_id</text>
+    <g><rect class="bfin" x="20" y="70" width="240" height="38"/><text x="32" y="93">vendor_request</text><rect class="bfin" x="20" y="130" width="240" height="38"/><text x="32" y="153">vendor_request_history</text>
+    <rect class="bacct" x="400" y="70" width="240" height="38"/><text x="412" y="93">creditor_account</text><rect class="bacct" x="400" y="130" width="240" height="38"/><text x="412" y="153">creditor_bank_account</text><rect class="bacct" x="400" y="190" width="240" height="38"/><text x="412" y="213">creditor_tax_registration</text><rect class="bacct" x="400" y="250" width="240" height="38"/><text x="412" y="273">creditor_account_history</text>
+    <rect class="bpc" x="780" y="60" width="240" height="38"/><text x="792" y="83">private_anchor</text><rect class="bpc" x="780" y="112" width="240" height="38"/><text x="792" y="135">party</text><rect class="bpc" x="780" y="164" width="240" height="38"/><text x="792" y="187">party_trade_name</text><rect class="bpc" x="780" y="216" width="240" height="38"/><text x="792" y="239">party_identifier</text><rect class="bpc" x="780" y="268" width="240" height="38"/><text x="792" y="291">party_standing</text><rect class="bpc" x="780" y="320" width="240" height="38"/><text x="792" y="343">business_location</text><rect class="bpc" x="780" y="372" width="240" height="38"/><text x="792" y="395">contact</text><rect class="bpc" x="780" y="424" width="240" height="38"/><text x="792" y="447">contact_party_association</text><rect class="bpc" x="780" y="476" width="240" height="38"/><text x="792" y="499">contact_point</text><rect class="bpc" x="780" y="528" width="240" height="38"/><text x="792" y="551">record_history</text>
+    <rect class="bref" x="20" y="380" width="240" height="38"/><text x="32" y="403">pc.operated_party</text><rect class="bref" x="20" y="470" width="240" height="38"/><text x="32" y="493">fin.gst_state_code</text><rect class="bref" x="400" y="380" width="240" height="38"/><text x="412" y="403">creditor_category</text><rect class="bref" x="400" y="470" width="240" height="38"/><text x="412" y="493">ledger_account</text></g>
+  </svg>
+  </div>
+  <p class="muted">Lines from <code>private_anchor</code> to <code>contact</code>, and from <code>creditor_account</code> to <code>operated_party</code>, are left off the drawing to keep it readable. They're in the full list near the end.</p>
+</section>
+
+<section>
+  <div class="step-head"><span class="num" aria-hidden="true">0</span><div><h2>Before ABC exists</h2><span class="who">Set up in advance. Vendor creation only reads these rows.</span></div></div>
+  <p class="rich">Ledger {2101} is the control account. The groups above it give the hierarchy through <code>parent_account_code</code>. Category {GOODS_MSME} names that ledger, so nobody chooses a ledger on the form. The group names here are examples until Finance supplies the real ones.</p>
+  <div class="tables" data-tables="fin.ledger_account fin.creditor_category fin.gst_state_code pc.operated_party pc.contact-staff"></div>
+  <p class="muted rich">Our company is also a party ({P-OUR}), and Ravi and Meena are existing contacts, because the request has to point to them.</p>
+</section>
+
+<section>
+  <div class="step-head"><span class="num" aria-hidden="true">1</span><div><h2>Ravi fills in and submits the form</h2><span class="who">Accounts Executive · <code>SaveVendorRequest</code>, then <code>SubmitVendorRequest</code></span></div></div>
+  <p>Procurement hands Ravi the paper form, and Ravi types it in. If the paper can't be used, Ravi returns it with a reason: the stage becomes <code>returned</code>, <code>return_reason</code> is filled in, and no decision happens. In this example Ravi submits it.</p>
+  <p>Everything Ravi types stays on the request. No vendor, party or accounting row exists yet. The right-hand column shows where each value will go if Meena approves.</p>
+  <div class="tables" data-tables="fin.vendor_request fin.vendor_request_history-1"></div>
+  <p class="rich">The extra GSTINs are a list inside one column, <code>additional_gst_registrations</code>, because they're saved and read with the form and nothing refers to them separately. Each version of the request gets its own history row, which points to {R-101}.</p>
+</section>
+
+<section>
+  <div class="step-head"><span class="num" aria-hidden="true">2</span><div><h2>Meena decides</h2><span class="who">Accounts Manager · <code>DecideVendorRequest</code></span></div></div>
+  <div class="t ref"><div class="scroll"><table>
+    <thead><tr><th>decision</th><th>stage becomes</th><th>what else happens</th></tr></thead>
+    <tbody><tr><td>approve</td><td>active</td><td style="white-space:normal;font-family:var(--body)">Steps 3, 4 and 5 run. Followed below.</td></tr>
+    <tr><td>reject</td><td>rejected</td><td style="white-space:normal;font-family:var(--body)">A reason is required. The request stays as a record and no vendor is created.</td></tr>
+    <tr><td>send_back</td><td>draft</td><td style="white-space:normal;font-family:var(--body)">A reason is required. Ravi corrects the form and submits it again.</td></tr></tbody>
+  </table></div></div>
+  <p>The person who submitted a request can't also decide it, because of the rule <code>decided_by &lt;&gt; submitted_by</code>. Here Ravi submitted and Meena decides, so it passes.</p>
+</section>
+
+<div class="txn">
+  <p class="txn-label">One transaction: steps 3, 4 and 5 are saved together. If anything fails, nothing is saved and the request stays submitted.</p>
+
+  <section>
+    <div class="step-head"><span class="num" aria-hidden="true">3</span><div><h2>Parties records who ABC is</h2><span class="who"><code>RegisterSupplier</code> · 28 rows in 10 tables</span></div></div>
+    <p>Parties owns identity: the legal name, tax numbers, addresses and the people we deal with. The action returns ABC's IDs to the next step.</p>
+    <div class="tables" data-tables="pc.private_anchor pc.party pc.party_trade_name pc.party_identifier pc.business_location pc.party_standing pc.contact pc.contact_party_association pc.contact_point pc.record_history"></div>
+    <div class="note rich">
+      <h3>How these rows connect</h3>
+      <ul>
+        <li><b>Shared ID:</b> {P-1} and {C-1} are created in <code>private_anchor</code> first, then the same value becomes the <code>party_id</code> and the <code>contact_id</code>.</li>
+        <li><b>Many rows for one party:</b> {ID-1} to {ID-4}, {LOC-1}, {LOC-2} and {NM-1} all point to {P-1}.</li>
+        <li><b>A vendor of which company:</b> {PS-1} says ABC ({P-1}) supplies our company ({OP-1}), under the name {NM-1}.</li>
+        <li><b>Contact person:</b> a person contact has no party row, so {AS-1} links Asha ({C-1}) to ABC ({P-1}). Asha's mobile and email are {CP-1} and {CP-2}.</li>
+        <li><b>No foreign key from identifiers to locations:</b> {ID-3} and {LOC-2} are connected only by having the same state, <code>IN-TN</code>. Reference table <code>gst_state_code</code> is how GST code 33 became <code>IN-TN</code>.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="step-head"><span class="num" aria-hidden="true">4</span><div><h2>Accounting opens ABC's account</h2><span class="who"><code>OpenCreditorAccount</code> · 5 rows in 4 tables</span></div></div>
+    <p class="rich">This is the subledger row. The action reads category {GOODS_MSME}, finds ledger {2101} and copies it onto the account. The chart of accounts gets no new row.</p>
+    <div class="tables" data-tables="fin.creditor_account fin.creditor_bank_account fin.creditor_tax_registration fin.creditor_account_history"></div>
+    <div class="note rich">
+      <h3>How these rows connect</h3>
+      <ul>
+        <li><b>Into Parties:</b> {CA-1} points to {P-1}, {OP-1} and {PS-1}. Finance stores the ID and leaves the identity in Parties.</li>
+        <li><b>Into the chart:</b> {CA-1} points to ledger {2101}, so ABC rolls up under Sundry Creditors.</li>
+        <li><b>Bank:</b> {CB-1} belongs to {CA-1}. The account number from the request is copied here.</li>
+        <li><b>GST:</b> {TR-1} and {TR-2} each link {CA-1} to a GSTIN row. The number stays in Parties, while Finance keeps the type and which one is the default.</li>
+        <li><b>Only once:</b> <code>UNIQUE (workspace_id, operated_party_id, party_id)</code> stops ABC getting a second account in the same company.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="step-head"><span class="num" aria-hidden="true">5</span><div><h2>The request is finished</h2><span class="who">Back in <code>DecideVendorRequest</code> · 1 new history row and 1 updated request</span></div></div>
+    <p>The request now points to what it created. Highlighted cells are the columns that changed.</p>
+    <div class="tables" data-tables="fin.vendor_request-after fin.vendor_request_history-3"></div>
+    <p class="rich">{R-101} and {CA-1} now point to each other. <code>creditor_account.opened_from_request_id</code> is a declared foreign key, and <code>vendor_request.creditor_account_id</code> is a plain pointer, because two foreign keys would make a circle.</p>
+  </section>
+</div>
+
+<section>
+  <h2>What was and wasn't created</h2>
+  <div class="tables"><div class="t ref"><div class="scroll"><table>
+    <thead><tr><th>Group</th><th>Table</th><th>New rows</th></tr></thead>
+    <tbody id="tally-body"></tbody>
+  </table></div></div></div>
+  <p class="rich"><b>Not created:</b> no ledger row, no journal entry and no balance column. ABC's balance is zero until its first bill. That later bill line will carry ledger {2101} and vendor {CA-1}; the bill task will design that table.</p>
+</section>
+
+<section>
+  <h2>Follow the links</h2>
+  <p>This is how the system would answer real questions using only the rows above.</p>
+  <div class="chain rich">
+    <div class="q"><b>Which bank account do we pay ABC at?</b><span class="path">{P-1} + {OP-1} → creditor_account {CA-1} → creditor_bank_account {CB-1}</span><span class="ans">HDFC Bank, account 50100123456789</span></div>
+    <div class="q"><b>Which GSTIN goes on ABC's bills by default?</b><span class="path">{CA-1} → creditor_tax_registration {TR-1} (is_default) → party_identifier {ID-2}</span><span class="ans">29AABCA1234F1Z5</span></div>
+    <div class="q"><b>Where does ABC sit in the chart of accounts?</b><span class="path">{CA-1} → {2101} → {2110} → {2100} → {2000}</span><span class="ans">Liabilities > Current Liabilities > Trade Payables > Sundry Creditors – Goods (MSME) > ABC Technologies</span></div>
+    <div class="q"><b>Who do we call at ABC?</b><span class="path">{P-1} → contact_party_association {AS-1} → {C-1} → contact_point {CP-1}</span><span class="ans">Asha Rao, 9876543210</span></div>
+    <div class="q"><b>Who raised and approved this vendor?</b><span class="path">{CA-1} → opened_from_request_id {R-101} → created_by {C-RAVI}, decided_by {C-MEENA}</span><span class="ans">Ravi raised it and Meena approved it</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Every relationship</h2>
+  <p>Read each line as: the row on the left holds the ID of the row on the right. "Many to one" means many left-hand rows can point to one right-hand row.</p>
+  <div class="tables"><div class="t ref"><div class="scroll"><table>
+    <thead><tr><th>From</th><th>To</th><th>Type</th><th>In this example</th></tr></thead>
+    <tbody id="rel-body"></tbody>
+  </table></div></div></div>
+</section>
+
+<section class="note" style="padding:18px">
+  <h3>What to keep in mind</h3>
+  <ul>
+    <li><b>Seed rows still missing:</b> <code>supplier</code>, <code>IN_UDYAM</code> and <code>vendor_contact</code> are used above, but they still need seeding in Parties (gaps 2, 4 and 5).</li>
+    <li><b>Assumed values:</b> <code>record_type</code> names in <code>pc.record_history</code>, other than <code>party</code>, are my assumption. The per-company chart question (Q19) is also still open and could change the ledger key.</li>
+    <li><b>Outbox:</b> the model writes events to it at approval. It's left out here because the gaps document marks it as not needed for this flow.</li>
+  </ul>
+</section>
+</main>
+
+<div id="bar" hidden><div class="in"><div class="txt" id="bar-txt" aria-live="polite"></div><button id="bar-x" type="button">Clear</button></div></div>
+
+<script>
+const N = null, GST1 = '29AABCA1234F1Z5', GST2 = '33AABCA1234F1Z3', AT = '4 Nov, 15:40';
+const TABLES = {
+  'fin.ledger_account': { cls:'ref', desc:'The chart of accounts: groups and ledgers in one table.', key:['account_code'], cols:['account_code','display_name','kind','parent_account_code','is_group','is_control'], rows:[
+    ['2000','Liabilities','liability',N,'true','false'],['2100','Current Liabilities','liability','2000','true','false'],['2110','Trade Payables','liability','2100','true','false'],['2101','Sundry Creditors – Goods (MSME)','liability','2110','false','true']] },
+  'fin.creditor_category': { cls:'ref', desc:'One of the 20 seeded categories. Columns for GST, TDS and MSME treatment are left out; the bill task reads those.', key:['creditor_category_code'], cols:['creditor_category_code','display_name','ledger_account_code','related_party','international','sort_order'], rows:[
+    ['GOODS_MSME','Creditors for Goods – MSME','2101','false','false','1']] },
+  'fin.gst_state_code': { cls:'ref', desc:'Two of the 41 seeded rows. Turns the first two digits of a GSTIN into a state code.', cols:['gst_code','iso_3166_2','display_name','legacy'], rows:[['29','IN-KA','Karnataka','false'],['33','IN-TN','Tamil Nadu','false']] },
+  'pc.operated_party': { cls:'ref', desc:'Says which party is our company.', key:['operated_party_id'], cols:['operated_party_id','party_id'], rows:[['OP-1','P-OUR']] },
+  'pc.contact-staff': { name:'pc.contact', cls:'ref', desc:'People who act in the system must already be contacts.', key:['contact_id'], cols:['contact_id','contact_kind','display_name','accountable_party_id','destination_role'], rows:[['C-RAVI','person','Ravi',N,N],['C-MEENA','person','Meena',N,N]] },
+  'fin.vendor_request_history-1': { name:'fin.vendor_request_history', cls:'fin', count:'2 rows', desc:'One row per version of the request.', key:['history_id'], cols:['history_id','request_id','version_number','operation','performer_contact_id','reason'], rows:[['RH-1','R-101','1','create','C-RAVI',N],['RH-2','R-101','2','submit','C-RAVI',N]] },
+  'fin.vendor_request_history-3': { name:'fin.vendor_request_history', cls:'fin', count:'+1 row', desc:'Meena\'s decision is recorded as version 3.', key:['history_id'], cols:['history_id','request_id','version_number','operation','performer_contact_id','reason'], rows:[['RH-3','R-101','3','decide','C-MEENA',N]] },
+  'pc.private_anchor': { cls:'pc', count:'+2 rows', desc:'A hidden identity row behind every party and contact. Finance never reads it.', key:['anchor_id'], cols:['anchor_id','anchor_kind'], rows:[['P-1','organization'],['C-1','person']] },
+  'pc.party': { cls:'pc', count:'+1 row', desc:'The vendor as a legal person.', key:['party_id'], cols:['party_id','party_kind','legal_name','legal_form_code'], rows:[['P-1','organization','ABC Technologies Private Limited','IN_PVT_LTD']] },
+  'pc.party_trade_name': { cls:'pc', count:'+1 row', desc:'The name ABC does business under.', key:['trade_name_id'], cols:['trade_name_id','party_id','name'], rows:[['NM-1','P-1','ABC Technologies']] },
+  'pc.party_identifier': { cls:'pc', count:'+4 rows', desc:'PAN, each GSTIN and the Udyam number.', key:['party_identifier_id'], cols:['party_identifier_id','party_id','scheme_code','jurisdiction_scope_code','value','standing_code'], rows:[['ID-1','P-1','IN_PAN','IN','AABCA1234F',N],['ID-2','P-1','IN_GST','IN-KA',GST1,'active'],['ID-3','P-1','IN_GST','IN-TN',GST2,'active'],['ID-4','P-1','IN_UDYAM','IN','UDYAM-KA-03-0012345',N]] },
+  'pc.business_location': { cls:'pc', count:'+2 rows', desc:'The registered address, plus one row for the other GST state.', key:['business_location_id'], cols:['business_location_id','party_id','display_name','address_lines','locality','administrative_area_code','postal_code','country_code'], rows:[['LOC-1','P-1','Registered office','{14 MG Road}','Bengaluru','IN-KA','560001','IN'],['LOC-2','P-1','Coimbatore depot',N,N,'IN-TN',N,'IN']] },
+  'pc.party_standing': { cls:'pc', count:'+1 row', desc:'Says ABC is a supplier of our company.', key:['party_standing_id'], cols:['party_standing_id','party_id','operated_party_id','standing_type_code','trade_name_id'], rows:[['PS-1','P-1','OP-1','supplier','NM-1']] },
+  'pc.contact': { cls:'pc', count:'+1 row', desc:'The contact person.', key:['contact_id'], cols:['contact_id','contact_kind','display_name','accountable_party_id','destination_role'], rows:[['C-1','person','Asha Rao',N,N]] },
+  'pc.contact_party_association': { cls:'pc', count:'+1 row', desc:'Links the contact person to the vendor.', key:['association_id'], cols:['association_id','contact_id','party_id','capacity_code'], rows:[['AS-1','C-1','P-1','vendor_contact']] },
+  'pc.contact_point': { cls:'pc', count:'+2 rows', desc:'How to reach the contact.', key:['contact_point_id'], cols:['contact_point_id','contact_id','channel_kind','route_value','business_location_id'], rows:[['CP-1','C-1','phone','9876543210',N],['CP-2','C-1','email','asha@abctech.example',N]] },
+  'pc.record_history': { cls:'pc', count:'+13 rows', desc:'One history row for each Parties record written, except the anchors. All are version 1, operation create.', key:['history_id'], cols:['history_id','record_type','record_id','version_number','operation','performer_contact_id'], rows:[
+    ['party','P-1'],['party_trade_name','NM-1'],['party_identifier','ID-1'],['party_identifier','ID-2'],['party_identifier','ID-3'],['party_identifier','ID-4'],['business_location','LOC-1'],['business_location','LOC-2'],['contact','C-1'],['contact_party_association','AS-1'],['contact_point','CP-1'],['contact_point','CP-2'],['party_standing','PS-1']].map((r,i)=>['HS-'+(i+1),r[0],r[1],'1','create','C-MEENA']) },
+  'fin.creditor_account': { cls:'acct', count:'+1 row', desc:'The subledger account. Most values are copied from the approved request.', key:['creditor_account_id'], record:[
+    ['§','The links'],['creditor_account_id','CA-1'],['operated_party_id','OP-1','Which of our companies pays them'],['party_id','P-1','Who the vendor is'],['party_standing_id','PS-1','The supplier standing'],['opened_from_request_id','R-101','The request that created it'],
+    ['§','The subledger account'],['account_name','ABC Technologies','From vendor_name'],['control_ledger_code','2101','Copied from the category'],['creditor_category_code','GOODS_MSME','From the request'],['posting_blocked','false','Default'],['payment_blocked','false','Default'],
+    ['§','Posting defaults, copied from the request'],['tds_applicability_confirmed','yes'],['lower_deduction_certificate','false'],['resident_status','resident'],['credit_days','30'],['currency_code','INR'],['remarks','IT hardware supplier'],['msme_status','yes'],['msme_class','small'],
+    ['§','Cross-border: empty, because ABC is a resident vendor'],['vendor_country_code',N],['nature_of_import',N],['import_category',N],['ad_bank_name',N],['advance_terms_agreed',N],['contract_reference',N],['a2_purpose_code',N],
+    ['§','Life of the account'],['opened_at',AT],['closed_at',N,'Empty means the account is open']], head:['column','value','note'] },
+  'fin.creditor_bank_account': { cls:'acct', count:'+1 row', desc:'Where we pay ABC. Unverified until bank verification is built.', key:['creditor_bank_account_id'], cols:['creditor_bank_account_id','creditor_account_id','account_no','ifsc','beneficiary_name','bank_name','branch','proof_attached','is_primary','verified_at','verification_ref'], rows:[['CB-1','CA-1','50100123456789','HDFC0001234','ABC Technologies Private Limited','HDFC Bank','MG Road','true','true',N,N]] },
+  'fin.creditor_tax_registration': { cls:'acct', count:'+2 rows', desc:'How the account treats each GSTIN.', key:['creditor_tax_registration_id'], cols:['creditor_tax_registration_id','creditor_account_id','party_identifier_id','registration_type','is_default','remarks'], rows:[['TR-1','CA-1','ID-2','regular','true',N],['TR-2','CA-1','ID-3','regular','false','Coimbatore depot']] },
+  'fin.creditor_account_history': { cls:'acct', count:'+1 row', desc:'The account\'s first version.', key:['history_id'], cols:['history_id','creditor_account_id','version_number','operation','performer_contact_id','reason'], rows:[['AH-1','CA-1','1','open','C-MEENA',N]] },
+  'fin.vendor_request': { cls:'fin', count:'1 row', desc:'Stage after Ravi submits: submitted. This row keeps what was typed, even after approval.', key:['request_id'], head:['column','value','goes to, if approved'], record:[
+    ['§','Identity of the request'],['request_id','R-101'],['operated_party_id','OP-1','Stays here; also on creditor_account'],['request_kind','create'],['stage','submitted'],
+    ['§','A. Basic details'],['vendor_name','ABC Technologies','pc.party_trade_name, creditor_account.account_name'],['legal_name','ABC Technologies Private Limited','pc.party'],['legal_form_code','IN_PVT_LTD','pc.party'],['creditor_category_code','GOODS_MSME','creditor_account; also gives the ledger'],['pan','AABCA1234F','pc.party_identifier ID-1'],['resident_status','resident','creditor_account'],
+    ['§','B. GST and tax'],['gst_registered','true','Decides whether GST rows are written'],['gst_registration_count','1','One extra GSTIN, in the list below'],['gstin',GST1,'pc.party_identifier ID-2'],['additional_gst_registrations','[{"gstin": "'+GST2+'", "registration_type": "regular", "is_primary": false, "registration_status": "active", "remarks": "Coimbatore depot"}]','ID-3 for the number, LOC-2 for the state, TR-2 for the type and remark'],['gst_registration_type','regular','creditor_tax_registration TR-1'],['tds_applicability_confirmed','yes','creditor_account'],['lower_deduction_certificate','false','creditor_account'],['msme_status','yes','creditor_account'],['udyam_number','UDYAM-KA-03-0012345','pc.party_identifier ID-4'],['msme_class','small','creditor_account'],
+    ['§','C. Address and contact'],['address_lines','{14 MG Road}','pc.business_location LOC-1'],['locality','Bengaluru','LOC-1'],['administrative_area_code','IN-KA','LOC-1'],['postal_code','560001','LOC-1'],['country_code','IN','LOC-1'],['contact_person','Asha Rao','pc.contact C-1'],['contact_phone','9876543210','pc.contact_point CP-1'],['contact_email','asha@abctech.example','pc.contact_point CP-2'],
+    ['§','D. Bank details, unverified'],['bank_beneficiary','ABC Technologies Private Limited','creditor_bank_account CB-1'],['bank_name','HDFC Bank','CB-1'],['bank_branch','MG Road','CB-1'],['bank_account_no','50100123456789','CB-1'],['bank_ifsc','HDFC0001234','CB-1'],['bank_proof_attached','true','CB-1'],
+    ['§','E and F. Commercial terms and remarks'],['credit_days','30','creditor_account'],['currency_code','INR','creditor_account'],['remarks','IT hardware supplier','creditor_account'],
+    ['§','G. Cross-border: empty for a resident vendor'],['vendor_country_code',N,'creditor_account'],['nature_of_import',N,'creditor_account'],['import_category',N,'creditor_account'],['ad_bank_name',N,'creditor_account'],['advance_terms_agreed',N,'creditor_account'],['contract_reference',N,'creditor_account'],['a2_purpose_code',N,'creditor_account'],
+    ['§','Lifecycle: written only by the actions'],['created_by','C-RAVI'],['submitted_by','C-RAVI'],['submitted_at','4 Nov, 10:20'],['accepted_warnings','{}','None were raised'],['decided_by',N,'Set in step 5'],['decided_at',N,'Set in step 5'],['decision',N,'Set in step 5'],['decision_reason',N,'Only needed for reject or send back'],['return_reason',N,'Only needed if Ravi returns the paper'],['party_id',N,'Set in step 5'],['creditor_account_id',N,'Set in step 5']] },
+  'fin.vendor_request-after': { name:'fin.vendor_request', cls:'fin', count:'R-101 updated', desc:'Only the changed columns are shown.', cols:['request_id','stage','decided_by','decided_at','decision','party_id','creditor_account_id'], rows:[['R-101','active','C-MEENA',AT,'approve','P-1','CA-1']], changed:[1,2,3,4,5,6] },
+};
+const IDS = new Set(['2000','2100','2110','2101','GOODS_MSME','OP-1','P-OUR','P-1','C-1','C-RAVI','C-MEENA','R-101','RH-1','RH-2','RH-3','CA-1','CB-1','TR-1','TR-2','AH-1','ID-1','ID-2','ID-3','ID-4','LOC-1','LOC-2','NM-1','PS-1','AS-1','CP-1','CP-2']);
+for (let i = 1; i <= 13; i++) IDS.add('HS-' + i);
+const usage = {};
+const esc = s => String(s).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const chip = (v, key) => `<button type="button" class="chip${key ? ' key' : ''}" data-id="${esc(v)}" aria-label="Show where ${esc(v)} is used">${esc(v)}</button>`;
+function note(v, tname, col, isKey) {
+  const list = usage[v] || (usage[v] = { made: [], used: [] }), place = `${tname}.${col}`, bucket = isKey ? list.made : list.used;
+  if (!bucket.includes(place)) bucket.push(place);
+}
+function cell(v, t, name, col, extra = '') {
+  if (v === N) return `<td class="null${extra}">NULL</td>`;
+  if (IDS.has(v)) { const k = (t.key || []).includes(col); note(v, name, col, k); return `<td class="${extra.trim()}">${chip(v, k)}</td>`; }
+  return `<td class="${extra.trim()}">${esc(v)}</td>`;
+}
+function render(id) {
+  const t = TABLES[id], name = t.name || id;
+  let body;
+  if (t.record) {
+    body = `<table class="rec"><thead><tr>${t.head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>` + t.record.map(r =>
+      r[0] === '§' ? `<tr class="sec"><td colspan="3">${esc(r[1])}</td></tr>` : `<tr><td>${esc(r[0])}</td>${cell(r[1], t, name, r[0])}<td>${r[2] ? esc(r[2]) : ''}</td></tr>`).join('') + '</tbody></table>';
+  } else {
+    body = `<table><thead><tr>${t.cols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>` + t.rows.map(r =>
+      `<tr>${r.map((v, i) => cell(v, t, name, t.cols[i], (t.changed || []).includes(i) ? ' changed' : '')).join('')}</tr>`).join('') + '</tbody></table>';
+  }
+  return `<div class="t ${t.cls}"><div class="t-head"><span class="t-name">${esc(name)}</span>${t.count ? `<span class="t-count">${esc(t.count)}</span>` : ''}${t.desc ? `<span class="t-desc">${esc(t.desc)}</span>` : ''}</div><div class="scroll">${body}</div></div>`;
+}
+document.querySelectorAll('[data-tables]').forEach(el => { el.innerHTML = el.dataset.tables.split(' ').map(render).join(''); });
+
+const TALLY = [['Parties','pc.private_anchor',2],['Parties','pc.party',1],['Parties','pc.party_trade_name',1],['Parties','pc.party_identifier',4],['Parties','pc.business_location',2],['Parties','pc.party_standing',1],['Parties','pc.contact',1],['Parties','pc.contact_party_association',1],['Parties','pc.contact_point',2],['Parties','pc.record_history',13],['Accounting','fin.creditor_account',1],['Accounting','fin.creditor_bank_account',1],['Accounting','fin.creditor_tax_registration',2],['Accounting','fin.creditor_account_history',1],['Request','fin.vendor_request_history',1]];
+document.getElementById('tally-body').innerHTML = TALLY.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('') + `<tr><td><b>Total</b></td><td><b>15 tables</b></td><td><b>${TALLY.reduce((a, r) => a + r[2], 0)}</b></td></tr>`;
+
+const RELS = [
+  ['vendor_request.operated_party_id','pc.operated_party','Many to one','R-101 → OP-1'],['vendor_request.creditor_category_code','creditor_category','Many to one','R-101 → GOODS_MSME'],['vendor_request.party_id','pc.party','Many to one, set at approval','R-101 → P-1'],['vendor_request.creditor_account_id','creditor_account','Plain pointer, set at approval','R-101 → CA-1'],['vendor_request_history.request_id','vendor_request','Many to one','RH-1 → R-101'],
+  ['creditor_account.opened_from_request_id','vendor_request','Many to one; one in practice for create','CA-1 → R-101'],['creditor_account.party_id','pc.party','One per party per company','CA-1 → P-1'],['creditor_account.operated_party_id','pc.operated_party','Many to one','CA-1 → OP-1'],['creditor_account.party_standing_id','pc.party_standing','Many to one, optional','CA-1 → PS-1'],['creditor_account.control_ledger_code','ledger_account','Many to one','CA-1 → 2101'],['creditor_account.creditor_category_code','creditor_category','Many to one','CA-1 → GOODS_MSME'],['creditor_bank_account.creditor_account_id','creditor_account','Many to one','CB-1 → CA-1'],['creditor_tax_registration.creditor_account_id','creditor_account','Many to one','TR-1 → CA-1'],['creditor_tax_registration.party_identifier_id','pc.party_identifier','Many to one','TR-1 → ID-2'],['creditor_account_history.creditor_account_id','creditor_account','Many to one','AH-1 → CA-1'],
+  ['creditor_category.ledger_account_code','ledger_account','Many to one','GOODS_MSME → 2101'],['ledger_account.parent_account_code','ledger_account','Many to one, same table','2101 → 2110'],['pc.operated_party.party_id','pc.party','Many to one','OP-1 → P-OUR'],
+  ['pc.party.party_id','pc.private_anchor','One to one, same ID','P-1 → P-1'],['pc.contact.contact_id','pc.private_anchor','One to one, same ID','C-1 → C-1'],['pc.party_trade_name.party_id','pc.party','Many to one','NM-1 → P-1'],['pc.party_identifier.party_id','pc.party','Many to one','ID-2 → P-1'],['pc.business_location.party_id','pc.party','Many to one','LOC-1 → P-1'],['pc.party_standing.party_id','pc.party','Many to one','PS-1 → P-1'],['pc.party_standing.operated_party_id','pc.operated_party','Many to one','PS-1 → OP-1'],['pc.party_standing.trade_name_id','pc.party_trade_name','Many to one, optional','PS-1 → NM-1'],['pc.contact_party_association.contact_id','pc.contact','Many to one','AS-1 → C-1'],['pc.contact_party_association.party_id','pc.party','Many to one','AS-1 → P-1'],['pc.contact_point.contact_id','pc.contact','Many to one','CP-1 → C-1'],['pc.record_history.performer_contact_id','pc.contact','Many to one, optional','HS-1 → C-MEENA']];
+const rich = s => esc(s).replace(/(\S+) → (\S+)/, (m, a, b) => `${IDS.has(a) ? chip(a) : esc(a)} → ${IDS.has(b) ? chip(b) : esc(b)}`);
+document.getElementById('rel-body').innerHTML = RELS.map(r => `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td><td>${rich(r[3])}</td></tr>`).join('');
+
+document.querySelectorAll('.rich').forEach(el => { el.innerHTML = el.innerHTML.replace(/\{([A-Za-z0-9_-]+)(:key)?\}/g, (m, id, k) => IDS.has(id) ? chip(id, !!k) : m); });
+
+const bar = document.getElementById('bar'), barTxt = document.getElementById('bar-txt');
+let current = null;
+function select(id) {
+  current = current === id ? null : id;
+  document.querySelectorAll('.chip').forEach(c => c.classList.toggle('hit', c.dataset.id === current));
+  bar.hidden = !current;
+  if (!current) return;
+  const u = usage[current] || { made: [], used: [] }, list = a => a.map(p => `<code>${esc(p)}</code>`).join(', ');
+  barTxt.innerHTML = `<b>${esc(current)}</b> · ${u.made.length ? `Row's own ID in ${list(u.made)}. ` : ''}${u.used.length ? `Used by ${list(u.used)}.` : 'No other filled table points to it.'}`;
+}
+document.addEventListener('click', e => { const c = e.target.closest('.chip'); if (c) select(c.dataset.id); });
+document.getElementById('bar-x').addEventListener('click', () => { if (current) select(current); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && current) select(current); });
+</script>
+
+</body></html>

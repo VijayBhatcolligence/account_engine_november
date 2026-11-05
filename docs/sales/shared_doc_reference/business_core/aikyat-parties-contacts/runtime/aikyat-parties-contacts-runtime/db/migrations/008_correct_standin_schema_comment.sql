@@ -1,0 +1,64 @@
+-- 008 · Correct what the `standin` schema is said to be.
+--
+-- THIS FILE SUPERSEDES THE WORDING OF 000.
+--
+-- Migration 000 established the two schemas and described `standin` in two
+-- places: the comment block at the top of that file, and the COMMENT ON
+-- SCHEMA it stored in the database. Both said the same two things:
+--
+--     "facts ANOTHER module owns -- HR, Identity, Control Plane -- held here
+--      only until that module has a read API"
+--     "... and no foreign keys into pc."
+--
+-- Both are wrong now. 000 is applied, and an applied migration is never
+-- edited: a mistake is corrected by a new file. This is that file. 000's text
+-- is left exactly as it was written, as the record of what was believed then.
+-- Where 000 and this file disagree about what `standin` is, THIS FILE GOVERNS,
+-- and the statement at the bottom replaces the comment the database carries.
+--
+-- ── what a stand-in is ───────────────────────────────────────────────────────
+--
+-- A stand-in is a fact that EXISTS NOWHERE and needs a temporary home.
+--
+-- It is not a copy of another module's data. The test for a stand-in is not
+-- "is the owning module deployed". It is "does the data exist":
+--
+--   exists nowhere             STAND IN. The table here is the only place the
+--                              fact is held, until a module that should own
+--                              it can.
+--   exists, and is correct     FETCH. Never copied here. A copy would be a
+--                              second truth that drifts silently, with
+--                              nothing to signal that it had.
+--   has no defined record      NEITHER. The field is null until its owner
+--                              says what it holds.
+--
+-- That is why Identity's and Control Plane's facts get no table in this
+-- schema, although 000 named both. Their data exists and is correct, so it is
+-- fetched; when an upstream cannot be reached the field is null and /readyz
+-- names the upstream. Null is honest. A stale copy is not.
+--
+-- ── the two rules, restated correctly ────────────────────────────────────────
+--
+-- 1. `pc` and `standin` are NEVER JOINED IN SQL. This is unchanged from 000,
+--    and it is a rule about QUERIES: no query, view or function may read a
+--    table of one schema together with a table of the other. Composition
+--    happens in application code, through an adapter.
+--
+-- 2. A FOREIGN KEY MAY POINT FROM `standin` TO `pc`. 000 said no key may; that
+--    reasoning was backwards. `standin` must stay droppable in one statement:
+--
+--        DROP SCHEMA standin CASCADE;
+--
+--    A key that points FROM standin TO pc is dropped with the schema it lives
+--    in, and pc is left untouched. It is integrity, not composition: it means
+--    this schema never holds a fact about a contact that does not exist.
+--
+--    It is a key pointing THE OTHER WAY -- from pc into standin -- that is
+--    forbidden. That one would pin the schema: it could not be dropped
+--    without CASCADE reaching into pc and removing a constraint from a table
+--    this product owns. NOTHING IN `pc` MAY REFERENCE `standin`.
+--
+-- This migration creates no table and no key. It changes one comment.
+
+COMMENT ON SCHEMA standin IS
+  'Facts that exist NOWHERE ELSE and need a temporary home until a module that should own them can hold them. Not a copy of anything: data that exists and is correct in another module is fetched from it, never copied here. NEVER joined in SQL to the pc schema; composition happens in application code, through an adapter. A foreign key may point FROM standin TO pc, which is integrity and drops with this schema; nothing in pc may reference standin. Must stay droppable in one statement: DROP SCHEMA standin CASCADE.';
