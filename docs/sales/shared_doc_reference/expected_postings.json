@@ -1,0 +1,1589 @@
+[
+ {
+  "scenario": "A1",
+  "file": "A1_TI-26-27-0101.pdf",
+  "doc_no": "TI/26-27/0101",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "XYZ Traders (Debtor)",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Domestic Goods",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 9000
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 9000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "A2",
+  "file": "A2_TI-26-27-0102.pdf",
+  "doc_no": "TI/26-27/0102",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "PQR Ltd (Debtor)",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Domestic Goods",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output IGST",
+      "debit": 0,
+      "credit": 18000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "A3",
+  "file": "A3_TI-26-27-0103.pdf",
+  "doc_no": "TI/26-27/0103",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "UPI / Card Clearing",
+      "debit": 11800,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Domestic Goods (B2C)",
+      "debit": 0,
+      "credit": 10000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 900
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 900
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "A4",
+  "file": "A4_TI-26-27-0104.pdf",
+  "doc_no": "TI/26-27/0104",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "Anil Menon (Debtor)",
+      "debit": 141600,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Domestic Goods (B2C)",
+      "debit": 0,
+      "credit": 120000
+     },
+     {
+      "account": "Output IGST",
+      "debit": 0,
+      "credit": 21600
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "A5",
+  "file": "A5_TI-26-27-0105.pdf",
+  "doc_no": "TI/26-27/0105",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "XYZ Traders (Debtor)",
+      "debit": 111000,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Domestic Goods (Taxable)",
+      "debit": 0,
+      "credit": 90000
+     },
+     {
+      "account": "Sales – Exempt / Nil-rated",
+      "debit": 0,
+      "credit": 10000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 5500
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 5500
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "A6",
+  "file": "A6_BOS-26-27-0011.pdf",
+  "doc_no": "BOS/26-27/0011",
+  "doc_type": "BILL OF SUPPLY",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "XYZ Traders (Debtor)",
+      "debit": 100000,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Exempt / Nil-rated",
+      "debit": 0,
+      "credit": 100000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "A7",
+  "file": "A7_TI-26-27-0106.pdf",
+  "doc_no": "TI/26-27/0106",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "XYZ Traders (Debtor)",
+      "debit": 140000,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Domestic Goods",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 20000
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 20000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "A8",
+  "file": "A8_TI-26-27-0107.pdf",
+  "doc_no": "TI/26-27/0107",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "XYZ Traders (Debtor)",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Domestic Goods (net of discount)",
+      "debit": 0,
+      "credit": 99000
+     },
+     {
+      "account": "Freight Recovered",
+      "debit": 0,
+      "credit": 1000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 9000
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 9000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "A9",
+  "file": "A9_TI-26-27-0108.pdf",
+  "doc_no": "TI/26-27/0108",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "Shakti Metal Recyclers (Debtor)",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "Scrap Sales",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 9000
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 9000
+     }
+    ]
+   },
+   {
+    "event": "On receipt (bank event)",
+    "lines": [
+     {
+      "account": "Bank",
+      "debit": 116000,
+      "credit": 0
+     },
+     {
+      "account": "GST TDS Receivable – CGST",
+      "debit": 1000,
+      "credit": 0
+     },
+     {
+      "account": "GST TDS Receivable – SGST",
+      "debit": 1000,
+      "credit": 0
+     },
+     {
+      "account": "Shakti Metal Recyclers (Debtor)",
+      "debit": 0,
+      "credit": 118000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "A10",
+  "file": "A10_TI-26-27-0109.pdf",
+  "doc_no": "TI/26-27/0109",
+  "doc_type": "TAX INVOICE",
+  "note": "Asset cost and depreciation come from the fixed-asset register (PM-0034), not from the invoice.",
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "Shree Engineering Works",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "Accumulated Depreciation – P&M",
+      "debit": 300000,
+      "credit": 0
+     },
+     {
+      "account": "Plant & Machinery (cost)",
+      "debit": 0,
+      "credit": 350000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 9000
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 9000
+     },
+     {
+      "account": "Profit on Sale of Assets",
+      "debit": 0,
+      "credit": 50000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "B1",
+  "file": "B1_TI-26-27-0110.pdf",
+  "doc_no": "TI/26-27/0110",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "XYZ Pvt Ltd (Debtor)",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "Revenue – Services",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 9000
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 9000
+     }
+    ]
+   },
+   {
+    "event": "On receipt (bank event, TDS 10% deducted)",
+    "lines": [
+     {
+      "account": "Bank",
+      "debit": 108000,
+      "credit": 0
+     },
+     {
+      "account": "Income-tax TDS Receivable",
+      "debit": 10000,
+      "credit": 0
+     },
+     {
+      "account": "XYZ Pvt Ltd (Debtor)",
+      "debit": 0,
+      "credit": 118000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "B2",
+  "file": "B2_TI-26-27-0111.pdf",
+  "doc_no": "TI/26-27/0111",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "Deccan Softworks (Debtor)",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "Revenue – Services",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output IGST",
+      "debit": 0,
+      "credit": 18000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "B3",
+  "file": "B3_TI-26-27-0112.pdf",
+  "doc_no": "TI/26-27/0112",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "Lotus Retail (Debtor)",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "Revenue – Services",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output IGST",
+      "debit": 0,
+      "credit": 18000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "B4",
+  "file": "B4_BOS-26-27-0012.pdf",
+  "doc_no": "BOS/26-27/0012",
+  "doc_type": "BILL OF SUPPLY",
+  "note": "Line value 12 x 8,333.33 = 99,999.96, rounded off +0.04 to 1,00,000.",
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "Ravi Kumar (Debtor)",
+      "debit": 100000,
+      "credit": 0
+     },
+     {
+      "account": "Revenue – Exempt Services",
+      "debit": 0,
+      "credit": 100000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "B5",
+  "file": "B5_TI-26-27-0113.pdf",
+  "doc_no": "TI/26-27/0113",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "XYZ Pvt Ltd (Debtor)",
+      "debit": 123000,
+      "credit": 0
+     },
+     {
+      "account": "Revenue – Services",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 9000
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 9000
+     },
+     {
+      "account": "Client Disbursements Recoverable",
+      "debit": 0,
+      "credit": 5000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "B6",
+  "file": "B6_TI-26-27-0114.pdf",
+  "doc_no": "TI/26-27/0114",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "XYZ Pvt Ltd (Debtor)",
+      "debit": 1416000,
+      "credit": 0
+     },
+     {
+      "account": "Contract Liability (Deferred Revenue)",
+      "debit": 0,
+      "credit": 1200000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 108000
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 108000
+     }
+    ]
+   },
+   {
+    "event": "Each month, Nov 2026 to Nov 2027 (scheduled event, Rs. 1,00,000 per month)",
+    "lines": [
+     {
+      "account": "Contract Liability (Deferred Revenue)",
+      "debit": 100000,
+      "credit": 0
+     },
+     {
+      "account": "Revenue – Services",
+      "debit": 0,
+      "credit": 100000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "B7",
+  "file": "B7_KRA-26-27-0045.pdf",
+  "doc_no": "KRA/26-27/0045",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice (books of K. Rao & Associates)",
+    "lines": [
+     {
+      "account": "XYZ Pvt Ltd (Debtor)",
+      "debit": 100000,
+      "credit": 0
+     },
+     {
+      "account": "Revenue – Services (RCM)",
+      "debit": 0,
+      "credit": 100000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "B8",
+  "file": "B8_TI-26-27-0115.pdf",
+  "doc_no": "TI/26-27/0115",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "PWD Division No. 2 (Debtor)",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "Revenue – Services",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 9000
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 9000
+     }
+    ]
+   },
+   {
+    "event": "On receipt (bank event)",
+    "lines": [
+     {
+      "account": "Bank",
+      "debit": 116000,
+      "credit": 0
+     },
+     {
+      "account": "GST TDS Receivable – CGST",
+      "debit": 1000,
+      "credit": 0
+     },
+     {
+      "account": "GST TDS Receivable – SGST",
+      "debit": 1000,
+      "credit": 0
+     },
+     {
+      "account": "PWD Division No. 2 (Debtor)",
+      "debit": 0,
+      "credit": 118000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "C1",
+  "file": "C1_EXP-26-27-0021.pdf",
+  "doc_no": "EXP/26-27/0021",
+  "doc_type": "EXPORT INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "Acme Inc (Foreign Debtor, USD 1,000)",
+      "debit": 88000,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Export Goods",
+      "debit": 0,
+      "credit": 88000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "C2",
+  "file": "C2_EXP-26-27-0022.pdf",
+  "doc_no": "EXP/26-27/0022",
+  "doc_type": "EXPORT INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "Acme Inc (Foreign Debtor, USD 1,000)",
+      "debit": 88000,
+      "credit": 0
+     },
+     {
+      "account": "IGST Refund Receivable",
+      "debit": 15840,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Export Goods",
+      "debit": 0,
+      "credit": 88000
+     },
+     {
+      "account": "Output IGST",
+      "debit": 0,
+      "credit": 15840
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "C3",
+  "file": "C3_EXP-26-27-0023.pdf",
+  "doc_no": "EXP/26-27/0023",
+  "doc_type": "EXPORT INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "Northwind LLC (Foreign Debtor, USD 1,000)",
+      "debit": 88000,
+      "credit": 0
+     },
+     {
+      "account": "Revenue – Export Services",
+      "debit": 0,
+      "credit": 88000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "C4",
+  "file": "C4_EXP-26-27-0024.pdf",
+  "doc_no": "EXP/26-27/0024",
+  "doc_type": "EXPORT INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "Northwind LLC (Foreign Debtor, USD 1,000)",
+      "debit": 88000,
+      "credit": 0
+     },
+     {
+      "account": "IGST Refund Receivable",
+      "debit": 15840,
+      "credit": 0
+     },
+     {
+      "account": "Revenue – Export Services",
+      "debit": 0,
+      "credit": 88000
+     },
+     {
+      "account": "Output IGST",
+      "debit": 0,
+      "credit": 15840
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "C5",
+  "file": "C5_TI-26-27-0116.pdf",
+  "doc_no": "TI/26-27/0116",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "Electra Tech – SEZ (Debtor)",
+      "debit": 100000,
+      "credit": 0
+     },
+     {
+      "account": "Sales – SEZ",
+      "debit": 0,
+      "credit": 100000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "C6",
+  "file": "C6_TI-26-27-0117.pdf",
+  "doc_no": "TI/26-27/0117",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "Electra Tech – SEZ (Debtor)",
+      "debit": 100000,
+      "credit": 0
+     },
+     {
+      "account": "IGST Refund Receivable",
+      "debit": 18000,
+      "credit": 0
+     },
+     {
+      "account": "Sales – SEZ",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output IGST",
+      "debit": 0,
+      "credit": 18000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "C7",
+  "file": "C7_TI-26-27-0118.pdf",
+  "doc_no": "TI/26-27/0118",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "Sunrise Exports – EOU (Debtor)",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Deemed Export",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 9000
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 9000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "C8",
+  "file": "C8_TI-26-27-0119.pdf",
+  "doc_no": "TI/26-27/0119",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "Global Overseas Trading (Debtor)",
+      "debit": 100100,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Merchant Export",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 50
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 50
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "C9",
+  "file": "C9_HSS-26-27-0003.pdf",
+  "doc_no": "HSS/26-27/0003",
+  "doc_type": "COMMERCIAL INVOICE (HIGH SEA SALE)",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "Bharat Imports (Debtor)",
+      "debit": 100000,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Non-GST (High Sea)",
+      "debit": 0,
+      "credit": 100000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "D1-a",
+  "file": "D1-a_DC-26-27-0031.pdf",
+  "doc_no": "DC/26-27/0031",
+  "doc_type": "DELIVERY CHALLAN",
+  "note": "No sales or tax entry. Stock moves at cost (Rs. 70,000 from inventory valuation). Start the 6-month timer.",
+  "events": [
+   {
+    "event": "On dispatch (stock movement)",
+    "lines": [
+     {
+      "account": "Goods on Approval (inventory at customer)",
+      "debit": 70000,
+      "credit": 0
+     },
+     {
+      "account": "Inventory",
+      "debit": 0,
+      "credit": 70000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "D1-b",
+  "file": "D1-b_TI-26-27-0120.pdf",
+  "doc_no": "TI/26-27/0120",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On acceptance invoice",
+    "lines": [
+     {
+      "account": "XYZ Traders (Debtor)",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Domestic Goods",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 9000
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 9000
+     }
+    ]
+   },
+   {
+    "event": "Cost release",
+    "lines": [
+     {
+      "account": "COGS",
+      "debit": 70000,
+      "credit": 0
+     },
+     {
+      "account": "Goods on Approval",
+      "debit": 0,
+      "credit": 70000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "D2",
+  "file": "D2_TI-26-27-0121.pdf",
+  "doc_no": "TI/26-27/0121",
+  "doc_type": "TAX INVOICE",
+  "note": "No revenue on this invoice. Revenue is posted when the agent's account sales report arrives.",
+  "events": [
+   {
+    "event": "On dispatch invoice",
+    "lines": [
+     {
+      "account": "Consignment Agent – GST recoverable",
+      "debit": 18000,
+      "credit": 0
+     },
+     {
+      "account": "Stock with Consignee",
+      "debit": 70000,
+      "credit": 0
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 9000
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 9000
+     },
+     {
+      "account": "Inventory",
+      "debit": 0,
+      "credit": 70000
+     }
+    ]
+   },
+   {
+    "event": "On agent's account sales (separate event)",
+    "lines": [
+     {
+      "account": "Consignment Agent",
+      "debit": 100000,
+      "credit": 0
+     },
+     {
+      "account": "COGS",
+      "debit": 70000,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Consignment",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Stock with Consignee",
+      "debit": 0,
+      "credit": 70000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "D3",
+  "file": "D3_ST-26-27-0007.pdf",
+  "doc_no": "ST/26-27/0007",
+  "doc_type": "TAX INVOICE (STOCK TRANSFER)",
+  "note": "No revenue and no debtor. The engine must recognise the buyer GSTIN as an own GSTIN.",
+  "events": [
+   {
+    "event": "On invoice (single set of books)",
+    "lines": [
+     {
+      "account": "Inventory – Chennai branch",
+      "debit": 70000,
+      "credit": 0
+     },
+     {
+      "account": "Input IGST – GSTIN 33",
+      "debit": 12600,
+      "credit": 0
+     },
+     {
+      "account": "Inventory – Bengaluru branch",
+      "debit": 0,
+      "credit": 70000
+     },
+     {
+      "account": "Output IGST – GSTIN 29",
+      "debit": 0,
+      "credit": 12600
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "D4",
+  "file": "D4_TI-26-27-0122.pdf",
+  "doc_no": "TI/26-27/0122",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "XYZ Ltd (Debtor)",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Domestic Goods",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output IGST",
+      "debit": 0,
+      "credit": 18000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "D5",
+  "file": "D5_MP-26-27-0451.pdf",
+  "doc_no": "MP/26-27/0451",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "Marketplace Receivable – ShopKart",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Marketplace",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output IGST",
+      "debit": 0,
+      "credit": 18000
+     }
+    ]
+   },
+   {
+    "event": "On settlement (marketplace statement)",
+    "lines": [
+     {
+      "account": "Bank",
+      "debit": 105600,
+      "credit": 0
+     },
+     {
+      "account": "GST TCS Receivable (IGST)",
+      "debit": 500,
+      "credit": 0
+     },
+     {
+      "account": "Income-tax TDS Receivable",
+      "debit": 100,
+      "credit": 0
+     },
+     {
+      "account": "Marketplace Commission",
+      "debit": 10000,
+      "credit": 0
+     },
+     {
+      "account": "Input GST on Commission",
+      "debit": 1800,
+      "credit": 0
+     },
+     {
+      "account": "Marketplace Receivable – ShopKart",
+      "debit": 0,
+      "credit": 118000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "D6",
+  "file": "D6_RV-26-27-0014.pdf",
+  "doc_no": "RV/26-27/0014",
+  "doc_type": "RECEIPT VOUCHER",
+  "note": "When the goods invoice is raised, post the invoice as A1, then Dr Customer Advance 50,000 / Cr XYZ Traders 50,000.",
+  "events": [
+   {
+    "event": "On receipt",
+    "lines": [
+     {
+      "account": "Bank",
+      "debit": 50000,
+      "credit": 0
+     },
+     {
+      "account": "Customer Advance – XYZ Traders",
+      "debit": 0,
+      "credit": 50000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "D7-a",
+  "file": "D7-a_RV-26-27-0015.pdf",
+  "doc_no": "RV/26-27/0015",
+  "doc_type": "RECEIPT VOUCHER",
+  "note": null,
+  "events": [
+   {
+    "event": "On receipt",
+    "lines": [
+     {
+      "account": "Bank",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "GST Paid on Advance (asset)",
+      "debit": 18000,
+      "credit": 0
+     },
+     {
+      "account": "Customer Advance – XYZ Pvt Ltd",
+      "debit": 0,
+      "credit": 118000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 9000
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 9000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "D7-b",
+  "file": "D7-b_TI-26-27-0123.pdf",
+  "doc_no": "TI/26-27/0123",
+  "doc_type": "TAX INVOICE",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "XYZ Pvt Ltd (Debtor)",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "Revenue – Services",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 9000
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 9000
+     }
+    ]
+   },
+   {
+    "event": "Remove double tax",
+    "lines": [
+     {
+      "account": "Output CGST",
+      "debit": 9000,
+      "credit": 0
+     },
+     {
+      "account": "Output SGST",
+      "debit": 9000,
+      "credit": 0
+     },
+     {
+      "account": "GST Paid on Advance (asset)",
+      "debit": 0,
+      "credit": 18000
+     }
+    ]
+   },
+   {
+    "event": "Adjust advance",
+    "lines": [
+     {
+      "account": "Customer Advance – XYZ Pvt Ltd",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "XYZ Pvt Ltd (Debtor)",
+      "debit": 0,
+      "credit": 118000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "D8",
+  "file": "D8_RFV-26-27-0002.pdf",
+  "doc_no": "RFV/26-27/0002",
+  "doc_type": "REFUND VOUCHER",
+  "note": "Alternative to D7-b: use this when the advance in D7-a is refunded instead of being followed by a supply.",
+  "events": [
+   {
+    "event": "On refund",
+    "lines": [
+     {
+      "account": "Customer Advance – XYZ Pvt Ltd",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "Output CGST",
+      "debit": 9000,
+      "credit": 0
+     },
+     {
+      "account": "Output SGST",
+      "debit": 9000,
+      "credit": 0
+     },
+     {
+      "account": "Bank",
+      "debit": 0,
+      "credit": 118000
+     },
+     {
+      "account": "GST Paid on Advance (asset)",
+      "debit": 0,
+      "credit": 18000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "D9",
+  "file": "D9_TI-26-27-0124.pdf",
+  "doc_no": "TI/26-27/0124",
+  "doc_type": "TAX INVOICE",
+  "note": "If the Ind AS 115 bill-and-hold tests are not met, credit Contract Liability instead of Sales until delivery.",
+  "events": [
+   {
+    "event": "On invoice",
+    "lines": [
+     {
+      "account": "XYZ Traders (Debtor)",
+      "debit": 118000,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Domestic Goods",
+      "debit": 0,
+      "credit": 100000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 9000
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 9000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "D10",
+  "file": "D10_SLT-26-27-0213.pdf",
+  "doc_no": "SLT/26-27/0213",
+  "doc_type": "BILL OF SUPPLY",
+  "note": null,
+  "events": [
+   {
+    "event": "On invoice (books of Sri Lakshmi Traders)",
+    "lines": [
+     {
+      "account": "XYZ Traders (Debtor)",
+      "debit": 100000,
+      "credit": 0
+     },
+     {
+      "account": "Sales",
+      "debit": 0,
+      "credit": 100000
+     }
+    ]
+   },
+   {
+    "event": "Quarter-end (CMP-08), 1% of turnover",
+    "lines": [
+     {
+      "account": "Composition Tax Expense",
+      "debit": 1000,
+      "credit": 0
+     },
+     {
+      "account": "GST Payable (CMP-08)",
+      "debit": 0,
+      "credit": 1000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "E1",
+  "file": "E1_CN-26-27-0009.pdf",
+  "doc_no": "CN/26-27/0009",
+  "doc_type": "CREDIT NOTE",
+  "note": null,
+  "events": [
+   {
+    "event": "On credit note",
+    "lines": [
+     {
+      "account": "Sales Returns",
+      "debit": 100000,
+      "credit": 0
+     },
+     {
+      "account": "Output CGST",
+      "debit": 9000,
+      "credit": 0
+     },
+     {
+      "account": "Output SGST",
+      "debit": 9000,
+      "credit": 0
+     },
+     {
+      "account": "XYZ Traders (Debtor)",
+      "debit": 0,
+      "credit": 118000
+     }
+    ]
+   },
+   {
+    "event": "Stock back (GRN)",
+    "lines": [
+     {
+      "account": "Inventory",
+      "debit": 70000,
+      "credit": 0
+     },
+     {
+      "account": "COGS",
+      "debit": 0,
+      "credit": 70000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "E2",
+  "file": "E2_CN-26-27-0010.pdf",
+  "doc_no": "CN/26-27/0010",
+  "doc_type": "CREDIT NOTE",
+  "note": null,
+  "events": [
+   {
+    "event": "On credit note",
+    "lines": [
+     {
+      "account": "Discount Allowed",
+      "debit": 5000,
+      "credit": 0
+     },
+     {
+      "account": "Output CGST",
+      "debit": 450,
+      "credit": 0
+     },
+     {
+      "account": "Output SGST",
+      "debit": 450,
+      "credit": 0
+     },
+     {
+      "account": "XYZ Traders (Debtor)",
+      "debit": 0,
+      "credit": 5900
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "E3",
+  "file": "E3_CCN-26-27-0004.pdf",
+  "doc_no": "CCN/26-27/0004",
+  "doc_type": "CREDIT NOTE (COMMERCIAL – NO GST)",
+  "note": null,
+  "events": [
+   {
+    "event": "On credit note",
+    "lines": [
+     {
+      "account": "Discount Allowed",
+      "debit": 5000,
+      "credit": 0
+     },
+     {
+      "account": "XYZ Traders (Debtor)",
+      "debit": 0,
+      "credit": 5000
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "scenario": "E4",
+  "file": "E4_DN-26-27-0003.pdf",
+  "doc_no": "DN/26-27/0003",
+  "doc_type": "DEBIT NOTE",
+  "note": null,
+  "events": [
+   {
+    "event": "On debit note",
+    "lines": [
+     {
+      "account": "XYZ Traders (Debtor)",
+      "debit": 11800,
+      "credit": 0
+     },
+     {
+      "account": "Sales – Domestic Goods",
+      "debit": 0,
+      "credit": 10000
+     },
+     {
+      "account": "Output CGST",
+      "debit": 0,
+      "credit": 900
+     },
+     {
+      "account": "Output SGST",
+      "debit": 0,
+      "credit": 900
+     }
+    ]
+   }
+  ]
+ }
+]

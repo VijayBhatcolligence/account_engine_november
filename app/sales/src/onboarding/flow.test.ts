@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { checksOf, stops } from './rules';
+import { checksOf, FIELDS, stops } from './rules';
 import { requestOf, useOnboarding } from './store';
 
 const st = () => useOnboarding.getState();
@@ -182,7 +182,7 @@ describe('customers from paper forms, and parties already in the master', () => 
     expect(done.status).toBe('active');
     const party = st().parties.find((p) => p.partyId === done.partyId)!;
     expect(party.gstins.map((g) => `${g.stateCode} ${g.value}`)).toEqual(['KA 29AAECD0000D1Z4', 'TN 33AAECD0000D1Z2', 'KL 32AAECD0000D1Z6']);
-    expect(party.locations!.map((l) => l.city)).toEqual(['Chennai']); // Kochi has no address yet
+    expect(party.locations!.map((l) => l.city)).toEqual(['Chennai', 'Hoskote']); // Kochi has no address yet; Hoskote is the ship-to
     const accts = st().accounts.filter((a) => a.partyId === party.partyId);
     expect(accts).toHaveLength(1);
     expect(accts[0].branches!.map((b) => `${b.gstin}${b.isDefault ? ' default' : ''}`)).toEqual(['29AAECD0000D1Z4 default', '33AAECD0000D1Z2']);
@@ -233,5 +233,88 @@ describe('customers from paper forms, and parties already in the master', () => 
     expect(st().parties.length).toBe(before);
     expect(st().accounts.filter((a) => a.partyId === 'P-0042').map((a) => a.side).sort()).toEqual(['payable', 'receivable']);
     expect(st().parties.find((p) => p.partyId === 'P-0042')!.roles.map((x) => x.type)).toEqual(['customer', 'supplier']);
+  });
+});
+
+describe('rev 4 (6-Nov): the ship-to, more contacts, and optional bank details', () => {
+  beforeEach(() => st().reset());
+  const deccan = () => {
+    const id = st().createRequest({ side: 'receivable', from: 'arun', formNo: 'CRF-0021', paper: 'deccan' });
+    st().typeFromPaper(id);
+    st().checkGstin(id);
+    return id;
+  };
+
+  it('the customer form has 61 fields (52 + ship-to city, state, PIN + 6 bank fields)', () => {
+    expect(FIELDS.filter((f) => f.sides.includes('receivable'))).toHaveLength(61);
+  });
+
+  it('a shipping address needs its city, state and 6-digit PIN; clearing it clears them', () => {
+    const id = deccan();
+    expect(stopTitles(id)).toEqual([]);
+    st().setValue(id, 'shipCity', '');
+    st().setValue(id, 'shipPincode', '5621');
+    expect(stopTitles(id)).toContain('Still to fill: Shipping city');
+    expect(stopTitles(id)).toContain('Shipping PIN code must be 6 digits');
+    st().setValue(id, 'shippingAddress', '');
+    expect(req(id).values.shipPincode).toBe('');
+    expect(stopTitles(id)).toEqual([]); // no ship-to: goods go to the billing address
+  });
+
+  it('a ship-to in another state than the billing GSTIN is said (the invoice sets the place of supply)', () => {
+    const id = deccan();
+    st().setValue(id, 'shipState', 'TN');
+    expect(checks(id).some((c) => c.level === 'warn' && c.title === 'Ships to Tamil Nadu, bills a Karnataka GSTIN')).toBe(true);
+  });
+
+  it('on approval the ship-to is a P&C location and a debtor_location (ship_to), never a billing branch; contacts and bank are written', () => {
+    const id = deccan();
+    st().submit(id);
+    req(id).changes.forEach((c) => st().decide(id, c.id, true));
+    const done = req(id);
+    expect(done.status).toBe('active');
+    const party = st().parties.find((p) => p.partyId === done.partyId)!;
+    const ship = party.locations!.find((l) => l.purpose === 'ship_to')!;
+    expect(`${ship.label} · ${ship.city} · ${ship.stateCode} · ${ship.pincode}`).toBe('Ship-to · Hoskote · KA · 562114');
+    const acct = st().accounts.find((a) => a.accountId === done.accountId)!;
+    expect(acct.shipTo?.locationId).toBe(ship.locationId);
+    expect(acct.branches!.some((b) => b.locationId === ship.locationId)).toBe(false);
+    expect(party.contacts!.map((c) => c.name)).toEqual(['Meena (stores, Chennai)']);
+    const lines = st().log.map((e) => e.line);
+    expect(lines).toContain('INSERT fin.debtor_location (usage ship_to)');
+    expect(lines).toContain('INSERT fin.debtor_location ×2 (usage bill_to)');
+    expect(lines).toContain('INSERT fin.party_bank_account');
+    expect(lines).toContain('debtor_account.refund_bank_account_id set');
+    expect(lines.some((l) => l.startsWith('P&C writes pc.contact ×2'))).toBe(true);
+  });
+
+  it('bank details are optional but all or nothing; a bad IFSC stops; an account another party uses only warns', () => {
+    const id = st().createRequest({ side: 'receivable', from: 'arun', formNo: 'CRF-0019', paper: 'coastal' });
+    st().typeFromPaper(id);
+    const before = stopTitles(id).join(' | ');
+    expect(before).not.toMatch(/IFSC|Bank account number|Account holder name/); // nothing typed: nothing asked
+    st().setValue(id, 'bankName', 'Canara Bank');
+    expect(stopTitles(id).some((t) => t.startsWith('Still to fill') && t.includes('Account holder name · Bank account number · IFSC'))).toBe(true);
+    set(id, { beneficiary: 'Coastal Bakes', bankAccountNo: '50100012345678', ifsc: 'CNRB12345' });
+    expect(stopTitles(id)).toContain('IFSC is not valid');
+    st().setValue(id, 'ifsc', 'CNRB0001234');
+    expect(stopTitles(id)).not.toContain('IFSC is not valid');
+    const inUse = checks(id).find((c) => c.title.startsWith('BANK_ACCOUNT_IN_USE'));
+    expect(inUse?.level).toBe('warn'); // Vendor A's account: said, not stopped
+  });
+
+  it('more contacts: each needs a name and a valid mobile or email', () => {
+    const id = deccan();
+    st().addContact(id);
+    const k = req(id).contacts![req(id).contacts!.length - 1];
+    expect(stopTitles(id)).toContain('Contact 3: type the name or remove the row');
+    expect(stopTitles(id)).toContain('Contact 3: give a mobile number or an email');
+    st().setContact(id, k.id, { name: 'Ravi (Kochi)', phone: '12345', email: 'ravi@' });
+    expect(stopTitles(id)).toContain('Contact 3: mobile number must have 10 digits');
+    expect(stopTitles(id)).toContain('Contact 3: email is not valid');
+    st().setContact(id, k.id, { phone: '+91 94470 00000', email: 'kochi@deccanfresh.example' });
+    expect(stopTitles(id)).toEqual([]);
+    st().removeContact(id, k.id);
+    expect(req(id).contacts).toHaveLength(1);
   });
 });

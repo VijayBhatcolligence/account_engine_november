@@ -20,6 +20,7 @@ export const ACTORS: Record<ActorKey, Actor> = {
   arun: { name: 'Arun', role: 'Sales Executive' },
   latha: { name: 'Latha', role: 'Stores Officer (KA-FG)' },
   nisha: { name: 'Nisha', role: 'Sales Manager' },
+  billing: { name: 'Billing', role: 'Sales billing desk (raises the invoice)' },
   system: { name: 'System', role: 'Aikyat Finance' },
   bank: { name: 'Bank', role: 'Penny-drop service' },
   gst: { name: 'GST portal', role: 'GSTIN search' },

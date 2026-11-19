@@ -1,71 +1,60 @@
-// Post a sales invoice (new task, Billing combined with this role: 01 tasks doc §9, open question 11), as the
-// biscuit-plant scenario runs it (Engineer guide §2.10, Full scenario B4-01, D-02, D-03):
-//   Sales Order (Arun, approved by Nisha) → Delivery Challan (Stores, Latha; stock leaves the books here under
-//   Perpetual) → the Accounts Executive raises the invoice FROM the challan → Rajan approves every invoice →
-//   one journal entry (Dr customer, Cr sales, Cr output GST), invoice number, IRN, e-way bill Part-A → Stores
-//   releases the challan. Never edited again: corrected by a credit note.
+// T24 Sales voucher entry (docs/sales/sales_engine/task_list/T24_sales_voucher_entry.md).
+//   Rev 6 (18-Nov, Vijay): the Accounts Executive does NOT raise the invoice. Billing raises it (number, IRN, lines,
+//   GST) and hands it over. The AE books its accounting entry: the ledgers are suggested by the posting rule (R1–R12),
+//   the AE may pick others (§8.4); Dr = Cr; the GST lines = the invoice's GST → Submit → Rajan approves (the entry posts
+//   to the journal), sends it back, or rejects it. The invoice itself is read-only here (it is Billing's).
 
 import type { ISODate, ISODateTime } from '../domain/types';
 import type { ActorKey, HistoryLine } from '../onboarding/types';
 
-export interface ChallanLine {
-  item: string; // ITEMS key (FG-101)
-  batch: string;
-  qty: number; // cartons dispatched
-  rate: number; // from the approved Sales Order, ₹ per carton
-}
-
-/** A delivery challan, made by Stores (not by this task). */
-export interface Challan {
-  id: string; // DC-1
-  soId: string;
-  soDate: ISODate;
-  customer: string; // name on the order; the AR account is found from it
-  date: ISODate;
-  lines: ChallanLine[];
-  vehicleNo: string;
-  transporter: string;
-  distanceKm: number;
-  lrNo: string;
-  note: string;
-  /** The customer has no account yet (a new customer): Stores records it only once it is active. */
-  needsAccount?: boolean;
-  /** Set when Stores has recorded it (mock: seeded, or played from the demo). */
-  recordedAt?: ISODateTime;
-  /** Under Perpetual: the cost entry Stores' challan wrote. */
-  costEntryId?: string;
-}
-
+/** One line of the received invoice (Billing's), the CA's columns: Description · HSN/SAC · Qty · UQC · Rate · Disc. · Taxable · GST % · tax · Total.
+ *  Goods or a service (from the item master: name, HSN / SAC, UQC, GST rate); a charge (freight, A8) or a pure-agent
+ *  reimbursement (B5); a service period (B6). */
 export interface InvoiceLine {
-  dcLine: number; // index of the matching challan line (same item and batch), −1 when none
-  item: string;
-  batch: string;
-  dcQty: number;
-  qty: number | null; // quantity invoiced: never above the challan (0% tolerance), partial allowed
-  rate: number | null; // the approved order's rate (from the challan)
+  kind: 'goods' | 'service' | 'charge' | 'reimbursement';
+  item: string; // ITEMS, SERVICES or EXTRAS key ('' while not picked)
+  qty: number | null;
+  rate: number | null; // typed, in the invoice currency (prefilled from the item's list price)
+  /** Disc. (Rs.): a trade discount on the face of the invoice, inside the value (CGST s.15(3)(a); the CA's A8). */
+  discount: number | null;
+  /** A period service (C19): from – until (revenue deferred, R12). */
+  periodFrom?: string;
+  periodUntil?: string;
+  /** A concessional rate's notification (C20), e.g. 40/2017-CT(R) for a merchant exporter. */
+  notification?: string;
 }
 
-/** The accounting entry, typed by hand like a Tally voucher (30-Oct): the invoice is the example, the entry is the person's. */
-export interface ManualEntry {
-  partyLedger: string; // Dr: the customer's AR account (accountId)
-  partyAmount: number | null;
-  salesLedger: string; // Cr: LEDGERS key
-  salesAmount: number | null;
-  taxLines: { ledger: string; amount: number | null }[]; // Cr: output GST ledgers
-  roundOff: number | null; // + Cr, − Dr
-  /** The challan's cost entry, typed by hand too (Perpetual, 30-Oct). Present only while the challan has none. */
-  cost?: CostEntry;
+/** One line of the AE's edited entry (§8.4). Party and tax lines are never stored here: they stay locked to the invoice. */
+export interface EditLine {
+  id: string; // 'rev:sale_products' (from the rule) · 'add:1' (added) · 'split:1'
+  ledger: string; // LEDGERS key
+  dr: number;
+  cr: number;
+  reason: string;
+  /** The rule line it came from (absent: added or split by the AE). */
+  from?: string;
 }
 
-/** Dr cost of goods sold · Cr finished-goods inventory, for the whole challan, dated the challan date. */
-export interface CostEntry {
-  drLedger: string;
-  drAmount: number | null;
-  crLedger: string;
-  crAmount: number | null;
+export interface EntryEdit {
+  lines: EditLine[];
+  /** "Change amounts / add lines" is on. Off: only ledgers were picked (manual choice, no reason needed). */
+  amounts?: boolean;
+  /** The ledger picked for a line whose AMOUNT is the invoice's (the customer, settlement, refund and GST lines): line id → ledger key. */
+  picks?: Record<string, string>;
+  by: ActorKey;
+  at: ISODateTime;
 }
 
-export type VoucherStatus = 'draft' | 'submitted' | 'returned' | 'posted' | 'cancelled' | 'sent_back';
+/**
+ * fin.sales_voucher.stage (rev 6, the AE's accounting voucher for a received invoice):
+ *   draft      received from Billing; the AE books the entry (also after Rajan sends it back: decisionReason says why)
+ *   submitted  with Rajan
+ *   posted     approved: the journal entry is posted
+ *   rejected   Rajan rejected the entry (it stays unposted; Billing is told)
+ *   returned   the AE sent the invoice back to Billing (it cannot be booked as it is)
+ */
+export type VoucherStatus = 'draft' | 'submitted' | 'posted' | 'rejected' | 'returned';
+export type Outcome = 'approve' | 'send_back' | 'reject';
 
 export type ApprovalWhy = 'invoice';
 
@@ -74,41 +63,73 @@ export interface Approval {
   why: ApprovalWhy;
   label: string;
   checker: ActorKey;
-  status: 'pending' | 'approved' | 'returned';
+  status: 'pending' | 'approved' | 'sent_back' | 'rejected';
   decidedAt?: ISODateTime;
   reason?: string;
+  /** "Entry differs from rule R1: lines 2, 4" (§8.4): what the checker sees. */
+  entryDiff?: string;
 }
 
-/** One sales invoice (sales_invoice), raised from one delivery challan. */
+/** The AE's sales voucher (fin.sales_voucher) for one invoice received from Billing. The invoice fields below are
+ *  Billing's and read-only here; the AE's own data is the entry (edit), the approvals and the history. */
 export interface Voucher {
-  id: string; // SI-0012 while it is a draft
-  /** GST invoice number: given only when it posts (one gap-free series per GSTIN, ≤ 16 characters). */
+  id: string; // SV-0012: the voucher's internal reference
+  /** Billing's GST invoice number (already issued when it reaches the AE). */
   number: string | null;
   status: VoucherStatus;
-  dcId: string;
-  from: ActorKey; // who recorded the challan (Stores)
+  /** Our GSTIN (fin.branch): its state and its series. Picked on the invoice. */
+  branch: string;
+  maker: ActorKey;
   arrivedAt: ISODateTime;
   date: ISODate;
-  accountId: string; // the customer's AR account (from onboarding)
-  /** The customer's branch it bills (fin.customer_branch). Absent: the account's default branch. */
+  accountId: string; // B1: the customer's account (T12)
+  /** B3: the bill-to branch (fin.debtor_location usage bill_to). Absent: the account's default. */
   branchId?: string;
-  customerPo: string;
+  /** B6: the ship-to location (P&C location id). Absent: the account's ship-to, else the bill-to. */
+  shipToId?: string;
+  /** Written by the system for the journal (not on the invoice). */
   narration: string;
   lines: InvoiceLine[];
-  /** The accounting entry typed by hand (30-Oct). Absent: the rule writes the entry (seeded, confirmed invoices). */
-  manual?: ManualEntry;
+  /** A14: currency and rate (export). */
+  currency: string;
+  fxRate: number | null;
+  /** E1: export / SEZ type. */
+  exportType?: 'lut' | 'igst';
+  portCode: string; // E5
+  shippingBillNo: string; // E6
+  shippingBillDate: string;
+  /** The AE's edit of the engine's entry (§8.4). Absent: the rule's entry, read-only. */
+  edit?: EntryEdit;
+  /** Rev 3 · B14: how it is settled: on credit (the customer owes it) or paid at once (cash, UPI / card: R8). */
+  settlement: 'credit' | 'cash' | 'upi_card';
+  /** Rev 5 · the CA's A3 "Payment: UPI · Ref …": the payment reference of a sale paid at once. */
+  paymentRef: string;
+  /** Rev 5 · the CA's "Transport: Road · KA-02-AB-1234" and the e-way bill (goods above ₹50,000): vehicle and distance. */
+  transport: { vehicleNo: string; distanceKm: number | null };
+  /** Rev 3 · B6: goods delivered to a THIRD PARTY on the buyer's direction (bill-to-ship-to): place of supply = the bill-to state (IGST s.10(1)(b)). */
+  thirdPartyShipTo?: { name: string; line: string; city: string; pincode: string; stateCode: string };
+  /** Rev 3 · B8: a service on immovable property: place of supply = where the property is (IGST s.12(3)). */
+  propertyState?: string;
+  /** Rev 3 · E8: Incoterm (export). A16: the buyer's order reference (export order, marketplace order ID). */
+  incoterm: string;
+  orderRef: string;
+  /** Rev 3 · A17: an advance received earlier (T13's receipt voucher), adjusted against this invoice. */
+  advanceRef: string;
+  advanceAmount: number | null;
   approvals: Approval[];
-  returnedReason?: string;
-  sentBack?: { to: ActorKey; reason: string; at: ISODateTime };
+  /** Rajan's reason when he sent it back (stage draft again) or rejected it (fin.sales_invoice.decision_reason). */
+  decisionReason?: string;
+  /** Sent back to Billing by the AE (the invoice cannot be booked as it is). */
+  returned?: { reason: string; at: ISODateTime };
   submittedAt?: ISODateTime;
   postedAt?: ISODateTime;
   entryId?: string;
+  /** Billing's e-invoice (IRN) and e-way bill, read-only here. */
   irn?: string;
   ackNo?: string;
   ackAt?: ISODateTime;
   ewbNo?: string;
   ewbValidTo?: ISODate;
-  cancel?: { creditNote: string; entryId: string; reason: string; at: ISODateTime };
   dirty?: boolean;
   history: HistoryLine[];
 }
@@ -119,20 +140,27 @@ export interface JournalLine {
   accountId?: string;
   dr: number;
   cr: number;
+  /** Customer line: its account's receivable ledger code (debtor_account.ledger_account_code). */
+  code?: string;
+  /** The AE's reason for an edited line. */
+  reason?: string;
 }
 
 export interface JournalEntry {
   id: string; // JE-000231
-  voucherNo: string; // KA/INV/2627/0143 · KA/CN/2627/0001 · DC-1
+  voucherNo: string; // KA/INV/2627/0143 · KA/CN/2627/0001
   voucherId?: string;
-  kind: 'sales' | 'credit_note' | 'challan_cost';
+  kind: 'sales';
+  /** The branch on the entry (fin.journal_entry.branch_id). */
+  branch?: string;
   date: ISODate;
   narration: string;
   lines: JournalLine[];
+  /** Rule and version: "SALES_INVOICE v1 · R1". */
   rule: string;
   postedAt: ISODateTime;
   postedBy: ActorKey;
   reverses?: string;
+  /** The AE's edit, kept with the rule: "why was this posted?" (§8.4). */
+  edit?: { by: ActorKey; approvedBy: ActorKey; diff: string; reasons: string[] };
 }
-
-export type InventoryMethod = 'perpetual' | 'periodic';

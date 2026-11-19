@@ -47,21 +47,17 @@ export function DemoPanel() {
             </ul>
           </section>
           <section>
-            <h3 className="section__title">3 · Raise a sales invoice (Tasks → Create a voucher)</h3>
+            <h3 className="section__title">3 · Book a sales voucher (Tasks → Create a voucher)</h3>
             <ul className="ob-tips">
               <li>
-                <strong>Sri Lakshmi, DC-1 / SO-1</strong> (SI-0012, the scenario's B4-01): the invoice is prefilled; open the Accounting entry tab and type the entry yourself (Party A/c, sales ledger, CGST, SGST, amounts, and the challan's cost entry: Dr cost of goods sold, Cr FG inventory), or press "Type it in for me"; then pick a wrong ledger to see it stop. Type the customer's PO, submit, play Rajan. Total ₹7,48,125 (CGST and SGST ₹17,812.50 each). Batch G-2604 expires in 5 days (warning).
+                <strong>Sri Lakshmi, KA/INV/2627/0143</strong> (the scenario's B4-01): Billing handed it over; the entry is suggested (rule R1). Click a ledger to pick another (type to search). Submit, then play Rajan: the entry posts. Total ₹7,48,125 (CGST and SGST ₹17,812.50 each).
               </li>
               <li>
-                <strong>Kerala Traders, DC-0005</strong> (under To bill): Kerala, so IGST and the inter-state sales ledger; 560 km, so a 3-day e-way bill.
+                <strong>Kerala Traders, KA/INV/2627/0144</strong>: IGST, one tax line. <strong>Gulf Snack, KA/EXP/2627/0001</strong>: export under LUT, no GST line. As Rajan, try "sends back" or "rejects".
               </li>
-              <li>Type 301 cartons on a 300-carton line: a Stop (never above the challan). Type 200: partial billing, 100 stay on the unbilled list.</li>
-              <li>
-                <strong>Coastal Bakes, DC-0007</strong>: waits until you finish its onboarding (CRF-0019). Then "Latha records DC-0007", and bill it (PO required).
-              </li>
-              <li>Forms → Books: the day book shows Stores' cost entries (Dr cost of goods sold, Cr FG inventory) beside the invoices; Stock shows the batches. Rules → Posting rules switches Perpetual / Periodic.</li>
-              <li>Invoice date 2026-08-31: a closed month, a Stop. 2026-09-30: soft-closed, a warning.</li>
-              <li>After posting: Issue a credit note, then see Forms → Books (day book, trial balance, stock, customer outstanding).</li>
+              <li>If an invoice is wrong (customer, GST), use "Return to Billing": nothing posts.</li>
+              <li>"Mock: Billing sends an invoice" hands you a new one for any customer.</li>
+              <li>Forms → Books: the day book, trial balance and customer outstanding show the posted entries.</li>
             </ul>
           </section>
           <section>

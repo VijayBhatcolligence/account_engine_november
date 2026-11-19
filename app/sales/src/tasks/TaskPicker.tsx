@@ -14,7 +14,7 @@ export interface TaskDef {
 
 export const TASKS: TaskDef[] = [
   { view: 'onboarding', code: 'T12', name: 'Create a customer', words: 'A new customer for Sales, from a paper form' },
-  { view: 'sales', code: 'T24 · new', name: 'Raise a sales invoice', words: 'From a delivery challan, the Tally way (Billing combined, §9)' },
+  { view: 'sales', code: 'T24 · new', name: 'Book a sales voucher', words: 'The accounting entry of an invoice Billing hands over' },
 ];
 
 export const isTaskView = (v: TabId) => TASKS.some((t) => t.view === v);

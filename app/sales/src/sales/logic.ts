@@ -1,17 +1,18 @@
-// The logic behind every value the sales invoice fills in by itself, told twice:
+// T24 §9: every automatic value, told twice (CLAUDE.md §2), with the current invoice's data filled in:
 //   business  what the CA / Accounts Manager hears ("how did you pick that ledger?")
 //   engineer  which data it reads, which rule decides, where the result is stored
-// Pure: the screen shows what this returns, with today's values filled in.
+// Pure: the screen shows what this returns.
 
 import { fmtDate } from '../domain/dates';
-import { inr } from '../domain/money';
-import { categoriesFor, OUR_STATE, STATES } from '../onboarding/catalogue';
-import { COMPANY, costOn, ITEMS, LEDGERS, PARAMS, SERIES } from './catalogue';
-import { accountOf, billingOf, branchOfV, calcOf, challanOf, dueDateOf, ewbDays, partyOfAccount, rupees, type SalesCtx } from './rules';
+import { categoriesFor, STATES } from '../onboarding/catalogue';
+import { COMPANY, ENDORSEMENT, ITEMS, LEDGERS, PARAMS } from './catalogue';
+import { accountOf, calcOf, countryName, dueDateOf, ewbDays, ewbNeeded, issuerOf, itemOf, partyOfAccount, placesOf, receivableOf, rupees, type SalesCtx } from './rules';
 import type { Voucher } from './types';
 
 export interface Logic {
   key: string;
+  /** The spec's field id (T24 §5). */
+  id: string;
   what: string;
   value: string;
   business: string;
@@ -21,147 +22,113 @@ export interface Logic {
 export function logicOf(v: Voucher, ctx: SalesCtx): Logic[] {
   const a = accountOf(ctx, v.accountId);
   const p = partyOfAccount(ctx, v.accountId);
-  const dc = challanOf(ctx, v.dcId);
   const c = calcOf(v, ctx);
-  const bv = branchOfV(ctx, v);
-  const gst = bv?.gstin?.value ?? '';
-  const pos = c.pos ? STATES[c.pos] : null;
-  const ours = STATES[OUR_STATE];
+  const pl = placesOf(ctx, v);
+  const gst = pl.bill?.gstin?.value ?? '';
+  const br = issuerOf(v);
+  const ours = STATES[br.state];
   const cat = a ? categoriesFor('receivable')[a.category] ?? a.category : '—';
-  const bill = billingOf(ctx, a);
+  const ar = receivableOf(a);
   const items = [...new Set(c.rows.map((r) => r.item))];
-  const rateWords = c.rows.map((r) => `${ITEMS[r.item].name.split(',')[0]} ₹${r.rate}`).filter((x, i, xs) => xs.indexOf(x) === i).join(', ');
   const local = c.intra === true;
-  const salesKey = local ? 'sales_local' : 'sales_interstate';
+  const exp = c.kind !== 'domestic';
+  const revKeys = [...new Set(c.rows.map((r) => r.revenue))];
 
-  return [
+  const out: Logic[] = [
     {
-      key: 'party',
-      what: 'Party A/c',
-      value: a ? `${a.name} (${a.accountId})` : '—',
-      business: `The challan ${v.dcId} was loaded against sales order ${dc?.soId ?? '—'} for ${dc?.customer ?? '—'}. That customer was set up in onboarding as account ${a?.accountId ?? '—'}. You never pick the party: it comes with the order.`,
-      engineer: { reads: 'delivery_challan.so_id → sales_order.customer → finance.party_account (side = receivable) → accounting.subledger_account', rule: 'invoice.account_id := the order\'s customer account; refused when there is no active account', stores: 'finance.sales_invoice.account_id' },
+      key: 'party', id: 'B1', what: 'Customer', value: a ? `${a.name} (${a.accountId})` : '—',
+      business: `You picked ${a?.name ?? 'the customer'} from the active customer accounts (set up in T12). Its name, GSTIN and addresses come from the customer master; you never type them on the invoice.`,
+      engineer: { reads: 'debtor_account (active) → pc.party (name) · debtor_location (bill_to, ship_to)', rule: 'picked; refused when the account is not active (K1)', stores: 'sales_invoice.debtor_account_id' },
     },
     {
-      key: 'control',
-      what: 'Under (control account)',
-      value: a?.under ?? '—',
-      business: `At onboarding the customer was put in the category "${cat}". That category places its account under ${a?.under ?? '—'}: the header where the books add up what all such customers owe.`,
-      engineer: { reads: 'finance.party_account.category', rule: 'accounting.account_determination(key_type = control, key = category) → control_account_id', stores: 'accounting.subledger_account.control_account_id (set once, at onboarding)' },
+      key: 'ledger', id: 'B1 · C17', what: 'Receivable ledger', value: a ? `${ar.name} (${ar.code})` : '—',
+      business: `${a?.name ?? 'The customer'} was set up as "${cat}". In the CA's chart that category's customers are kept on ${ar.name} (${ar.code}). The invoice total goes there, on a line that names ${a?.name ?? 'the customer'}: the ledger gives the trial-balance line, the name gives what this customer owes.`,
+      engineer: { reads: 'debtor_account.ledger_account_code (copied at T12 from debtor_category.ledger_account_code)', rule: 'the customer line posts to the account\'s own ledger, account_type receivable; the commit check refuses a receivable line without its debtor_account_id, or on another ledger (SUBLEDGER_MISMATCH, ACCOUNT_NOT_ON_ITS_LEDGER). Fixes G12', stores: `journal_line.ledger_account_code = ${ar.code} + debtor_account_id` },
     },
     {
-      key: 'pos',
-      what: 'Place of supply',
-      value: pos ? `${pos.name} (${pos.code})` : '—',
-      business: `The goods are delivered to ${bv?.location?.city || p?.address.city || '—'} (${bv?.location?.label ?? 'the customer'}). The customer's GSTIN ${gst || '—'} starts with ${gst.slice(0, 2) || '—'}, the code of ${pos?.name ?? '—'}. For goods that move, the place of supply is where the delivery ends.`,
-      engineer: { reads: 'the account\'s P&C location (party_account.location_id → pc.business_location, ship-to state) · its GST registration (party_account.gst_registration_id → pc.party_identifier IN_GST, digits 1–2) → gst_state_code', rule: 'IGST Act s.10(1)(a): place of supply = where the movement ends; the GSTIN prefix must agree (e-invoice pre-check)', stores: 'finance.sales_invoice.place_of_supply' },
+      key: 'issuer', id: 'A3 · A5', what: 'Our GSTIN · branch · series', value: `${br.code} ${br.name} · ${br.gstin} · ${br.series.invoice}`,
+      business: `The invoice is issued under our GSTIN ${br.gstin} (${br.name}, ${br.code}) and takes its number from that GSTIN's series. The supplying branch decides it.`,
+      engineer: { reads: 'picked → fin.branch (gst_identifier_id → pc.party_identifier)', rule: 'one of our branches (BRANCH_NOT_VALID); local / inter-state compares the place of supply with this branch\'s state', stores: 'sales_invoice.branch_id · journal_entry.branch_id · journal_line.branch_id' },
     },
     {
-      key: 'nature',
-      what: 'Local or inter-state',
-      value: c.intra === null ? '—' : local ? 'Local (same state)' : 'Inter-state',
-      business: local
-        ? `Our plant's GSTIN ${COMPANY.gstin} is also ${ours.name} (${ours.code}). Same state = a local sale: the tax splits into CGST and SGST.`
-        : `Our plant is in ${ours.name} (${ours.code}), the customer in ${pos?.name ?? '—'} (${pos?.code ?? '—'}). Different states = inter-state: the whole tax is IGST.`,
-      engineer: { reads: 'branch.gstin state (KA-01 → 29) · place of supply', rule: 'intra := place_of_supply = branch state', stores: 'finance.sales_invoice.supply_type (intra | inter)' },
+      key: 'billto', id: 'B3 · B4', what: 'Bill-to and its GSTIN', value: pl.billLoc ? `${pl.billLoc.label} · ${gst || 'no GSTIN'}` : '—',
+      business: `The bill goes to ${pl.billLoc?.label ?? '—'} (${pl.billLoc?.city ?? ''}), the account's ${pl.bill?.branch.isDefault ? 'default' : 'chosen'} billing branch, registered under GSTIN ${gst || '—'}.`,
+      engineer: { reads: 'debtor_location (usage bill_to, is_default) → debtor_tax_registration → pc.party_identifier IN_GST', rule: 'default bill_to; another open bill_to may be picked; its GSTIN state must equal the place\'s state (K10)', stores: 'sales_invoice.bill_to_location_id · copied at Issue: buyer_gstin' },
     },
     {
-      key: 'sales',
-      what: 'Sales ledger',
-      value: c.intra === null ? '—' : `${LEDGERS[salesKey].name} (${LEDGERS[salesKey].code})`,
-      business: `It is a ${local ? 'local' : 'inter-state'} sale of our own products to a domestic customer (onboarding category "${cat}"). So: ${LEDGERS[salesKey].name}. An export customer (category Export) would go to export sales under the LUT instead. For now you type the ledger in the entry; the rule checks it against this and refuses a different one.`,
-      engineer: { reads: 'supply_type · party_account.category (domestic / export)', rule: `posting rule ${'SALES_INVOICE / STAT v1'}: revenue line → account_determination(key_type = sales, key = ${local ? 'local' : 'interstate'}) → ${LEDGERS[salesKey].code}. The module sends amounts, never an account; the typed entry is only compared with it (entry_mode = typed)`, stores: 'accounting.journal_line.account_id' },
+      key: 'shipto', id: 'B6', what: 'Ship-to', value: pl.ship ? `${pl.ship.label}, ${pl.ship.city} ${pl.ship.pincode}` : '—',
+      business: pl.shipDiffers ? `The goods go to ${pl.ship?.label} (${pl.ship?.city}), not to the bill-to: the invoice prints the delivery address (Rule 46(o)).` : 'The customer gave no separate delivery address, so the goods go to the bill-to place.',
+      engineer: { reads: 'debtor_location (usage ship_to, primary) else the bill_to', rule: 'PIN must be 6 digits for the e-invoice (B4-03, K10)', stores: 'sales_invoice.ship_to_location_id' },
     },
     {
-      key: 'hsn',
-      what: 'HSN and GST rate',
-      value: items.map((i) => `${i}: HSN ${ITEMS[i].hsn}, ${ITEMS[i].gst}%`).join(' · ') || '—',
-      business: 'Biscuits are HSN 1905 31, taxed at 5%. The HSN and rate are set once on the item by the Compliance Officer, never typed on the invoice. We print 6 digits because our turnover is above ₹5 crore.',
-      engineer: { reads: 'item_master.hsn · tax_master(hsn → rate, valid_from)', rule: 'line.gst_rate := tax_master on the invoice date; an override needs a reason and the Compliance Officer', stores: 'finance.sales_invoice_line.hsn, gst_rate' },
+      key: 'pos', id: 'B8', what: 'Place of supply', value: c.posName ? `${c.posName} (${c.posCode})` : '—',
+      business: c.kind === 'export' ? `The goods leave India for ${countryName(p?.address.country)}: an export's place of supply is outside India, code 96 (IGST s.11).` : c.rows.some((r) => r.kind === 'goods') ? `The goods are delivered in ${pl.ship?.city ?? '—'}, ${c.posName ?? '—'}. For goods that move, the place of supply is where the movement ends (IGST s.10(1)(a)).` : `A service to a registered customer: its place of supply is the customer's location, ${c.posName ?? '—'} (IGST s.12(2)(a)).`,
+      engineer: { reads: c.kind === 'export' ? 'debtor_account.export → Pos 96' : 'ship_to debtor_location → pc.business_location.administrative_area_code (IN-KA) → gst_state_code', rule: 'goods: ship-to state, but a THIRD-PARTY ship-to → the bill-to state (s.10(1)(b), rev 3 F2) · services: bill-to state, or the property\'s state (s.12(3)) · export 96 · SEZ: IGST', stores: 'sales_invoice.place_of_supply_code, place_of_supply_basis, ship_to_third_party' },
     },
     {
-      key: 'tax',
-      what: 'Tax ledgers and amounts',
-      value: c.intra === null ? '—' : local ? `CGST ${rupees(c.cgst)} + SGST ${rupees(c.sgst)}` : `IGST ${rupees(c.igst)}`,
-      business: local ? 'Local sale: half the 5% goes to the Centre (CGST 2.5%), half to Karnataka (SGST 2.5%). Both are owed by us, so they sit in the balance sheet until paid.' : 'Inter-state sale: the full 5% is IGST, owed to the Centre. It sits in the balance sheet until paid.',
-      engineer: { reads: 'line amount · gst_rate · supply_type', rule: 'per line: CGST = SGST = round2(amount × rate / 200), or IGST = round2(amount × rate / 100); account_determination(key_type = output_tax, key = cgst | sgst | igst) → 206011 / 206012 / 206013', stores: 'finance.sales_invoice_line tax columns · accounting.journal_line' },
+      key: 'nature', id: 'B5 · B9', what: 'Supply type · tax split', value: c.intra === null ? '—' : `${c.supplyType} · ${exp ? (c.exportType === 'lut' ? 'zero-rated (LUT)' : 'IGST') : local ? 'CGST + SGST' : 'IGST'}`,
+      business: exp ? `An ${c.kind === 'sez' ? 'SEZ supply' : 'export'} is zero-rated: under our LUT no IGST is charged; without a valid LUT, IGST is paid and refunded.` : local ? `Our ${br.name} GSTIN ${br.gstin} is ${ours.name} (${ours.code}) too. Same state = a local sale: CGST + SGST.` : `Our ${br.name} is in ${ours.name}, the place of supply is ${c.posName}. Different states = inter-state: IGST.`,
+      engineer: { reads: `issuer branch GSTIN state (${ours.code}) · place_of_supply · buyer GST position`, rule: 'intra := pos = the branch\'s state; SupTyp B2B / EXPWP / EXPWOP / SEZWP / SEZWOP', stores: 'sales_invoice.supply_type_code, is_inter_state' },
     },
     {
-      key: 'rate',
-      what: 'Rate',
-      value: rateWords || '—',
-      business: `The price agreed on the sales order ${dc?.soId ?? ''}: the price list, the customer's contract rate, or an override the Sales Manager approved (₹700 glucose on SO-1). Billing never changes a price.`,
-      engineer: { reads: 'sales_order_line.rate (price list → contract → approved override)', rule: 'invoice_line.rate := challan_line.rate := order line rate; read-only on the invoice', stores: 'finance.sales_invoice_line.rate' },
+      key: 'hsn', id: 'C6 · C13', what: 'HSN / SAC and GST rate', value: items.map((i) => { const it = itemOf(i)!; return `${i}: ${it.hsn}, ${it.gst}%`; }).join(' · ') || '—',
+      business: `${items.some((i) => ITEMS[i]) ? 'Biscuits are HSN 1905 31 at 5% (rates from 22-9-2025). ' : ''}${items.some((i) => !ITEMS[i]) ? 'The co-packing service carries SAC 998599 at 18% (placeholder, illustrative). ' : ''}Set once on the item by the Compliance Officer, never typed on the invoice. 6 digits: our turnover is above ₹5 crore.`,
+      engineer: { reads: 'item_master.hsn_sac · tax_master(hsn, date) → rate', rule: 'on Billing\'s invoice line; an override → Compliance Officer (G20, C-29)', stores: 'sales_invoice_line.hsn_sac, gst_rate' },
     },
     {
-      key: 'qty',
-      what: 'Quantity',
-      value: c.rows.map((r) => `${r.qty} ${r.uqc}`).join(' · ') || '—',
-      business: `What Latha loaded on ${v.dcId}. You can bill less (the rest stays to bill), never more.`,
-      engineer: { reads: 'delivery_challan_line.qty · Σ quantity already invoiced', rule: 'qty ≤ challan qty − invoiced (0% tolerance, company rule)', stores: 'finance.sales_invoice_line.qty, challan_line_id' },
+      key: 'sales', id: 'C17', what: 'Sales ledger (rule)', value: revKeys.map((k) => `${LEDGERS[k].name} (${LEDGERS[k].code})`).join(' · ') || '—',
+      business: exp ? `An ${c.kind === 'sez' ? 'SEZ supply' : 'export'} goes to Export Sales (401030)${c.exportType === 'lut' ? ', with no GST line' : ''}.` : `A domestic sale of our products is Sale of Products (401010)${revKeys.includes('sale_services') ? '; a service is Sale of Services (401020)' : ''}. Local or inter-state use the same ledger: the place of supply is on the invoice (a split 401011 is only a proposal to the CA).`,
+      engineer: { reads: 'line.is_service · buyer kind (domestic / export / SEZ)', rule: `rule ${c.rules.join(' + ') || '—'} of SALES_INVOICE v1 → ${revKeys.map((k) => LEDGERS[k].code).join(', ') || '—'}; the AE may change it with a reason (§8.4)`, stores: 'journal_line.ledger_account_code' },
     },
     {
-      key: 'due',
-      what: 'Credit days and due date',
-      value: a ? `${a.creditDays ?? 0} days → ${fmtDate(dueDateOf(v, a))}` : '—',
-      business: `${a?.name ?? 'The customer'} gets ${a?.creditDays ?? '—'} days, agreed at onboarding. So this bill is due on ${fmtDate(dueDateOf(v, a))}; Collections follows it from that date.`,
-      engineer: { reads: 'finance.party_account.credit_days', rule: 'due_date = invoice_date + credit_days; one AR open item "New Ref" per invoice', stores: 'accounting.subledger_item (AR) due_date' },
+      key: 'tax', id: 'D2', what: 'Tax ledgers and amounts', value: c.intra === null ? '—' : exp && c.exportType === 'lut' ? 'IGST nil (LUT)' : local ? `CGST ${rupees(c.cgst)} + SGST ${rupees(c.sgst)}` : `IGST ${rupees(c.igst)}`,
+      business: exp && c.exportType === 'lut' ? 'Zero-rated under our LUT: no tax is charged, so no tax line.' : local ? 'Half the rate to the Centre (CGST), half to Karnataka (SGST). We owe both until paid.' : 'The full rate is IGST, owed to the Centre until paid.',
+      engineer: { reads: 'taxable value · gst_rate · supply type', rule: 'per line: CGST = SGST = round2(taxable × rate / 200), IGST = round2(taxable × rate / 100) → 206011 / 206012 / 206013 (proposed under 206010, G18); locked in the entry', stores: 'sales_invoice_line tax columns · journal_line' },
     },
     {
-      key: 'po',
-      what: "Customer's PO required?",
-      value: bill?.poRule === 'every_invoice' ? 'Yes' : 'No',
-      business: bill?.poRule === 'every_invoice' ? "This customer's billing instruction, set at onboarding: \"PO number on every invoice\". They reject invoices without it." : 'Its billing instruction does not ask for a PO.',
-      engineer: { reads: 'finance.party_account.po_rule', rule: 'po_rule = every_invoice ⇒ customer_po required (Submit gate)', stores: 'finance.sales_invoice.customer_po' },
+      key: 'rate', id: 'C7 · C9', what: 'Rate and discount', value: c.rows.map((r) => `${r.item} ${c.currency === 'INR' ? '₹' : `${c.currency} `}${r.rate}${r.discount ? ` less ${r.discount}` : ''}`).filter((x, i, xs) => xs.indexOf(x) === i).join(', ') || '—',
+      business: 'The rate is typed per line, as on the CA\'s invoices: it starts at the item\'s list price and you change it to the price agreed with the customer. A trade discount on the face of the invoice (Disc.) reduces the taxable value (CGST s.15(3)(a)). Rajan sees every rate when he approves.',
+      engineer: { reads: 'typed; default item_master.list_price', rule: 'taxable = qty × rate − discount; discount ≤ qty × rate (K6 DISCOUNT_ABOVE_LINE_VALUE)', stores: 'sales_invoice_line.unit_price, discount_amount, taxable_amount' },
     },
     {
-      key: 'round',
-      what: 'Round off',
-      value: rupees(c.roundOff),
-      business: 'The total is rounded to the whole rupee; the paise go to the Round off ledger.',
-      engineer: { reads: 'exact total', rule: 'total = round(exact); difference → account_determination(round_off) → 506090', stores: 'accounting.journal_line' },
+      key: 'due', id: 'B11', what: 'Credit days and due date', value: a ? `${a.creditDays ?? 0} days → ${fmtDate(dueDateOf(v, a))}` : '—',
+      business: `${a?.name ?? 'The customer'} has ${a?.creditDays ?? 0} days' credit, agreed at onboarding. So this bill is due on ${fmtDate(dueDateOf(v, a))}; Collections follows it from then.`,
+      engineer: { reads: 'debtor_account.credit_days', rule: 'due_date = invoice_date + credit_days (CHECK due_date >= invoice_date). The open item is the invoice and its journal line naming the account (Manoj: the subledger is a view, no separate table)', stores: 'sales_invoice.due_date' },
     },
     {
-      key: 'number',
-      what: 'Invoice number',
-      value: v.number ?? `${SERIES.invoice}nnnn (on confirmation)`,
-      business: 'The next number in our Karnataka series for this year. The law allows no gaps and at most 16 characters, so the number is given only when the invoice is confirmed: a dropped draft uses none.',
-      engineer: { reads: 'numbering_series(type = invoice, gstin = KA, fy = 2627)', rule: 'next value taken inside the confirm transaction; unique per GSTIN and year; cancelled numbers kept', stores: 'finance.sales_invoice.number' },
+      key: 'round', id: 'D4', what: 'Round off', value: rupees(c.roundOff),
+      business: 'The total is made a whole rupee; the paise go to Round off.',
+      engineer: { reads: 'D1 + D2 + D3', rule: 'round(total) − total (±₹99.99) → 506090 (proposed, G18)', stores: 'sales_invoice.round_off · journal_line' },
     },
     {
-      key: 'irn',
-      what: 'E-invoice (IRN, QR)',
-      value: v.irn ? `IRN ${v.irn.slice(0, 12)}…` : 'After Rajan approves',
-      business: 'Our turnover is above ₹5 crore, so every B2B invoice is registered on the government portal. It returns the IRN and a signed QR, printed on the invoice. Only then may the goods leave.',
-      engineer: { reads: 'invoice header, parties, lines (the e-invoice schema)', rule: 'on approval → IRP adapter → irn, ack_no, signed_qr; retried, failures to the exception queue; Confirmed only when the IRN and the journal entry both succeed', stores: 'finance.sales_invoice.irn, ack_no, ack_at, signed_qr' },
+      key: 'number', id: 'A6', what: 'Invoice number', value: v.number ?? '—',
+      business: `Billing's number, from the ${ours.name} series for 2026-27. It came with the invoice; the voucher keeps it so the entry can always be traced back to its invoice.`,
+      engineer: { reads: 'the invoice handed over by Billing (sales.invoice.issued event)', rule: 'one voucher per invoice (unique: branch + invoice_no)', stores: 'sales_voucher.invoice_no' },
     },
     {
-      key: 'ewb',
-      what: 'E-way bill',
-      value: c.total > PARAMS.ewayBillMin.value ? `Needed · ${dc ? ewbDays(dc.distanceKm) : 1} day(s) for ${dc?.distanceKm ?? '—'} km` : 'Not needed',
-      business: `The value is ${c.total > PARAMS.ewayBillMin.value ? 'above' : 'below'} ₹50,000 and the goods move, so ${c.total > PARAMS.ewayBillMin.value ? 'an e-way bill is needed' : 'no e-way bill is needed'}. Validity is one day per 200 km. Part-A comes from the invoice; Latha adds the vehicle (Part-B).`,
-      engineer: { reads: 'invoice total · company rule ewb_min · challan distance, vehicle', rule: 'total > ewb_min ⇒ Part-A via the IRP with the IRN; valid_to = date + ceil(km / 200) − 1', stores: 'finance.sales_invoice.ewb_no, ewb_valid_to' },
+      key: 'irn', id: 'G1 · F5', what: 'IRN · e-way bill', value: `${v.irn ? `IRN ${v.irn.slice(0, 12)}…` : 'IRN after approval'} · ${ewbNeeded(c) ? `e-way bill ${ewbDays(Number(v.transport.distanceKm) || 1)} day(s)` : 'no e-way bill'}`,
+      business: `Billing registered the invoice with the IRP before handing it over${v.irn ? ' (IRN and signed QR on the invoice)' : ' (not needed: B2C or a Bill of Supply)'}${v.ewbNo ? ', and made the e-way bill' : ''}. You only book the entry.`,
+      engineer: { reads: 'the invoice handed over by Billing', rule: 'IRN and e-way bill are Billing\'s; not stored in the voucher', stores: '— (Billing\'s)' },
     },
     {
-      key: 'cost',
-      what: 'Cost of goods sold',
-      value: inr(c.cost),
-      business: `The cartons cost us ${items.map((i) => `₹${costOn(i, dc?.date ?? v.date)} (${i})`).join(', ')} each at standard cost. That cost left the stock when Latha loaded the truck, so the entry is the challan's: Dr Cost of goods sold, Cr Finished-goods inventory, dated the challan date (typed by hand for now, posted as its own entry). The invoice only records what the customer owes, so stock is never reduced twice.${ctx.method === 'periodic' ? ' (Periodic switch: no entry per sale; cost comes from the month-end closing stock.)' : ''}`,
-      engineer: { reads: 'delivery_challan_line.qty · item standard_cost(date) · company switch inventory_method', rule: 'perpetual: on challan confirm, GOODS_ISSUE rule: Dr det(cogs) 502010 · Cr det(fg_inventory, godown) 105020; periodic: none (T11 at month end)', stores: 'accounting.journal_entry (source = delivery_challan)' },
-    },
-    {
-      key: 'margin',
-      what: 'Gross margin',
-      value: c.marginPct !== null ? `${inr(c.margin)} · ${c.marginPct}%` : '—',
-      business: `Sales ${inr(c.taxable)} less cost ${inr(c.cost)}. The 18% floor was checked when the order was approved; it is shown again so nothing is billed below cost unseen.`,
-      engineer: { reads: 'taxable · Σ qty × standard_cost', rule: 'margin_pct = (taxable − cost) / taxable; warn below the company rule margin_floor', stores: '(computed, not stored)' },
-    },
-    {
-      key: 'approver',
-      what: 'Who approves',
-      value: 'Rajan (Accounts Manager)',
-      business: 'In this company billing sits with the Accounts Executive, so the Accounts Manager checks every invoice. His approval sends it to the portal and posts it.',
-      engineer: { reads: 'approval route (document = sales_invoice)', rule: 'one platform.approval step, position = accounts_manager; maker ≠ checker; approval → posting + IRN', stores: 'platform.approval' },
+      key: 'approver', id: 'K19', what: 'Who approves', value: 'Rajan (Accounts Manager)',
+      business: 'Billing sits with the Accounts Executive, so the Accounts Manager checks every invoice: he approves, sends it back with a reason, or rejects it. You (the maker) can never decide your own. Everything is checked again when he approves.',
+      engineer: { reads: 'the job of the person deciding (accounts_manager)', rule: 'DecideSalesInvoice: maker ≠ checker (CHECK decided_by_contact_id <> submitted_by_contact_id); reason required to send back or reject; approve re-runs every gate, then Issue → Register → Post in one transaction', stores: 'sales_invoice.decided_by_contact_id, decided_at, decision_reason · sales_invoice_history' },
     },
   ];
+  if (exp) {
+    out.splice(6, 0,
+      {
+        key: 'export', id: 'E1 · E2 · E3', what: 'Export type · LUT · endorsement', value: c.exportType === 'lut' ? `LUT ${COMPANY.lut.no} to ${fmtDate(COMPANY.lut.validTo)}` : 'With IGST',
+        business: c.exportType === 'lut' ? `Our LUT for 2026-27 (number illustrative) is valid on the invoice date, so we export without paying IGST and print "${ENDORSEMENT.lut}".` : `Without a valid LUT on the date, IGST is paid and refunded; the invoice prints "${ENDORSEMENT.igst}".`,
+        engineer: { reads: 'our LUT register (issuer GSTIN, FY) — not the customer\'s copy (D4, G19)', rule: 'LUT if valid on A7 else IGST; LUT chosen without a valid LUT → stop (K11)', stores: 'sales_invoice.export_type, lut_ref' },
+      },
+      {
+        key: 'fx', id: 'A14 · D7', what: 'Currency and rate', value: c.currency === 'INR' ? 'INR' : `${c.currency} ${c.foreignTotal?.toLocaleString('en-IN')} × ₹${c.fx} = ${rupees(c.taxable)}`,
+        business: `The customer is invoiced in ${c.currency} (T12). The rupee value is at ₹${c.fx} per ${c.currency}: ${PARAMS.fxUsd.words}.`,
+        engineer: { reads: 'debtor_account.currency · exchange rate (typed; source G25)', rule: 'taxable INR = round2(Σ qty × rate × fx)', stores: 'sales_invoice.currency_code, exchange_rate, total_foreign' },
+      },
+    );
+  }
+  return out;
 }

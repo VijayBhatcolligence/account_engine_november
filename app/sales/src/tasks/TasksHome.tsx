@@ -40,8 +40,8 @@ export function TasksHome() {
           <ActionCard
             icon={ReceiptText}
             accent="blue"
-            title="Sales: raise a sales invoice"
-            description="A GST tax invoice from a delivery challan: HSN, CGST + SGST or IGST, e-invoice (IRN, QR), e-way bill. Every worked-out value shows its logic."
+            title="Sales: book a sales voucher"
+            description="Billing hands over the invoice; you book its entry: Dr customer, Cr sales, Cr GST. Ledgers are suggested; pick others if needed. Every worked-out value shows its logic."
             code={sv.code}
             cadence={count(sales.vouchers.filter(isMineV).length, sales.vouchers.filter(isWithOthersV).length)}
             badge={sales.vouchers.filter(isMineV).length}

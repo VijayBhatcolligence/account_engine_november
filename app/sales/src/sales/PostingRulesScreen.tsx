@@ -1,53 +1,172 @@
-// Posting rules: what every voucher must satisfy, what a sales invoice is checked for, the two entries a sale
-// makes (Stores' challan: cost; the invoice: revenue), the company switch Perpetual / Periodic, and the numbers.
+// Posting rules (T24 §8): what every voucher must satisfy, the rule SALES_INVOICE v1 (R1–R7), the ledgers and
+// their status in the CA's chart, the AE's edit (§8.4), the company switches, and the checks K1–K19.
 
-import { PageHeader, Section, SegmentedControl, StatusPill } from '../ui';
-import { LEDGERS, PARAMS, SERIES } from './catalogue';
-import { COST_RULE, POSTING_RULE } from './rules';
-import { useSales } from './store';
+import { PageHeader, Section, StatusPill } from '../ui';
+import { DEBTOR_LEDGER, LEDGERS, PARAMS, SETTINGS } from './catalogue';
+import { CHECK_CODE, POSTING_RULE } from './rules';
 
 const EVERY_VOUCHER: { rule: string; why: string }[] = [
-  { rule: 'Total Dr = total Cr, to the paisa', why: 'Double entry. A draft may be unbalanced; nothing is posted unless it balances' },
-  { rule: 'A sale has a balance-sheet side and a P&L side', why: 'The customer owes us and GST is owed (balance sheet); the sale is income (P&L). Under Perpetual the cost side is the same: cost of goods sold (P&L), inventory (balance sheet)' },
-  { rule: 'One owner per entry: stock and cost move on the challan, revenue on the invoice', why: "Stores' challan is when the goods leave; crediting inventory again in the invoice would count it twice" },
-  { rule: 'Only postable ledgers, never a header', why: "Trade Receivables › Domestic is a header: the line goes to the customer's own AR account under it" },
-  { rule: 'A control account is posted only with a party', why: 'The AR sub-ledger must always add up to Trade Receivables (CONTROL_ACCOUNT_REQUIRES_PARTY)' },
-  { rule: 'The posting date must be in an open period', why: 'Oct-2026 open · Sep-2026 soft-closed (Accounts Manager approval) · earlier months closed' },
-  { rule: 'Confirmed is final: no edit, no delete', why: 'A mistake is corrected by a credit note (its own reversing entry); the invoice stays (scenario C-24)' },
-  { rule: `The invoice number is given on confirmation: ${SERIES.invoice}nnnn`, why: 'One series per GSTIN, reset each financial year, never gapped; at most 16 characters (CGST Rule 46(b)). A cancelled number is kept, never reused' },
-  { rule: 'Confirmed only with the entry posted and the IRN received', why: 'If the entry fails, the invoice stays Draft (scenario C-25); without the IRN the challan cannot leave' },
-  { rule: 'The module never chooses a ledger', why: "It sends amounts and tax; the posting rule and account determination pick the ledgers (team lead's design)" },
+  { rule: 'Total Dr = total Cr, to the paisa (K16)', why: 'Double entry. Nothing is posted unless it balances' },
+  { rule: 'The engine picks the rule and the ledgers; the slice sends amounts', why: 'The invoice sends the business facts (customer, place of supply, lines, tax). The AE may edit the entry only with a reason, and Rajan sees it (§8.4)' },
+  { rule: 'One owner per entry: the invoice posts revenue, the receivable and GST only', why: "Stock and cost of goods sold are the Stores task's (G30), never the invoice's: crediting stock here as well would count it twice" },
+  { rule: 'Never a group ledger; a receivable ledger only through a customer (LEDGER_NOT_POSTABLE)', why: "206010 Statutory Dues becomes a group once the GST heads exist. 107010–107130 are receivable ledgers (account_type receivable): the customer line posts to its account's own ledger and names the account (the commit check: SUBLEDGER_MISMATCH, ACCOUNT_NOT_ON_ITS_LEDGER). No \"control ledger\" (Manoj, 13-Nov)" },
+  { rule: 'The posting date must be in an open period (K7, K8)', why: 'Oct-2026 open · Sep-2026 soft-closed (Accounts Manager approval) · earlier months closed' },
+  { rule: 'Approval re-runs every check, then posts in one transaction', why: "As Manoj's purchase voucher: the customer or the period may have changed since Submit (APPROVAL_REFUSED). If any step stops, nothing is saved" },
+  { rule: 'Posted is final: no edit, no delete', why: "A mistake on the invoice is Billing's to correct (a credit note, T25); a wrong entry is reversed, never edited" },
+  { rule: 'One entry per invoice', why: "Each invoice Billing hands over is booked once (the voucher is unique per invoice number and branch)" },
+  { rule: 'Every journal entry keeps its rule version and any edit', why: '"Why was this posted?" is always answerable: the entry → its sales invoice (source_document_id) → rule SALES_INVOICE v1 and the case on each line (fin.posting_rule) → the edit (who, why, approved by)' },
 ];
 
-const SALES_CHECKS: { level: 'stop' | 'warn'; when: string; why: string }[] = [
-  { level: 'stop', when: 'An invoice line with no challan line', why: 'Bill only what Stores dispatched (scenario §3.2)' },
-  { level: 'stop', when: 'Quantity above what is left on the challan', why: '0% above the challan; partial billing allowed (scenario §3.4)' },
-  { level: 'stop', when: 'The challan is already fully invoiced', why: 'No duplicate invoice' },
-  { level: 'stop', when: 'E-invoice pre-check fails: buyer GSTIN, ship-to pincode, 6-digit HSN', why: 'Else the IRN fails. Identity is fixed in the party master, not here; the invoice stays Draft (B4-03)' },
-  { level: 'stop', when: "Customer's PO number missing when its billing instruction says every invoice", why: 'From onboarding (billing instructions)' },
-  { level: 'stop', when: 'Date in a closed month, or after today', why: 'Period lock; the invoice is dated at or before removal of the goods' },
-  { level: 'stop', when: 'No customer account, or an export customer', why: 'Onboard first; export invoices (LUT) are another voucher type' },
-  { level: 'warn', when: 'Date in a soft-closed month', why: 'Accounts Manager-approved adjustments only' },
-  { level: 'warn', when: 'Batch expires within 7 days', why: 'FEFO warning from the challan, shown again (G-2604 on DC-1)' },
-  { level: 'warn', when: 'Margin below 18%, or below cost', why: 'The Sales Order approval covered it; shown so nothing is billed below cost unseen' },
-  { level: 'warn', when: 'Customer over its credit limit after this invoice', why: 'Credit is checked on the order; dispatched goods are billed anyway, Farid is told' },
-  { level: 'warn', when: 'Part of the challan left unbilled', why: 'Partial billing: the rest stays on the unbilled list (keep it at zero)' },
+const RULES: [string, string, string, string][] = [
+  ['R1', 'Goods, domestic, local (place of supply = our branch\'s state)', 'Customer (its receivable ledger) = total', '401010 Sale of Products · Output CGST · Output SGST · ± Round off'],
+  ['R2', 'Goods, domestic, inter-state', 'Customer', '401010 Sale of Products · Output IGST · ± Round off'],
+  ['R3', 'Service line (SAC)', 'Customer', '401020 Sale of Services · GST as R1 / R2'],
+  ['R4', 'Export under LUT', 'Customer (107040) in INR', '401030 Export Sales · no GST'],
+  ['R5', 'Export with IGST (rev 3: the CA\'s C2, C4)', 'Customer (107040) = the value only · IGST Refund Receivable 109040 (proposed) = the IGST', '401030 Export Sales · Output IGST'],
+  ['R6', 'SEZ under LUT / with IGST (rev 3: C5, C6)', 'Customer (107050) = the value only · with IGST: IGST Refund Receivable 109040', '401030 (to confirm, G18) · Output IGST when paid'],
+  ['R7', 'TCS item (scrap, luxury …)', 'Customer incl. TCS', '+ TCS payable 206014 (s.394): rate to confirm, not computed in the mock'],
+  ['R8', 'Paid at once: cash / UPI / card (A3)', 'Cash in Hand 108010 or UPI / Card Clearing 108030 (proposed), not the customer', 'as the line\'s own rule'],
+  ['R9', 'Nil-rated, exempt or non-GST line (A5, A6, B4)', '—', 'Sales – Exempt / Nil-rated 401050 (proposed) · no GST; all lines so → a Bill of Supply'],
+  ['R10', 'Freight charged to the buyer (A8)', '—', 'Freight Recovered 401070 (proposed) · GST at the goods\' rate'],
+  ['R11', 'Expense paid as pure agent (B5)', '—', 'Expenses Recoverable 110030 (proposed) · outside the value, no GST'],
+  ['R12', 'Period service billed in advance (B6)', '—', 'Contract Liability 206040 (proposed) · released month by month (period end: G33)'],
+];
+
+const CHECKS: [string, 'Stop' | 'Warn' | 'Stop / Warn', string][] = [
+  ['K1', 'Stop', 'The invoice names an open customer account (T12 done)'],
+  ['K7', 'Stop', 'The posting date (= the invoice date) in a closed month or year'],
+  ['K8', 'Warn', 'Soft-closed month'],
+  ['K15', 'Warn', 'Customer over its credit limit after this invoice'],
+  ['K16', 'Stop', 'Entry balances (Dr = Cr)'],
+  ['K17', 'Stop / Warn', 'Ledgers are suggestions: any may be picked (no reason). The customer and GST amounts are the invoice\'s; never a group ledger; the customer line only on a receivable ledger; a changed amount needs a reason; Rajan sees every change'],
+  ['K19', 'Stop', 'The maker may not decide'],
 ];
 
 export function PostingRulesScreen() {
-  const s = useSales();
+  const ledgers = Object.values(LEDGERS).filter((l) => l.accountType !== 'receivable');
+  const receivables = [...new Set(Object.values(DEBTOR_LEDGER))].map((code) => Object.values(LEDGERS).find((l) => l.code === code)!).filter(Boolean);
   return (
     <div className="ob-page">
       <PageHeader
         title="Posting rules"
-        subtitle="What every voucher must satisfy, what a sales invoice is checked for, and the two entries a sale makes. Same rules the backend runs on save, submit and confirm."
-        actions={
-          <span className="inline-gap">
-            <span className="subtle small-note">Inventory accounting (company switch)</span>
-            <SegmentedControl label="Inventory accounting" value={s.method} onChange={(m) => s.setMethod(m)} options={[{ value: 'perpetual', label: 'Perpetual (Run 1)' }, { value: 'periodic', label: 'Periodic (Run 2)' }]} />
-          </span>
-        }
+        subtitle={`${POSTING_RULE}: the entry the engine suggests for an invoice received from Billing, the ledgers it uses, and the checks. Same rules the backend runs on save, submit and post.`}
       />
+      <Section title="SALES_INVOICE v1 (effective 1-Apr-2026): event data → rule → entry">
+        <table className="ob-sugg">
+          <thead>
+            <tr>
+              <th>Rule · condition</th>
+              <th>Dr</th>
+              <th>Cr</th>
+            </tr>
+          </thead>
+          <tbody>
+            {RULES.map(([id, cond, dr, cr]) => (
+              <tr key={id}>
+                <th scope="row">
+                  <strong>{id}</strong> · {cond}
+                </th>
+                <td>{dr}</td>
+                <td>{cr}</td>
+              </tr>
+            ))}
+            <tr>
+              <th scope="row">Discount at supply</th>
+              <td colSpan={2}>Already inside the taxable value: no ledger (scope 4.14)</td>
+            </tr>
+            <tr>
+              <th scope="row">Stock and cost of goods sold</th>
+              <td colSpan={2}>Not in this rule. The goods leaving the store are posted by Stores' delivery challan, a separate task (G30), with its own posting rule. The invoice never credits stock.</td>
+            </tr>
+          </tbody>
+        </table>
+        <pre className="sv-rule">{`Example B4-01 · SI-0012, Sri Lakshmi (R1)
+   Dr 107100 Trade Receivables – Dealer/Distributor
+        naming Sri Lakshmi Distributors (ACC-1201)     7,48,125.00
+   Cr 401010 Sale of Products                          7,12,500.00
+   Cr 206011 Output CGST (proposed)                       17,812.50
+   Cr 206012 Output SGST (proposed)                       17,812.50
+Example B4-09 · Gulf Snack export under LUT (R4)
+   Dr Gulf Snack Imports LLC (107040)                  9,39,840.00
+   Cr 401030 Export Sales                              9,39,840.00   USD 10,680 × ₹88.00`}</pre>
+      </Section>
+      <div className="ob-two">
+        <Section title="Ledgers (CA's chart, Indian GAAP)">
+          <table className="ob-sugg">
+            <tbody>
+              {ledgers.map((l) => (
+                <tr key={l.code}>
+                  <th scope="row" className="mono">
+                    {l.code}
+                  </th>
+                  <td>{l.name}</td>
+                  <td className="mono subtle small-note">{l.accountType ?? ''}</td>
+                  <td>{l.proposed ? <StatusPill tone="warning">proposed (CA to confirm)</StatusPill> : l.isGroup ? <StatusPill tone="normal">group</StatusPill> : <StatusPill tone="success">CA ✓</StatusPill>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="subtle small-note">401011 Sale of Products – Inter-state is only a proposal (probably not needed: the place of supply is on the invoice). Domestic inter-state sales post to 401010. Output GST by head (206011–206013), TCS payable (206014) and Round Off (505120, under Other Expenses – Administrative) wait for the CA (G18). The second column is fin.ledger_account.account_type.</p>
+        </Section>
+        <Section title="Receivable ledgers (from the debtor category)">
+          <table className="ob-sugg">
+            <tbody>
+              {receivables.map((l) => (
+                <tr key={l.code}>
+                  <th scope="row" className="mono">
+                    {l.code}
+                  </th>
+                  <td>{l.name}</td>
+                  <td className="subtle small-note">{Object.keys(DEBTOR_LEDGER).filter((k) => DEBTOR_LEDGER[k] === l.code).join(', ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="subtle small-note">From fin.debtor_category (the CA's Debtor Category Master), copied to fin.debtor_account.ledger_account_code at T12. account_type receivable: each line names its customer. The CA's chart has all 13 codes (Indian GAAP rows 54–66); the engine seed still maps every category to 107010 (to agree, G28). Replaces the old header-to-code map (G12).</p>
+        </Section>
+      </div>
+      <div className="ob-two">
+        <Section title="The AE's edit (§8.4, Vijay 6-Nov)">
+          <ul className="ob-plain">
+            <li>The engine fills the entry; it is read-only with each line's rule and why.</li>
+            <li>"Edit entry": change a ledger, split a line, add a line. Every changed or added line needs a reason.</li>
+            <li>Locked: the customer line (= invoice total), the tax lines (= the invoice's tax by head), Dr = Cr.</li>
+            <li>Never a group ledger, never a receivable ledger on another line (LEDGER_NOT_POSTABLE).</li>
+            <li>Rajan sees "Entry differs from rule R1: lines …"; the journal keeps the rule and the edit (who, why, approved by).</li>
+          </ul>
+        </Section>
+        <Section title="Company settings and parameters">
+          <ul className="ob-params">
+            {Object.values(SETTINGS).map((p) => (
+              <li key={p.words}>
+                <span>{p.words}</span>
+                <strong>{p.owner}</strong>
+              </li>
+            ))}
+            {Object.values(PARAMS).map((p) => (
+              <li key={p.words}>
+                <span>{p.words}</span>
+                <strong>{p.owner}</strong>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      </div>
+      <Section title="Checks on a sales invoice (K1–K19)">
+        <ul className="check-list">
+          {CHECKS.map(([k, level, when]) => (
+            <li key={k} className={`check-row ${level === 'Warn' ? 'check-row--reason' : 'check-row--stop'}`}>
+              <StatusPill tone={level === 'Warn' ? 'warning' : 'critical'}>{level}</StatusPill>
+              <span className="check-row__text">
+                <span className="check-row__title">
+                  {k} · {when}
+                </span>
+                <span className="check-row__detail mono">{CHECK_CODE[k]}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </Section>
       <Section title="Every voucher">
         <ul className="check-list">
           {EVERY_VOUCHER.map((c) => (
@@ -55,74 +174,6 @@ export function PostingRulesScreen() {
               <StatusPill tone="info">Always</StatusPill>
               <span className="check-row__text">
                 <span className="check-row__title">{c.rule}</span>
-                <span className="check-row__detail">{c.why}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
-      </Section>
-      <div className="ob-two">
-        <Section title="A sale makes two entries">
-          <pre className="sv-rule">{`1  Stores records the delivery challan (goods leave KA-FG)
-   ${COST_RULE}
-   Perpetual:  Dr ${LEDGERS.cogs.name.padEnd(36)} qty × standard cost   P&L
-               Cr ${LEDGERS.fg_inventory.name.padEnd(36)} same amount           Balance sheet
-   Periodic:   nothing (cost of goods sold from closing stock, T11)
-
-2  The invoice is confirmed (Rajan approves; IRN; e-way bill Part-A)
-   ${POSTING_RULE}
-   Dr customer's AR account                  total (rounded)      Balance sheet
-   Cr ${LEDGERS.sales_local.name.padEnd(36)} taxable  when local      P&L
-   Cr ${LEDGERS.sales_interstate.name.padEnd(36)} taxable  when inter-state
-   Cr Output CGST · Output SGST (½ rate each)  or  Output IGST     Balance sheet
-   Dr/Cr Round off                           total − exact (< ₹1)  P&L
-
-Example DC-1 / SO-1 (scenario B4-01):
-   cost   Dr COGS 5,64,000.00 / Cr FG inventory 5,64,000.00
-   sale   Dr Sri Lakshmi 7,48,125.00 / Cr Sales 7,12,500.00
-          Cr CGST 17,812.50 / Cr SGST 17,812.50    margin 1,48,500 (20.8%)`}</pre>
-          <p className="subtle small-note">Ledger codes from the CA's chart of accounts (401010 Sale of Products, 107010 Trade Receivables). Output GST, round off, cost of goods sold and FG inventory ledgers are proposed. In the Schedule III P&L, cost of goods sold shows as "changes in inventories of finished goods".</p>
-        </Section>
-        <Section title="Who approves, and the numbers">
-          <div className="ob-route">
-            <p className="ob-route__side">Sales invoice</p>
-            <ul>
-              <li>
-                <strong>Every invoice</strong> → Rajan (Accounts Manager): Billing combined with this role (tasks doc §9). His approval triggers the IRN and e-way bill Part-A
-              </li>
-              <li>
-                <strong>Credit note</strong> → only against an adjustment the Sales Manager approved; Rajan always, Usha as well above ₹1,00,000
-              </li>
-              <li>
-                <strong>Cancel an IRN</strong> → within 24 hours and before the goods move; after that, only a credit note
-              </li>
-            </ul>
-          </div>
-          <ul className="ob-params">
-            {Object.values(PARAMS).map((p) => (
-              <li key={p.words}>
-                <span>{p.words}</span>
-                <strong>{p.owner}</strong>
-              </li>
-            ))}
-            <li>
-              <span>GST rate on biscuits (HSN 190531)</span>
-              <strong>5% · Compliance Officer</strong>
-            </li>
-            <li>
-              <span>E-way bill validity</span>
-              <strong>1 day per 200 km</strong>
-            </li>
-          </ul>
-        </Section>
-      </div>
-      <Section title="Checks on a sales invoice">
-        <ul className="check-list">
-          {SALES_CHECKS.map((c) => (
-            <li key={c.when} className={`check-row ${c.level === 'stop' ? 'check-row--stop' : 'check-row--reason'}`}>
-              <StatusPill tone={c.level === 'stop' ? 'critical' : 'warning'}>{c.level === 'stop' ? 'Stop' : 'Warn'}</StatusPill>
-              <span className="check-row__text">
-                <span className="check-row__title">{c.when}</span>
                 <span className="check-row__detail">{c.why}</span>
               </span>
             </li>

@@ -93,18 +93,13 @@ const TABLES: TableDef[] = [
     rows: () => {
       const sl = useSales.getState();
       const ctx = ctxOf(sl);
-      return sl.vouchers.map((v) => ({ id: v.id, invoice_no: v.number ?? 'NULL', state: v.status, delivery_challan: v.dcId, account_id: v.accountId || 'NULL', invoice_date: v.date, total: inr(calcOf(v, ctx).total), journal_entry_id: v.entryId ?? 'NULL', irn: v.irn ?? 'NULL' }));
+      return sl.vouchers.map((v) => ({ id: v.id, invoice_no: v.number ?? 'NULL', state: v.status, entry_mode: 'typed', account_id: v.accountId || 'NULL', invoice_date: v.date, total: inr(calcOf(v, ctx).total), journal_entry_id: v.entryId ?? 'NULL', irn: v.irn ?? 'NULL' }));
     },
   },
   {
     id: 'finance.sales_invoice_line',
     owner: 'Sales & journal (new)',
-    rows: () => useSales.getState().vouchers.flatMap((v) => v.lines.map((l, i) => ({ sales_invoice_id: v.id, line_no: String(i + 1), challan_line: `${v.dcId}/${l.dcLine + 1}`, item: l.item, batch: l.batch, qty: String(l.qty ?? 'NULL'), rate: String(l.rate) }))),
-  },
-  {
-    id: 'inventory.delivery_challan (Stores)',
-    owner: 'Sales & journal (new)',
-    rows: () => useSales.getState().challans.map((c) => ({ id: c.id, sales_order: c.soId, customer: c.customer, challan_date: c.date, godown: 'KA-FG', cartons: String(c.lines.reduce((t, l) => t + l.qty, 0)), recorded_at: c.recordedAt ?? 'NULL (waits for the customer account)', cost_entry_id: c.costEntryId ?? 'NULL' })),
+    rows: () => useSales.getState().vouchers.flatMap((v) => v.lines.map((l, i) => ({ sales_invoice_id: v.id, line_no: String(i + 1), item: l.item, qty: String(l.qty ?? 'NULL'), rate: String(l.rate), discount: String(l.discount ?? 0) }))),
   },
   { id: 'accounting.journal_entry', owner: 'Sales & journal (new)', rows: () => useSales.getState().journal.map((e) => ({ id: e.id, voucher_no: e.voucherNo, kind: e.kind, posting_date: e.date, rule_version: e.rule, reverses_entry: e.reverses ?? 'NULL', posted_at: e.postedAt })) },
   {

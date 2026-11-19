@@ -45,9 +45,9 @@ export function FormsScreen() {
     })),
     ...s.vouchers.map((v) => ({
       key: v.id,
-      no: v.dcId,
-      kind: 'Delivery challan → invoice',
-      from: ACTORS[v.from].name,
+      no: v.number ?? v.id,
+      kind: 'Sales invoice',
+      from: ACTORS[v.maker].name,
       about: titleOfV(v, ctx),
       at: v.arrivedAt,
       task: 'sales' as const,
@@ -71,8 +71,8 @@ export function FormsScreen() {
     <div className="screen-fill ob-page">
       <PageHeader
         title="Forms received"
-        subtitle="Every paper on your desk: customer forms from Sales (typed in by you), and the delivery challans Stores recorded (each billed by one invoice)."
-        actions={<SegmentedControl label="Show" value={filter} onChange={setFilter} options={[{ value: 'all', label: 'All' }, { value: 'onboarding', label: 'Party forms' }, { value: 'sales', label: 'Challans' }]} />}
+        subtitle="Every paper on your desk: customer forms from Sales (typed in by you), and the invoices Billing handed you to book."
+        actions={<SegmentedControl label="Show" value={filter} onChange={setFilter} options={[{ value: 'all', label: 'All' }, { value: 'onboarding', label: 'Party forms' }, { value: 'sales', label: 'Invoices' }]} />}
       />
       <DataTable columns={cols} rows={rows} rowKey={(r) => r.key} onRowClick={(r) => (r.task === 'onboarding' ? app.navigate('onboarding', r.id) : app.openVoucher(r.id))} defaultSort={{ key: 'at', dir: 'desc' }} />
     </div>

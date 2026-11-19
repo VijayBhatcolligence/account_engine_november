@@ -46,7 +46,7 @@ import type { Account, ActorKey, Block, FieldValue, Party, Request, Side, Sugges
 
 /** A–F and B1 are the customer form's sections; S is its "System suggestions" block; BI the billing instructions
  *  (task card T12); M and K are the vendor's MSME and bank blocks. */
-export type Section = 'A' | 'S' | 'B' | 'B1' | 'C' | 'D' | 'BI' | 'E' | 'F' | 'M' | 'K';
+export type Section = 'A' | 'S' | 'B' | 'B1' | 'C' | 'D' | 'BI' | 'BK' | 'E' | 'F' | 'M' | 'K';
 
 export interface SectionDef {
   id: Section;
@@ -68,6 +68,7 @@ export const SECTIONS: SectionDef[] = [
   { id: 'C', title: 'C · Address & contact', note: 'The registered / billing address of the main GSTIN.', sides: both },
   { id: 'D', title: 'D · Credit & collection terms', note: 'Farid (Credit Controller) checks the credit limit.', sides: both },
   { id: 'BI', title: 'Billing instructions', note: 'For the Billing Executive, who applies them but cannot change them (task card T12).', sides: cust },
+  { id: 'BK', title: 'Bank details (optional)', note: "Not on the CA's form (Vijay, 6-Nov). For refunds (excess payment, security deposit, credit notes) and matching receipts. Stored once per party in fin.party_bank_account, shared with the vendor side.", sides: cust },
   { id: 'E', title: 'E · Export / cross-border receipts', note: 'Only because Export customer = Yes: the FEMA receivables side.', sides: cust, visible: (v) => v.exportCustomer === 'yes' },
   { id: 'F', title: 'F · Documents & remarks', note: 'What came with the form.', sides: cust },
   { id: 'M', title: 'MSME', note: '', sides: vend },
@@ -107,6 +108,10 @@ const exporting = (v: Values) => v.exportCustomer === 'yes';
 const notCash = (v: Values) => v.creditOrCash !== 'cash';
 const onCredit = (v: Values) => v.creditOrCash === 'credit';
 const sez = (v: Values) => exporting(v) || v.gstRegType === 'sez';
+const shipping = (v: Values) => !isEmpty(v.shippingAddress) && String(v.shippingAddress).trim() !== '';
+/** Bank details are optional for a customer, but all or nothing: one field typed needs the account, IFSC and name. */
+const BANK_KEYS = ['beneficiary', 'bankName', 'bankBranch', 'bankAccountNo', 'ifsc', 'bankProof'];
+const anyBank = (v: Values) => BANK_KEYS.some((k) => !isEmpty(v[k]) && String(v[k]).trim() !== '');
 const manyGstins = (v: Values, r: Request) => registered(v) && (r.registrations?.length ?? 0) > 0;
 
 /** The GSTINs on the form: the main one, then section B1's. */
@@ -163,10 +168,14 @@ export const FIELDS: FieldDef[] = [
   // C. Address & contact
   { key: 'addressLine', label: 'Registered / billing address', section: 'C', group: 'party', kind: 'text', sides: cust, required: always, wide: true, hint: 'Full address as per PAN / GST records.' },
   { key: 'addressLine', label: 'Address', section: 'C', group: 'party', kind: 'text', sides: vend, required: always, wide: true },
-  { key: 'shippingAddress', label: 'Shipping address (if different)', section: 'C', group: 'party', kind: 'text', sides: cust, wide: true, hint: 'Only if goods are delivered to a different location.' },
   { key: 'city', label: 'City', section: 'C', group: 'party', kind: 'text', sides: both, required: always },
   { key: 'state', label: 'State', section: 'C', group: 'worked', kind: 'select', options: STATE_OPTIONS, sides: both, required: resident },
   { key: 'pincode', label: 'PIN code', section: 'C', group: 'party', kind: 'text', sides: both, required: resident, placeholder: '560001', hint: '6 digits; blank for a foreign address.' },
+  { key: 'shippingAddress', label: 'Shipping address (if different)', section: 'C', group: 'party', kind: 'text', sides: cust, wide: true, hint: 'Only if goods are delivered to a different location. Becomes a P&C location "Ship-to" on approval.' },
+  // Added for the law, not on the CA's form: the ship-to's city, state and PIN (the form has one line for it).
+  { key: 'shipCity', label: 'Shipping city', section: 'C', group: 'party', kind: 'text', sides: cust, visible: shipping, required: shipping },
+  { key: 'shipState', label: 'Shipping state', section: 'C', group: 'party', kind: 'select', options: STATE_OPTIONS, sides: cust, visible: shipping, required: shipping, hint: 'Decides the place of supply for goods (IGST Act s.10(1)(a)).' },
+  { key: 'shipPincode', label: 'Shipping PIN code', section: 'C', group: 'party', kind: 'text', sides: cust, visible: shipping, required: shipping, placeholder: '562114', hint: '6 digits: the e-way bill needs it.' },
   { key: 'contactPerson', label: 'Contact person', section: 'C', group: 'party', kind: 'text', sides: both },
   { key: 'phone', label: 'Mobile number', section: 'C', group: 'party', kind: 'text', sides: cust, required: always, placeholder: '+91 98xxx xxxxx', hint: '10-digit mobile number.' },
   { key: 'phone', label: 'Phone', section: 'C', group: 'party', kind: 'text', sides: vend, required: always, placeholder: '+91 …' },
@@ -188,6 +197,14 @@ export const FIELDS: FieldDef[] = [
   { key: 'poRule', label: 'PO reference', section: 'BI', group: 'finance', kind: 'select', options: PO_RULES, sides: cust, required: always },
   { key: 'delivery', label: 'Send invoices by', section: 'BI', group: 'finance', kind: 'select', options: DELIVERY, sides: cust, required: always },
   { key: 'invoiceFormat', label: 'Invoice format note', section: 'BI', group: 'finance', kind: 'text', sides: cust, placeholder: 'Optional' },
+
+  // Bank details (optional, Vijay 6-Nov; not on the CA's form): fin.party_bank_account, shared with the vendor side.
+  { key: 'beneficiary', label: 'Account holder name', section: 'BK', group: 'finance', kind: 'text', sides: cust, required: anyBank, hint: 'As on the cancelled cheque or bank letter.' },
+  { key: 'bankName', label: 'Bank name', section: 'BK', group: 'finance', kind: 'text', sides: cust },
+  { key: 'bankBranch', label: 'Branch', section: 'BK', group: 'finance', kind: 'text', sides: cust },
+  { key: 'bankAccountNo', label: 'Bank account number', section: 'BK', group: 'finance', kind: 'text', sides: cust, required: anyBank },
+  { key: 'ifsc', label: 'IFSC', section: 'BK', group: 'finance', kind: 'text', sides: cust, required: anyBank, placeholder: 'ABCD0123456', upper: true, hint: 'No penny-drop now: the account is verified before the first refund is paid to it.' },
+  { key: 'bankProof', label: 'Cancelled cheque / bank proof attached?', section: 'BK', group: 'finance', kind: 'select', options: YES_NO, sides: cust },
 
   // E. Export / cross-border receipts (only if Export customer = Yes)
   { key: 'adBank', label: 'AD bank (for export realisation)', section: 'E', group: 'finance', kind: 'text', sides: cust, visible: exporting, required: exporting, hint: 'The Authorised Dealer bank through which export proceeds are realised.' },
@@ -534,6 +551,31 @@ export function checksOf(r: Request, ctx: CheckCtx): CheckResult[] {
     const catName = categoriesFor('receivable')[cat];
     if (!isEmpty(v.phone) && resident(v) && !mobileDigits(str(v.phone))) out.push({ level: 'stop', section: 'C', title: 'Mobile number must have 10 digits', detail: 'A +91 or 0 in front and spaces are fine.' });
     if (!isEmpty(v.email) && !EMAIL.test(str(v.email))) out.push({ level: 'stop', section: 'C', title: 'Email ID is not valid' });
+    // The ship-to (section C): a PIN of 6 digits; a state other than the billing GSTIN's is said, the invoice decides.
+    if (shipping(v) && !isEmpty(v.shipPincode) && !/^\d{6}$/.test(str(v.shipPincode))) out.push({ level: 'stop', section: 'C', title: 'Shipping PIN code must be 6 digits' });
+    const billGstin = str(v.billingGstin) || gstin;
+    const billSt = GSTIN_RE.test(billGstin) ? stateOfGstin(billGstin) : null;
+    if (shipping(v) && !isEmpty(v.shipState) && billSt && v.shipState !== billSt)
+      out.push({ level: 'warn', section: 'C', title: `Ships to ${STATES[str(v.shipState)]?.name ?? v.shipState}, bills a ${STATES[billSt].name} GSTIN`, detail: 'The invoice task sets the place of supply for goods from the ship-to (IGST Act s.10(1)(a)).' });
+    // More contacts: a name each, and a mobile or an email that is valid.
+    (r.contacts ?? []).forEach((c, i) => {
+      const n = `Contact ${i + 2}`;
+      const ph = str(c.phone ?? '');
+      const em = str(c.email ?? '');
+      if (!c.name.trim()) out.push({ level: 'stop', section: 'C', title: `${n}: type the name or remove the row` });
+      if (!ph && !em) out.push({ level: 'stop', section: 'C', title: `${n}: give a mobile number or an email` });
+      if (ph && !mobileDigits(ph)) out.push({ level: 'stop', section: 'C', title: `${n}: mobile number must have 10 digits` });
+      if (em && !EMAIL.test(em)) out.push({ level: 'stop', section: 'C', title: `${n}: email is not valid` });
+    });
+    // Bank (optional): the IFSC format; an account another party already uses is said, not stopped (a group company may pay).
+    if (!isEmpty(v.ifsc) && !IFSC.test(str(v.ifsc))) out.push({ level: 'stop', section: 'BK', title: 'IFSC is not valid', detail: '4 letters, a 0, then 6 letters or digits.' });
+    const acctNo = str(v.bankAccountNo);
+    if (acctNo) {
+      const used = ctx.accounts.find((a) => a.bankAccountNo === acctNo && a.partyId !== r.partyId);
+      const own = r.partyId ? ctx.accounts.find((a) => a.bankAccountNo === acctNo && a.partyId === r.partyId) : undefined;
+      if (used) out.push({ level: 'warn', section: 'BK', title: `BANK_ACCOUNT_IN_USE: ${used.name} (${used.accountId}) has this bank account`, detail: 'Fine if a group company pays for this customer; never refund to it without checking.' });
+      else if (own) out.push({ level: 'ok', section: 'BK', title: `Same bank account as ${own.name}: its fin.party_bank_account row is reused` });
+    }
     if (m?.exporting === true && v.exportCustomer === 'no') out.push({ level: 'stop', section: 'B', title: `"${catName}" is an export category, but Export customer = No`, detail: 'One of them is wrong: the category sets the ledger and the GST treatment.' });
     if (m?.exporting === false && v.exportCustomer === 'yes') out.push({ level: 'stop', section: 'B', title: `Export customer = Yes, but "${catName}" is a domestic category`, detail: 'Pick an export category (Export Debtor – Goods / Services), or set Export customer to No.' });
     if (m?.customer && !isEmpty(v.customerCategory) && v.customerCategory !== m.customer) out.push({ level: 'warn', section: 'A', title: `Customer category ${CUSTOMER_CATEGORY[str(v.customerCategory)]}, but the debtor category is "${catName}"`, detail: `That category is a ${CUSTOMER_CATEGORY[m.customer]} category. One of them is probably wrong.` });
@@ -575,7 +617,7 @@ export function routesFor(side: Side): Route[] {
       { block: 'tax', label: 'GST / TDS tagging', checker: 'venkat', keys: [] },
     ];
   }
-  const more = ['gstRegistered', 'shippingAddress', 'customerCategory', 'ledger', 'registrations', 'billingGstin', 'creditOrCash', 'paymentTerms', 'securityDeposit', 'collectionOwner', 'poRule', 'delivery', 'invoiceFormat', 'adBank', 'exportCategory', 'realisationMode', 'fircBrc', 'edpms', 'gstCertificate', 'panCopy', 'msmeCertificate', 'remarks'];
+  const more = ['gstRegistered', 'shippingAddress', 'shipCity', 'shipState', 'shipPincode', 'contacts', ...BANK_KEYS, 'customerCategory', 'ledger', 'registrations', 'billingGstin', 'creditOrCash', 'paymentTerms', 'securityDeposit', 'collectionOwner', 'poRule', 'delivery', 'invoiceFormat', 'adBank', 'exportCategory', 'realisationMode', 'fircBrc', 'edpms', 'gstCertificate', 'panCopy', 'msmeCertificate', 'remarks'];
   return [
     { block: 'party', label: 'Party details, account, terms, billing', checker: 'rajan', keys: [...base, ...more] },
     { block: 'credit_limit', label: 'Credit limit', checker: 'farid', keys: ['creditLimit'] },
@@ -583,8 +625,11 @@ export function routesFor(side: Side): Route[] {
   ];
 }
 
-/** A route's values at submit: what the checker approves. The B1 rows are carried as one value. */
-export const afterOf = (r: Request, keys: string[]): Values => Object.fromEntries(keys.map((k) => [k, k === 'registrations' ? JSON.stringify((r.registrations ?? []).map(({ id: _id, ...g }) => g)) : r.values[k] ?? null]));
+/** A route's values at submit: what the checker approves. The B1 rows and the extra contacts are carried as one value each. */
+export const afterOf = (r: Request, keys: string[]): Values =>
+  Object.fromEntries(
+    keys.map((k) => [k, k === 'registrations' ? JSON.stringify((r.registrations ?? []).map(({ id: _id, ...g }) => g)) : k === 'contacts' ? JSON.stringify((r.contacts ?? []).map(({ id: _id, ...c }) => c)) : r.values[k] ?? null]),
+  );
 
 export const checkerLine = (side: Side) => routesFor(side).map((r) => `${ACTORS[r.checker].name} (${r.label.toLowerCase()})`).join(' · ');
 
@@ -611,6 +656,9 @@ export function partyValues(p: Party): Values {
     gstin: p.gstins[0]?.value ?? '',
     addressLine: p.address.line,
     shippingAddress: '',
+    shipCity: '',
+    shipState: '',
+    shipPincode: '',
     city: p.address.city,
     state: p.address.stateCode,
     pincode: p.address.pincode,

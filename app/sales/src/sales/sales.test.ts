@@ -1,9 +1,13 @@
+// T24 Sales voucher entry (rev 6, Vijay 18-Nov): Billing raises the invoice and hands it over; the Accounts Executive
+// books its accounting entry (ledgers suggested, pickable), Rajan approves and the entry posts.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useOnboarding } from '../onboarding/store';
-import { SERIES } from './catalogue';
-import { calcOf, checksOf, costLinesOf, dueOf, linesOf, stops, sum, unbilled } from './rules';
+import { LEDGERS } from './catalogue';
+import { calcOf, checksOf, dueOf, entryDiffOf, entryOf, rankLedgers, stops, sum } from './rules';
+import { goodsLine, type InvoiceSpec } from './seed';
 import { ctxOf, useSales, voucherOf } from './store';
 import { rupeesInWords } from './words';
+import type { InvoiceLine } from './types';
 
 const app = () => useOnboarding.getState();
 const sl = () => useSales.getState();
@@ -11,256 +15,223 @@ const v = (id: string) => voucherOf(sl(), id)!;
 const ctx = () => ctxOf(sl());
 const checks = (id: string) => checksOf(v(id), ctx());
 const stopTitles = (id: string) => stops(checks(id)).map((c) => c.title);
-const approveAll = (id: string) => v(id).approvals.forEach((a) => sl().decide(id, a.id, true));
-/** The entry is typed by hand; the mock types what the invoice says. */
-const typeEntry = (id: string) => sl().typeEntry(id);
-const draft = (dc: string) => {
-  const id = sl().createFromChallan(dc);
-  if (id) typeEntry(id);
-  return id;
-};
+const warnTitles = (id: string) => checks(id).filter((c) => c.level === 'warn').map((c) => c.title);
+const pendingOf = (id: string) => v(id).approvals.find((a) => a.status === 'pending')!;
+const approveAll = (id: string) => v(id).approvals.filter((a) => a.status === 'pending').forEach((a) => sl().decide(id, a.id, 'approve'));
+const entry = (id: string) => entryOf(v(id), ctx()).map((l) => [l.ledger === 'party' ? `party ${l.code}` : l.code, l.dr, l.cr]);
+const receive = (spec: InvoiceSpec) => sl().receiveInvoice(spec)!;
+const service = (item: string, rate: number, more: Partial<InvoiceLine> = {}): InvoiceLine => ({ kind: 'service', item, qty: 1, rate, discount: null, ...more });
+const extra = (kind: 'charge' | 'reimbursement', rate: number): InvoiceLine => ({ kind, item: kind === 'charge' ? 'CH-FRT' : 'RE-01', qty: 1, rate, discount: null });
+const B401: InvoiceSpec = { accountId: 'ACC-1201', lines: [goodsLine('FG-101', 600, 700), goodsLine('FG-102', 300, 975)], transport: { vehicleNo: 'KA01AB1234', distanceKm: 12 } };
 
-describe('sales invoice from a delivery challan (scenario B4-01, D-02)', () => {
-  beforeEach(() => {
-    app().reset();
-    sl().setMethod('perpetual');
-    typeEntry('SI-0012');
-  });
+beforeEach(() => {
+  app().reset();
+  sl().reset();
+});
 
-  it('DC-1 / SO-1 (Sri Lakshmi): ₹7,12,500 + CGST ₹17,812.50 + SGST ₹17,812.50 = ₹7,48,125', () => {
-    const c = calcOf(v('SI-0012'), ctx());
-    expect(c.intra).toBe(true);
-    expect(c.taxable).toBe(7_12_500);
-    expect(c.cgst).toBe(17_812.5);
-    expect(c.sgst).toBe(17_812.5);
-    expect(c.total).toBe(7_48_125);
-    expect(c.hsn).toEqual([{ hsn: '190531', gst: 5, taxable: 7_12_500, cgst: 17_812.5, sgst: 17_812.5, igst: 0 }]);
+describe('the invoice comes from Billing; the AE books its entry (B4-01, SV-0012 → Sri Lakshmi)', () => {
+  it('received already numbered, with its IRN: KA/INV/2627/0143; ₹7,12,500 + CGST + SGST = ₹7,48,125', () => {
+    const x = v('SV-0012');
+    expect([x.status, x.number, x.irn?.length]).toEqual(['draft', 'KA/INV/2627/0143', 64]);
+    const c = calcOf(x, ctx());
+    expect([c.intra, c.taxable, c.cgst, c.sgst, c.igst, c.total, c.rules]).toEqual([true, 7_12_500, 17_812.5, 17_812.5, 0, 7_48_125, ['R1']]);
     expect(rupeesInWords(c.total)).toBe('Indian Rupees Seven Lakh Forty Eight Thousand One Hundred Twenty Five Only');
-    const lines = linesOf(v('SI-0012'), ctx());
-    expect(lines.map((l) => [l.ledgerKey.split('#')[0], l.dr, l.cr])).toEqual([
-      ['party', 7_48_125, 0],
-      ['sales_local', 0, 7_12_500],
-      ['out_cgst', 0, 17_812.5],
-      ['out_sgst', 0, 17_812.5],
-    ]);
   });
 
-  it("the cost side is the challan's: typed by hand, Dr cost of goods sold ₹5,64,000, Cr FG inventory, dated the challan; margin 20.8%", () => {
-    const dc = () => ctx().challans.find((c) => c.id === 'DC-1')!;
-    expect(dc().costEntryId).toBeUndefined(); // not in the books until it is typed
-    expect(costLinesOf(dc()).map((l) => [l.ledgerKey, l.dr, l.cr])).toEqual([
-      ['cogs', 5_64_000, 0],
-      ['fg_inventory', 0, 5_64_000],
-    ]);
-    expect(linesOf(v('SI-0012'), ctx()).some((l) => l.ledgerKey === 'fg_inventory' || l.ledgerKey === 'cogs')).toBe(false); // never inside the invoice
-    expect(calcOf(v('SI-0012'), ctx()).marginPct).toBe(20.84);
-    sl().setField('SI-0012', 'customerPo', 'SLD/PO/889');
-    sl().submit('SI-0012');
-    approveAll('SI-0012');
-    const je = sl().journal.find((e) => e.id === dc().costEntryId)!;
-    expect([je.kind, je.voucherNo, je.date, je.postedBy]).toEqual(['challan_cost', 'DC-1', '2026-10-07', 'teja']);
-    expect(je.lines.map((l) => [l.ledger, l.dr, l.cr])).toEqual([
-      ['cogs', 5_64_000, 0],
-      ['fg_inventory', 0, 5_64_000],
-    ]);
+  it('the suggested entry (rule R1): Dr the customer on its receivable ledger · Cr sales · Cr output CGST · Cr output SGST', () => {
+    expect(entry('SV-0012')).toEqual([['party 107100', 7_48_125, 0], ['401010', 0, 7_12_500], ['206011', 0, 17_812.5], ['206012', 0, 17_812.5]]);
+    expect(entryDiffOf(v('SV-0012'), ctx())).toBeNull();
+    expect(entryOf(v('SV-0012'), ctx()).some((l) => l.ledger === 'cogs' || l.ledger === 'fg_inventory')).toBe(false); // stock is Stores' (G30)
   });
 
-  it("needs the customer's PO (billing instruction) and warns on batch G-2604 expiring in 5 days", () => {
-    expect(stopTitles('SI-0012')).toEqual(["Still to fill: Customer's PO number"]);
-    expect(checks('SI-0012').some((c) => c.level === 'warn' && c.title.startsWith('Batch G-2604 expires 2026-10-12 (5 days)'))).toBe(true);
-    expect(checks('SI-0012').some((c) => c.title === 'E-invoice pre-check passes')).toBe(true);
+  it('the AE cannot change the invoice: the store has no invoice setters, only the entry', () => {
+    const st = sl() as unknown as Record<string, unknown>;
+    for (const k of ['setLine', 'setField', 'addLine', 'createTyped', 'setSettlement']) expect(st[k]).toBeUndefined();
+    for (const k of ['setLedger', 'setEditLine', 'submit', 'returnToBilling']) expect(typeof st[k]).toBe('function');
   });
 
-  it('submit → Rajan approves → confirmed: KA/INV/2627/0143, one entry, IRN, e-way bill; the customer owes more', () => {
-    sl().setField('SI-0012', 'customerPo', 'SLD/PO/889');
+  it('the inbox: three invoices to book, two already posted', () => {
+    expect(sl().vouchers.filter((x) => x.status === 'draft').map((x) => [x.id, x.number])).toEqual([['SV-0012', 'KA/INV/2627/0143'], ['SV-0013', 'KA/INV/2627/0144'], ['SV-0014', 'KA/EXP/2627/0001']]);
+    const je = sl().journal.find((e) => e.voucherNo === 'KA/INV/2627/0141')!;
+    expect(je.lines[0]).toMatchObject({ ledger: 'party', accountId: 'ACC-1205', code: '107010', dr: 75_600 });
+  });
+
+  it('submit → Rajan approves → the entry posts (R1); the customer owes more; the maker may not decide', () => {
     const before = dueOf(sl(), 'ACC-1201');
-    sl().submit('SI-0012');
-    expect(v('SI-0012').number).toBeNull();
-    approveAll('SI-0012');
-    const x = v('SI-0012');
-    expect(x.status).toBe('posted');
-    expect(x.number).toBe(`${SERIES.invoice}0143`);
-    expect(x.number!.length).toBeLessThanOrEqual(16); // CGST Rule 46(b)
-    expect(x.irn).toHaveLength(64);
-    expect(x.ewbNo).toBeTruthy();
+    expect(stopTitles('SV-0012')).toEqual([]);
+    sl().submit('SV-0012');
+    expect(sl().decide('SV-0012', pendingOf('SV-0012').id, 'approve', { by: 'teja' })).toBe(false); // K19
+    approveAll('SV-0012');
+    const x = v('SV-0012');
+    expect([x.status, x.number]).toEqual(['posted', 'KA/INV/2627/0143']);
     expect(dueOf(sl(), 'ACC-1201')).toBe(before + 7_48_125);
+    const je = sl().journal.find((e) => e.id === x.entryId)!;
+    expect(je.rule).toBe('SALES_INVOICE v1 (effective 1-Apr-2026) · R1');
     const all = sl().journal.flatMap((e) => e.lines);
     expect(sum(all).dr).toBe(sum(all).cr);
-    sl().setQty('SI-0012', 0, 1); // confirmed is final
-    expect(v('SI-0012').lines[0].qty).toBe(300);
   });
 
-  it('never above the challan; partial billing leaves the rest on the unbilled list', () => {
-    sl().setField('SI-0012', 'customerPo', 'SLD/PO/889');
-    sl().setQty('SI-0012', 2, 301);
-    expect(stopTitles('SI-0012')).toContain('Line 3: 301 cartons, but only 300 on DC-1 are not yet billed');
-    sl().setQty('SI-0012', 2, 200);
-    typeEntry('SI-0012'); // the person corrects the entry after changing a quantity
-    expect(stopTitles('SI-0012')).toEqual([]);
-    sl().submit('SI-0012');
-    approveAll('SI-0012');
-    expect(unbilled(ctx()).map((c) => c.id)).toContain('DC-1');
-    const id = draft('DC-1')!;
-    expect(v(id).lines.map((l) => l.qty)).toEqual([100]); // only the 100 cream cartons left
+  it('Kerala Traders (SV-0013): inter-state R2: one IGST line; Gulf Snack (SV-0014): export under LUT R4, no GST line', () => {
+    expect(entry('SV-0013')).toEqual([['party 107010', 60_480, 0], ['401010', 0, 57_600], ['206013', 0, 2_880]]);
+    expect(entry('SV-0014')).toEqual([['party 107040', 9_39_840, 0], ['401030', 0, 9_39_840]]);
   });
 
-  it('Kerala Traders DC-0005: inter-state, so IGST and the inter-state sales ledger; 560 km = 3-day e-way bill', () => {
-    const id = draft('DC-0005')!;
-    const c = calcOf(v(id), ctx());
-    expect(c.intra).toBe(false);
-    expect(c.igst).toBe(2_880);
-    expect(c.total).toBe(60_480);
-    expect(linesOf(v(id), ctx()).map((l) => l.ledgerKey.split('#')[0])).toEqual(['party', 'sales_interstate', 'out_igst']);
-    expect(stopTitles(id)).toEqual([]);
+  it("an export with IGST (the CA's C2): the buyer owes the value only; Dr IGST Refund Receivable (R5)", () => {
+    const id = receive({ accountId: 'ACC-1203', lines: [goodsLine('FG-101', 1_200, 8.9)], exportType: 'igst' });
+    expect(entry(id)).toEqual([['party 107040', 9_39_840, 0], ['109040', 46_992, 0], ['401030', 0, 9_39_840], ['206013', 0, 46_992]]);
+  });
+
+  it('periods: an invoice dated in a closed month cannot be booked; a soft-closed month warns (K7, K8)', () => {
+    expect(stopTitles(receive({ ...B401, date: '2026-08-31' }))).toContain('Aug-2026 is closed');
+    expect(warnTitles(receive({ ...B401, date: '2026-09-30' }))).toContain('Sep-2026 is soft-closed');
+  });
+
+  it('an invoice that cannot be booked goes back to Billing with a reason: nothing posts', () => {
+    const before = sl().journal.length;
+    sl().returnToBilling('SV-0013', 'GST does not match the place of supply');
+    expect([v('SV-0013').status, v('SV-0013').returned?.reason]).toEqual(['returned', 'GST does not match the place of supply']);
+    expect(sl().journal).toHaveLength(before);
+  });
+});
+
+describe('the entry: suggested ledgers, the AE may pick others (§8.4)', () => {
+  it('pick another sales ledger (no reason needed): Rajan sees "entry differs from rule"', () => {
+    sl().setLedger('SV-0012', 'rev:sale_products', 'sale_services');
+    expect(v('SV-0012').edit?.amounts).toBeFalsy();
+    expect(stopTitles('SV-0012')).toEqual([]);
+    expect(warnTitles('SV-0012')).toContain('Entry differs from rule R1: line 2');
+    sl().setEditLine('SV-0012', 'rev:sale_products', { reason: 'Co-packed stock billed as a service (illustrative)' });
+    sl().submit('SV-0012');
+    expect(v('SV-0012').approvals[0].entryDiff).toBe('Entry differs from rule R1: line 2');
+    approveAll('SV-0012');
+    const je = sl().journal.find((e) => e.id === v('SV-0012').entryId)!;
+    expect(je.edit).toEqual({ by: 'teja', approvedBy: 'rajan', diff: 'Entry differs from rule R1: line 2', reasons: ['Sale of Services: Co-packed stock billed as a service (illustrative)'] });
+  });
+
+  it('picking the suggestion again is the rule again; a changed amount still needs a reason', () => {
+    sl().setLedger('SV-0012', 'rev:sale_products', 'sale_services');
+    sl().setLedger('SV-0012', 'rev:sale_products', 'sale_products');
+    expect(entryDiffOf(v('SV-0012'), ctx())).toBeNull();
+    sl().setEditing('SV-0012', true);
+    sl().setEditLine('SV-0012', 'rev:sale_products', { cr: 7_00_000 });
+    expect(stopTitles('SV-0012')).toContain('Line 2: a reason is needed for the change');
+  });
+
+  it('the customer and GST lines: their ledger is a suggestion too; their amount stays the invoice amount', () => {
+    sl().setLedger('SV-0012', 'party', 'ar_107010');
+    sl().setLedger('SV-0012', 'tax:cgst', 'statutory_dues'); // a group: refused
+    expect(stops(checks('SV-0012')).map((c) => c.code)).toContain('LEDGER_NOT_POSTABLE');
+    sl().setLedger('SV-0012', 'tax:cgst', 'out_sgst'); // CGST into the SGST ledger: refused
+    expect(stopTitles('SV-0012').some((t) => t.startsWith('Output SGST in the entry is ₹35,625.00'))).toBe(true);
+    sl().setLedger('SV-0012', 'tax:cgst', 'out_cgst');
+    expect(entry('SV-0012')).toEqual([['party 107010', 7_48_125, 0], ['401010', 0, 7_12_500], ['206011', 0, 17_812.5], ['206012', 0, 17_812.5]]);
+    sl().submit('SV-0012');
+    approveAll('SV-0012');
+    expect(sl().journal.find((e) => e.id === v('SV-0012').entryId)!.lines[0]).toMatchObject({ ledger: 'party', accountId: 'ACC-1201', code: '107010', dr: 7_48_125 });
+  });
+
+  it('a group or a receivable ledger on a revenue line stops (LEDGER_NOT_POSTABLE); revenue into a tax ledger stops', () => {
+    sl().setEditing('SV-0012', true);
+    sl().setEditLine('SV-0012', 'rev:sale_products', { ledger: 'statutory_dues', reason: 'x' });
+    expect(stopTitles('SV-0012')).toContain('Line 2: Statutory Dues Payable (206010) is a group, not a ledger');
+    sl().setEditLine('SV-0012', 'rev:sale_products', { ledger: 'ar_107010' });
+    expect(stopTitles('SV-0012')).toContain('Line 2: Trade Receivables – Domestic (107010) is a receivable ledger');
+    sl().setEditLine('SV-0012', 'rev:sale_products', { ledger: 'out_cgst' });
+    expect(stopTitles('SV-0012').some((t) => t.startsWith('Output CGST in the entry is ₹7,30,312.50'))).toBe(true);
+  });
+
+  it('split a line: Dr = Cr must hold (K16); off again = back to the rule', () => {
+    sl().setEditing('SV-0012', true);
+    sl().splitEditLine('SV-0012', 'rev:sale_products');
+    sl().setEditLine('SV-0012', 'split:1', { ledger: 'sale_services', cr: 12_500 });
+    expect(stopTitles('SV-0012')).toContain('Dr ₹7,48,125.00 ≠ Cr ₹7,60,625.00');
+    sl().setEditLine('SV-0012', 'rev:sale_products', { cr: 7_00_000, reason: 'Part is a service' });
+    sl().setEditLine('SV-0012', 'split:1', { reason: 'Packing service on the order' });
+    expect(stopTitles('SV-0012')).toEqual([]);
+    sl().setEditing('SV-0012', false);
+    expect(entryDiffOf(v('SV-0012'), ctx())).toBeNull();
+  });
+
+  it('the picker: the suggested ledger first; typing sorts code matches, then name matches; never a group or a receivable ledger', () => {
+    expect(rankLedgers('', 'sale_services')[0]).toBe('sale_services');
+    expect(rankLedgers('4010').every((k) => LEDGERS[k].code.startsWith('4010'))).toBe(true);
+    expect(rankLedgers('sale').every((k) => LEDGERS[k].name.toLowerCase().includes('sale'))).toBe(true);
+    expect(rankLedgers('').some((k) => LEDGERS[k].isGroup || LEDGERS[k].accountType === 'receivable')).toBe(false);
+    expect(rankLedgers('zzzz')).toEqual([]);
+  });
+});
+
+describe('Rajan decides: approve · send back · reject (maker ≠ checker, a reason to say no)', () => {
+  it('send back needs a reason; the voucher comes back to the AE, who sends it again', () => {
+    sl().submit('SV-0012');
+    expect(sl().decide('SV-0012', pendingOf('SV-0012').id, 'send_back')).toBe(false);
+    expect(sl().decide('SV-0012', pendingOf('SV-0012').id, 'send_back', { reason: 'Use the suggested sales ledger' })).toBe(true);
+    expect([v('SV-0012').status, v('SV-0012').decisionReason]).toEqual(['draft', 'Rajan: Use the suggested sales ledger']);
+    sl().submit('SV-0012');
+    approveAll('SV-0012');
+    expect(v('SV-0012').status).toBe('posted');
+  });
+
+  it('reject ends it: nothing posted', () => {
+    sl().submit('SV-0012');
+    const before = sl().journal.length;
+    sl().decide('SV-0012', pendingOf('SV-0012').id, 'reject', { reason: 'Duplicate of an entry already posted' });
+    expect(v('SV-0012').status).toBe('rejected');
+    expect(sl().journal).toHaveLength(before);
+  });
+});
+
+describe("the CA's specimens: the entry the rule suggests for each kind of invoice", () => {
+  it('a service (R3): N-1 co-packing ₹72,000 + GST 18% → Sale of Services 401020', () => {
+    const id = receive({ accountId: 'ACC-1204', lines: [service('SV-01', 72_000)] });
+    expect(entry(id)).toEqual([['party 107010', 84_960, 0], ['401020', 0, 72_000], ['206011', 0, 6_480], ['206012', 0, 6_480]]);
+  });
+
+  it('issued by TN-01 to a Karnataka customer: inter-state IGST; the journal carries branch TN-01', () => {
+    const id = receive({ accountId: 'ACC-1204', branch: 'TN-01', lines: [service('SV-01', 72_000)] });
+    expect(v(id).number).toBe('TN/INV/2627/0001');
+    expect(entry(id)).toEqual([['party 107010', 84_960, 0], ['401020', 0, 72_000], ['206013', 0, 12_960]]);
     sl().submit(id);
     approveAll(id);
-    expect(v(id).ewbValidTo).toBe('2026-10-09');
+    expect(sl().journal.find((e) => e.id === v(id).entryId)!.branch).toBe('TN-01');
   });
 
-  it('e-invoice pre-check: a ship-to pincode missing in the party master stops the invoice (B4-03)', () => {
-    app().parties.find((p) => p.partyId === 'P-0031')!.address.pincode; // present
-    useOnboarding.setState((s) => {
-      s.parties.find((p) => p.partyId === 'P-0031')!.address.pincode = '';
-    });
-    expect(stopTitles('SI-0012').some((t) => t.startsWith('E-invoice pre-check: ship-to pincode missing'))).toBe(true);
+  it('F2 bill-to-ship-to (D4): billing Chennai, goods to a third party in Karnataka → IGST', () => {
+    const id = receive({ ...B401, branchId: 'BR-0002', thirdPartyShipTo: { name: 'Metro Builders (site)', line: 'Survey No. 112, Whitefield', city: 'Bengaluru', pincode: '560066', stateCode: 'KA' } });
+    const c = calcOf(v(id), ctx());
+    expect([c.pos, c.posBasis, c.igst]).toEqual(['TN', 'goods_bill_to_third_party', 35_625]);
   });
 
-  it('periods: a closed month stops, a soft-closed month warns, a future date stops', () => {
-    sl().setField('SI-0012', 'customerPo', 'X');
-    sl().setField('SI-0012', 'date', '2026-08-31');
-    expect(stopTitles('SI-0012')).toContain('Aug-2026 is closed');
-    sl().setField('SI-0012', 'date', '2026-09-30');
-    expect(checks('SI-0012').some((c) => c.level === 'warn' && c.title === 'Sep-2026 is soft-closed')).toBe(true);
-    sl().setField('SI-0012', 'date', '2026-10-20');
-    expect(stopTitles('SI-0012')).toContain('Invoice date is after today');
+  it('A8 freight charged → Freight Recovered (R10); B5 pure-agent expense → Expenses Recoverable, no GST (R11)', () => {
+    const f = receive({ ...B401, lines: [...B401.lines, extra('charge', 2_000)] });
+    expect(entry(f)).toContainEqual(['401070', 0, 2_000]);
+    expect(calcOf(v(f), ctx()).total).toBe(7_50_225);
+    const r = receive({ ...B401, lines: [...B401.lines, extra('reimbursement', 5_000)] });
+    expect(entry(r)).toContainEqual(['110030', 0, 5_000]);
   });
 
-  it('a credit note reverses the invoice lines only; stock and cost stay (a return comes back through Stores)', () => {
-    sl().setField('SI-0012', 'customerPo', 'SLD/PO/889');
-    sl().submit('SI-0012');
-    approveAll('SI-0012');
-    const before = dueOf(sl(), 'ACC-1201');
-    sl().cancelByCreditNote('SI-0012', 'Invoiced to the wrong customer');
-    expect(v('SI-0012').cancel!.creditNote).toBe(`${SERIES.creditNote}0001`);
-    expect(dueOf(sl(), 'ACC-1201')).toBe(before - 7_48_125);
-    const cn = sl().journal.find((e) => e.kind === 'credit_note')!;
-    expect(cn.lines.some((l) => l.ledger === 'cogs' || l.ledger === 'fg_inventory')).toBe(false);
+  it('A3 paid now by UPI → Dr UPI / Card Clearing; the customer owes nothing more (R8)', () => {
+    const owed = dueOf(sl(), 'ACC-1201');
+    const id = receive({ ...B401, settlement: 'upi_card', paymentRef: 'UPI 6312 0987 4455' });
+    expect(entry(id)[0]).toEqual(['108030', 7_48_125, 0]);
+    sl().submit(id);
+    approveAll(id);
+    expect(dueOf(sl(), 'ACC-1201')).toBe(owed);
   });
 
-  it('Periodic (Run 2): no cost entry on the challans; the invoice entry is the same', () => {
-    sl().setMethod('periodic');
-    typeEntry('SI-0012');
-    expect(sl().journal.some((e) => e.kind === 'challan_cost')).toBe(false);
-    expect(calcOf(v('SI-0012'), ctx()).total).toBe(7_48_125);
-    expect(checks('SI-0012').some((c) => c.title === 'Periodic: no cost entry per sale')).toBe(true);
+  it('A6 / B4 a Bill of Supply (only exempt lines): Sales – Exempt 401050, no GST, no IRN (R9)', () => {
+    const id = receive({ accountId: 'ACC-1204', lines: [service('SV-03', 30_000)] });
+    expect([v(id).number, v(id).irn]).toEqual(['KA/BOS/2627/0001', undefined]);
+    expect(entry(id)).toEqual([['party 107010', 30_000, 0], ['401050', 0, 30_000]]);
   });
 
-  it('Coastal Bakes DC-0007 waits for its account; after onboarding, Stores records it and it can be billed', () => {
-    expect(sl().createFromChallan('DC-0007')).toBeNull();
-    const req = app().createRequest({ side: 'receivable', from: 'arun', formNo: 'CRF-0019', paper: 'coastal' });
-    app().typeFromPaper(req);
-    app().checkGstin(req);
-    app().submit(req);
-    app().requests.find((r) => r.id === req)!.changes.forEach((c) => app().decide(req, c.id, true));
-    sl().recordChallan('DC-0007');
-    expect(sl().journal.some((e) => e.voucherNo === 'DC-0007' && e.kind === 'challan_cost')).toBe(false); // typed with the invoice
-    const id = draft('DC-0007')!;
-    expect(stopTitles(id)).toEqual(["Still to fill: Customer's PO number"]);
-  });
-});
-
-describe('the entry is typed by hand; the invoice is prefilled (30-Oct)', () => {
-  beforeEach(() => {
-    app().reset();
-    sl().setMethod('perpetual');
+  it('B6 a period service billed in advance → Contract Liability (R12)', () => {
+    const id = receive({ accountId: 'ACC-1204', lines: [service('SV-02', 10_000, { qty: 12, periodFrom: '2026-10-07', periodUntil: '2027-10-06' })] });
+    expect(entry(id)).toEqual([['party 107010', 1_41_600, 0], ['206040', 0, 1_20_000], ['206011', 0, 10_800], ['206012', 0, 10_800]]);
   });
 
-  it('the invoice comes prefilled from the challan; the entry is blank and lists what is still to type', () => {
-    expect(calcOf(v('SI-0012'), ctx()).total).toBe(7_48_125);
-    expect(stopTitles('SI-0012')).toContain("Still to fill: Customer's PO number · Party A/c · Party A/c amount · Sales ledger · Sales amount · Tax ledgers · Cost Dr ledger · Cost Dr amount · Cost Cr ledger · Cost Cr amount");
-    expect(linesOf(v('SI-0012'), ctx())).toEqual([]);
-  });
-
-  it('typed by hand as the invoice says: no stop except the PO; the entry is what was typed and it balances', () => {
-    sl().setEntry('SI-0012', { partyLedger: 'ACC-1201', partyAmount: 7_48_125, salesLedger: 'sales_local', salesAmount: 7_12_500 });
-    sl().setTaxLine('SI-0012', 0, { ledger: 'out_cgst', amount: 17_812.5 });
-    sl().addTaxLine('SI-0012');
-    sl().setTaxLine('SI-0012', 1, { ledger: 'out_sgst', amount: 17_812.5 });
-    sl().setCost('SI-0012', { drLedger: 'cogs', drAmount: 5_64_000, crLedger: 'fg_inventory', crAmount: 5_64_000 });
-    expect(stopTitles('SI-0012')).toEqual(["Still to fill: Customer's PO number"]);
-    expect(checks('SI-0012').some((c) => c.title === 'Dr = Cr: ₹7,48,125.00')).toBe(true);
-  });
-
-  it('a wrong choice stops with the reason: party, sales ledger, IGST on a local sale, an amount off, unbalanced', () => {
-    typeEntry('SI-0012');
-    sl().setEntry('SI-0012', { partyLedger: 'ACC-1202' });
-    expect(stopTitles('SI-0012').some((t) => t.startsWith('Party A/c: this invoice is to Sri Lakshmi'))).toBe(true);
-    sl().setEntry('SI-0012', { partyLedger: 'ACC-1201', salesLedger: 'sales_interstate' });
-    expect(stopTitles('SI-0012')).toContain('Sales ledger: a local sale goes to Sale of Products – Local (CGST + SGST)');
-    sl().setEntry('SI-0012', { salesLedger: 'sales_local' });
-    sl().setTaxLine('SI-0012', 0, { ledger: 'out_igst' });
-    expect(stopTitles('SI-0012').some((t) => t.startsWith('Tax ledgers: a local sale takes Output CGST and Output SGST'))).toBe(true);
-    sl().setTaxLine('SI-0012', 0, { ledger: 'out_cgst', amount: 17_000 });
-    expect(stopTitles('SI-0012').some((t) => t.includes('the invoice shows ₹17,812.50'))).toBe(true);
-    expect(stopTitles('SI-0012').some((t) => t.startsWith('Dr ₹7,48,125.00 ≠ Cr'))).toBe(true);
-  });
-
-  it('the cost entry: a wrong ledger or amount stops; asked once per challan; nothing under Periodic', () => {
-    typeEntry('SI-0012');
-    sl().setCost('SI-0012', { crLedger: 'sales_local' });
-    expect(stopTitles('SI-0012').some((t) => t.startsWith('Cost entry Cr: the goods leave Inventory – finished goods'))).toBe(true);
-    sl().setCost('SI-0012', { crLedger: 'fg_inventory', drAmount: 5_00_000 });
-    expect(stopTitles('SI-0012').some((t) => t.includes('at standard cost is ₹5,64,000.00'))).toBe(true);
-    expect(stopTitles('SI-0012')).toContain('Cost entry: Dr ₹5,00,000.00 ≠ Cr ₹5,64,000.00');
-    sl().setField('SI-0012', 'customerPo', 'SLD/PO/889');
-    sl().setQty('SI-0012', 2, 200); // part of the challan
-    typeEntry('SI-0012');
-    expect(stopTitles('SI-0012')).toEqual([]);
-    sl().submit('SI-0012');
-    approveAll('SI-0012');
-    expect(v(draft('DC-1')!).manual!.cost).toBeUndefined(); // the challan's cost is already in the books
-    sl().setMethod('periodic');
-    expect(v('SI-0012').manual!.cost).toBeUndefined();
-  });
-});
-
-describe('one customer, many branches (fin.customer_branch)', () => {
-  beforeEach(() => {
-    app().reset();
-    sl().setMethod('perpetual');
-    typeEntry('SI-0012');
-  });
-
-  it('Sri Lakshmi: one party, one account, 3 billed branches; the default (Bengaluru) bills CGST + SGST', () => {
-    expect(app().parties.filter((p) => p.legalName === 'Sri Lakshmi Distributors')).toHaveLength(1);
-    expect(app().accounts.filter((a) => a.partyId === 'P-0031' && a.side === 'receivable')).toHaveLength(1);
-    expect(calcOf(v('SI-0012'), ctx()).intra).toBe(true);
-  });
-
-  it('billing the Chennai branch: its GSTIN 33… makes the place of supply Tamil Nadu, so IGST', () => {
-    sl().setBranch('SI-0012', 'BR-0002');
-    const c = calcOf(v('SI-0012'), ctx());
-    expect(c.pos).toBe('TN');
-    expect(c.intra).toBe(false);
-    expect(c.igst).toBe(35_625);
-  });
-
-  it('add Kochi (in P&C, not yet linked) under its KL GSTIN; deactivate Hyderabad; no new party or account', () => {
-    app().addBranch('ACC-1201', 'P-0031-L4');
-    let br = app().accounts.find((a) => a.accountId === 'ACC-1201')!.branches!;
-    expect(br.find((b) => b.locationId === 'P-0031-L4')?.gstin).toBe('32AAKFS0000S1Z6');
-    app().deactivateBranch('ACC-1201', 'BR-0003');
-    br = app().accounts.find((a) => a.accountId === 'ACC-1201')!.branches!;
-    expect(br.find((b) => b.branchId === 'BR-0003')?.until).toBeTruthy();
-    expect(app().accounts.filter((a) => a.partyId === 'P-0031')).toHaveLength(1);
-    expect(app().log.some((l) => l.line === 'INSERT fin.customer_branch')).toBe(true);
-  });
-
-  it('the default branch moves when it is deactivated; the last open branch cannot be deactivated', () => {
-    app().deactivateBranch('ACC-1201', 'BR-0001');
-    const br = app().accounts.find((a) => a.accountId === 'ACC-1201')!.branches!;
-    expect(br.filter((b) => b.isDefault && !b.until)).toHaveLength(1);
-    app().deactivateBranch('ACC-1202', 'ACC-1202-B1');
-    expect(app().accounts.find((a) => a.accountId === 'ACC-1202')!.branches).toBeUndefined();
+  it('B3 a service on immovable property in Tamil Nadu → place of supply Tamil Nadu, IGST', () => {
+    const id = receive({ accountId: 'ACC-1204', lines: [service('SV-01', 1_00_000)], propertyState: 'TN' });
+    expect([calcOf(v(id), ctx()).pos, calcOf(v(id), ctx()).igst]).toEqual(['TN', 18_000]);
   });
 });

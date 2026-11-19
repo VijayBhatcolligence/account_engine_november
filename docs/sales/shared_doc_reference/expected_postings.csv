@@ -1,0 +1,187 @@
+scenario,doc_no,doc_date,doc_type,event,account,debit_inr,credit_inr
+A1,TI/26-27/0101,02-11-2026,TAX INVOICE,On invoice,XYZ Traders (Debtor),118000,
+A1,TI/26-27/0101,02-11-2026,TAX INVOICE,On invoice,Sales – Domestic Goods,,100000
+A1,TI/26-27/0101,02-11-2026,TAX INVOICE,On invoice,Output CGST,,9000
+A1,TI/26-27/0101,02-11-2026,TAX INVOICE,On invoice,Output SGST,,9000
+A2,TI/26-27/0102,03-11-2026,TAX INVOICE,On invoice,PQR Ltd (Debtor),118000,
+A2,TI/26-27/0102,03-11-2026,TAX INVOICE,On invoice,Sales – Domestic Goods,,100000
+A2,TI/26-27/0102,03-11-2026,TAX INVOICE,On invoice,Output IGST,,18000
+A3,TI/26-27/0103,03-11-2026,TAX INVOICE,On invoice,UPI / Card Clearing,11800,
+A3,TI/26-27/0103,03-11-2026,TAX INVOICE,On invoice,Sales – Domestic Goods (B2C),,10000
+A3,TI/26-27/0103,03-11-2026,TAX INVOICE,On invoice,Output CGST,,900
+A3,TI/26-27/0103,03-11-2026,TAX INVOICE,On invoice,Output SGST,,900
+A4,TI/26-27/0104,04-11-2026,TAX INVOICE,On invoice,Anil Menon (Debtor),141600,
+A4,TI/26-27/0104,04-11-2026,TAX INVOICE,On invoice,Sales – Domestic Goods (B2C),,120000
+A4,TI/26-27/0104,04-11-2026,TAX INVOICE,On invoice,Output IGST,,21600
+A5,TI/26-27/0105,04-11-2026,TAX INVOICE,On invoice,XYZ Traders (Debtor),111000,
+A5,TI/26-27/0105,04-11-2026,TAX INVOICE,On invoice,Sales – Domestic Goods (Taxable),,90000
+A5,TI/26-27/0105,04-11-2026,TAX INVOICE,On invoice,Sales – Exempt / Nil-rated,,10000
+A5,TI/26-27/0105,04-11-2026,TAX INVOICE,On invoice,Output CGST,,5500
+A5,TI/26-27/0105,04-11-2026,TAX INVOICE,On invoice,Output SGST,,5500
+A6,BOS/26-27/0011,05-11-2026,BILL OF SUPPLY,On invoice,XYZ Traders (Debtor),100000,
+A6,BOS/26-27/0011,05-11-2026,BILL OF SUPPLY,On invoice,Sales – Exempt / Nil-rated,,100000
+A7,TI/26-27/0106,05-11-2026,TAX INVOICE,On invoice,XYZ Traders (Debtor),140000,
+A7,TI/26-27/0106,05-11-2026,TAX INVOICE,On invoice,Sales – Domestic Goods,,100000
+A7,TI/26-27/0106,05-11-2026,TAX INVOICE,On invoice,Output CGST,,20000
+A7,TI/26-27/0106,05-11-2026,TAX INVOICE,On invoice,Output SGST,,20000
+A8,TI/26-27/0107,06-11-2026,TAX INVOICE,On invoice,XYZ Traders (Debtor),118000,
+A8,TI/26-27/0107,06-11-2026,TAX INVOICE,On invoice,Sales – Domestic Goods (net of discount),,99000
+A8,TI/26-27/0107,06-11-2026,TAX INVOICE,On invoice,Freight Recovered,,1000
+A8,TI/26-27/0107,06-11-2026,TAX INVOICE,On invoice,Output CGST,,9000
+A8,TI/26-27/0107,06-11-2026,TAX INVOICE,On invoice,Output SGST,,9000
+A9,TI/26-27/0108,06-11-2026,TAX INVOICE,On invoice,Shakti Metal Recyclers (Debtor),118000,
+A9,TI/26-27/0108,06-11-2026,TAX INVOICE,On invoice,Scrap Sales,,100000
+A9,TI/26-27/0108,06-11-2026,TAX INVOICE,On invoice,Output CGST,,9000
+A9,TI/26-27/0108,06-11-2026,TAX INVOICE,On invoice,Output SGST,,9000
+A9,TI/26-27/0108,06-11-2026,TAX INVOICE,On receipt (bank event),Bank,116000,
+A9,TI/26-27/0108,06-11-2026,TAX INVOICE,On receipt (bank event),GST TDS Receivable – CGST,1000,
+A9,TI/26-27/0108,06-11-2026,TAX INVOICE,On receipt (bank event),GST TDS Receivable – SGST,1000,
+A9,TI/26-27/0108,06-11-2026,TAX INVOICE,On receipt (bank event),Shakti Metal Recyclers (Debtor),,118000
+A10,TI/26-27/0109,07-11-2026,TAX INVOICE,On invoice,Shree Engineering Works,118000,
+A10,TI/26-27/0109,07-11-2026,TAX INVOICE,On invoice,Accumulated Depreciation – P&M,300000,
+A10,TI/26-27/0109,07-11-2026,TAX INVOICE,On invoice,Plant & Machinery (cost),,350000
+A10,TI/26-27/0109,07-11-2026,TAX INVOICE,On invoice,Output CGST,,9000
+A10,TI/26-27/0109,07-11-2026,TAX INVOICE,On invoice,Output SGST,,9000
+A10,TI/26-27/0109,07-11-2026,TAX INVOICE,On invoice,Profit on Sale of Assets,,50000
+B1,TI/26-27/0110,07-11-2026,TAX INVOICE,On invoice,XYZ Pvt Ltd (Debtor),118000,
+B1,TI/26-27/0110,07-11-2026,TAX INVOICE,On invoice,Revenue – Services,,100000
+B1,TI/26-27/0110,07-11-2026,TAX INVOICE,On invoice,Output CGST,,9000
+B1,TI/26-27/0110,07-11-2026,TAX INVOICE,On invoice,Output SGST,,9000
+B1,TI/26-27/0110,07-11-2026,TAX INVOICE,"On receipt (bank event, TDS 10% deducted)",Bank,108000,
+B1,TI/26-27/0110,07-11-2026,TAX INVOICE,"On receipt (bank event, TDS 10% deducted)",Income-tax TDS Receivable,10000,
+B1,TI/26-27/0110,07-11-2026,TAX INVOICE,"On receipt (bank event, TDS 10% deducted)",XYZ Pvt Ltd (Debtor),,118000
+B2,TI/26-27/0111,09-11-2026,TAX INVOICE,On invoice,Deccan Softworks (Debtor),118000,
+B2,TI/26-27/0111,09-11-2026,TAX INVOICE,On invoice,Revenue – Services,,100000
+B2,TI/26-27/0111,09-11-2026,TAX INVOICE,On invoice,Output IGST,,18000
+B3,TI/26-27/0112,09-11-2026,TAX INVOICE,On invoice,Lotus Retail (Debtor),118000,
+B3,TI/26-27/0112,09-11-2026,TAX INVOICE,On invoice,Revenue – Services,,100000
+B3,TI/26-27/0112,09-11-2026,TAX INVOICE,On invoice,Output IGST,,18000
+B4,BOS/26-27/0012,07-11-2026,BILL OF SUPPLY,On invoice,Ravi Kumar (Debtor),100000,
+B4,BOS/26-27/0012,07-11-2026,BILL OF SUPPLY,On invoice,Revenue – Exempt Services,,100000
+B5,TI/26-27/0113,10-11-2026,TAX INVOICE,On invoice,XYZ Pvt Ltd (Debtor),123000,
+B5,TI/26-27/0113,10-11-2026,TAX INVOICE,On invoice,Revenue – Services,,100000
+B5,TI/26-27/0113,10-11-2026,TAX INVOICE,On invoice,Output CGST,,9000
+B5,TI/26-27/0113,10-11-2026,TAX INVOICE,On invoice,Output SGST,,9000
+B5,TI/26-27/0113,10-11-2026,TAX INVOICE,On invoice,Client Disbursements Recoverable,,5000
+B6,TI/26-27/0114,10-11-2026,TAX INVOICE,On invoice,XYZ Pvt Ltd (Debtor),1416000,
+B6,TI/26-27/0114,10-11-2026,TAX INVOICE,On invoice,Contract Liability (Deferred Revenue),,1200000
+B6,TI/26-27/0114,10-11-2026,TAX INVOICE,On invoice,Output CGST,,108000
+B6,TI/26-27/0114,10-11-2026,TAX INVOICE,On invoice,Output SGST,,108000
+B6,TI/26-27/0114,10-11-2026,TAX INVOICE,"Each month, Nov 2026 to Nov 2027 (scheduled event, Rs. 1,00,000 per month)",Contract Liability (Deferred Revenue),100000,
+B6,TI/26-27/0114,10-11-2026,TAX INVOICE,"Each month, Nov 2026 to Nov 2027 (scheduled event, Rs. 1,00,000 per month)",Revenue – Services,,100000
+B7,KRA/26-27/0045,10-11-2026,TAX INVOICE,On invoice (books of K. Rao & Associates),XYZ Pvt Ltd (Debtor),100000,
+B7,KRA/26-27/0045,10-11-2026,TAX INVOICE,On invoice (books of K. Rao & Associates),Revenue – Services (RCM),,100000
+B8,TI/26-27/0115,11-11-2026,TAX INVOICE,On invoice,PWD Division No. 2 (Debtor),118000,
+B8,TI/26-27/0115,11-11-2026,TAX INVOICE,On invoice,Revenue – Services,,100000
+B8,TI/26-27/0115,11-11-2026,TAX INVOICE,On invoice,Output CGST,,9000
+B8,TI/26-27/0115,11-11-2026,TAX INVOICE,On invoice,Output SGST,,9000
+B8,TI/26-27/0115,11-11-2026,TAX INVOICE,On receipt (bank event),Bank,116000,
+B8,TI/26-27/0115,11-11-2026,TAX INVOICE,On receipt (bank event),GST TDS Receivable – CGST,1000,
+B8,TI/26-27/0115,11-11-2026,TAX INVOICE,On receipt (bank event),GST TDS Receivable – SGST,1000,
+B8,TI/26-27/0115,11-11-2026,TAX INVOICE,On receipt (bank event),PWD Division No. 2 (Debtor),,118000
+C1,EXP/26-27/0021,12-11-2026,EXPORT INVOICE,On invoice,"Acme Inc (Foreign Debtor, USD 1,000)",88000,
+C1,EXP/26-27/0021,12-11-2026,EXPORT INVOICE,On invoice,Sales – Export Goods,,88000
+C2,EXP/26-27/0022,12-11-2026,EXPORT INVOICE,On invoice,"Acme Inc (Foreign Debtor, USD 1,000)",88000,
+C2,EXP/26-27/0022,12-11-2026,EXPORT INVOICE,On invoice,IGST Refund Receivable,15840,
+C2,EXP/26-27/0022,12-11-2026,EXPORT INVOICE,On invoice,Sales – Export Goods,,88000
+C2,EXP/26-27/0022,12-11-2026,EXPORT INVOICE,On invoice,Output IGST,,15840
+C3,EXP/26-27/0023,13-11-2026,EXPORT INVOICE,On invoice,"Northwind LLC (Foreign Debtor, USD 1,000)",88000,
+C3,EXP/26-27/0023,13-11-2026,EXPORT INVOICE,On invoice,Revenue – Export Services,,88000
+C4,EXP/26-27/0024,13-11-2026,EXPORT INVOICE,On invoice,"Northwind LLC (Foreign Debtor, USD 1,000)",88000,
+C4,EXP/26-27/0024,13-11-2026,EXPORT INVOICE,On invoice,IGST Refund Receivable,15840,
+C4,EXP/26-27/0024,13-11-2026,EXPORT INVOICE,On invoice,Revenue – Export Services,,88000
+C4,EXP/26-27/0024,13-11-2026,EXPORT INVOICE,On invoice,Output IGST,,15840
+C5,TI/26-27/0116,14-11-2026,TAX INVOICE,On invoice,Electra Tech – SEZ (Debtor),100000,
+C5,TI/26-27/0116,14-11-2026,TAX INVOICE,On invoice,Sales – SEZ,,100000
+C6,TI/26-27/0117,14-11-2026,TAX INVOICE,On invoice,Electra Tech – SEZ (Debtor),100000,
+C6,TI/26-27/0117,14-11-2026,TAX INVOICE,On invoice,IGST Refund Receivable,18000,
+C6,TI/26-27/0117,14-11-2026,TAX INVOICE,On invoice,Sales – SEZ,,100000
+C6,TI/26-27/0117,14-11-2026,TAX INVOICE,On invoice,Output IGST,,18000
+C7,TI/26-27/0118,16-11-2026,TAX INVOICE,On invoice,Sunrise Exports – EOU (Debtor),118000,
+C7,TI/26-27/0118,16-11-2026,TAX INVOICE,On invoice,Sales – Deemed Export,,100000
+C7,TI/26-27/0118,16-11-2026,TAX INVOICE,On invoice,Output CGST,,9000
+C7,TI/26-27/0118,16-11-2026,TAX INVOICE,On invoice,Output SGST,,9000
+C8,TI/26-27/0119,16-11-2026,TAX INVOICE,On invoice,Global Overseas Trading (Debtor),100100,
+C8,TI/26-27/0119,16-11-2026,TAX INVOICE,On invoice,Sales – Merchant Export,,100000
+C8,TI/26-27/0119,16-11-2026,TAX INVOICE,On invoice,Output CGST,,50
+C8,TI/26-27/0119,16-11-2026,TAX INVOICE,On invoice,Output SGST,,50
+C9,HSS/26-27/0003,17-11-2026,COMMERCIAL INVOICE (HIGH SEA SALE),On invoice,Bharat Imports (Debtor),100000,
+C9,HSS/26-27/0003,17-11-2026,COMMERCIAL INVOICE (HIGH SEA SALE),On invoice,Sales – Non-GST (High Sea),,100000
+D1-a,DC/26-27/0031,02-11-2026,DELIVERY CHALLAN,On dispatch (stock movement),Goods on Approval (inventory at customer),70000,
+D1-a,DC/26-27/0031,02-11-2026,DELIVERY CHALLAN,On dispatch (stock movement),Inventory,,70000
+D1-b,TI/26-27/0120,18-11-2026,TAX INVOICE,On acceptance invoice,XYZ Traders (Debtor),118000,
+D1-b,TI/26-27/0120,18-11-2026,TAX INVOICE,On acceptance invoice,Sales – Domestic Goods,,100000
+D1-b,TI/26-27/0120,18-11-2026,TAX INVOICE,On acceptance invoice,Output CGST,,9000
+D1-b,TI/26-27/0120,18-11-2026,TAX INVOICE,On acceptance invoice,Output SGST,,9000
+D1-b,TI/26-27/0120,18-11-2026,TAX INVOICE,Cost release,COGS,70000,
+D1-b,TI/26-27/0120,18-11-2026,TAX INVOICE,Cost release,Goods on Approval,,70000
+D2,TI/26-27/0121,18-11-2026,TAX INVOICE,On dispatch invoice,Consignment Agent – GST recoverable,18000,
+D2,TI/26-27/0121,18-11-2026,TAX INVOICE,On dispatch invoice,Stock with Consignee,70000,
+D2,TI/26-27/0121,18-11-2026,TAX INVOICE,On dispatch invoice,Output CGST,,9000
+D2,TI/26-27/0121,18-11-2026,TAX INVOICE,On dispatch invoice,Output SGST,,9000
+D2,TI/26-27/0121,18-11-2026,TAX INVOICE,On dispatch invoice,Inventory,,70000
+D2,TI/26-27/0121,18-11-2026,TAX INVOICE,On agent's account sales (separate event),Consignment Agent,100000,
+D2,TI/26-27/0121,18-11-2026,TAX INVOICE,On agent's account sales (separate event),COGS,70000,
+D2,TI/26-27/0121,18-11-2026,TAX INVOICE,On agent's account sales (separate event),Sales – Consignment,,100000
+D2,TI/26-27/0121,18-11-2026,TAX INVOICE,On agent's account sales (separate event),Stock with Consignee,,70000
+D3,ST/26-27/0007,19-11-2026,TAX INVOICE (STOCK TRANSFER),On invoice (single set of books),Inventory – Chennai branch,70000,
+D3,ST/26-27/0007,19-11-2026,TAX INVOICE (STOCK TRANSFER),On invoice (single set of books),Input IGST – GSTIN 33,12600,
+D3,ST/26-27/0007,19-11-2026,TAX INVOICE (STOCK TRANSFER),On invoice (single set of books),Inventory – Bengaluru branch,,70000
+D3,ST/26-27/0007,19-11-2026,TAX INVOICE (STOCK TRANSFER),On invoice (single set of books),Output IGST – GSTIN 29,,12600
+D4,TI/26-27/0122,20-11-2026,TAX INVOICE,On invoice,XYZ Ltd (Debtor),118000,
+D4,TI/26-27/0122,20-11-2026,TAX INVOICE,On invoice,Sales – Domestic Goods,,100000
+D4,TI/26-27/0122,20-11-2026,TAX INVOICE,On invoice,Output IGST,,18000
+D5,MP/26-27/0451,20-11-2026,TAX INVOICE,On invoice,Marketplace Receivable – ShopKart,118000,
+D5,MP/26-27/0451,20-11-2026,TAX INVOICE,On invoice,Sales – Marketplace,,100000
+D5,MP/26-27/0451,20-11-2026,TAX INVOICE,On invoice,Output IGST,,18000
+D5,MP/26-27/0451,20-11-2026,TAX INVOICE,On settlement (marketplace statement),Bank,105600,
+D5,MP/26-27/0451,20-11-2026,TAX INVOICE,On settlement (marketplace statement),GST TCS Receivable (IGST),500,
+D5,MP/26-27/0451,20-11-2026,TAX INVOICE,On settlement (marketplace statement),Income-tax TDS Receivable,100,
+D5,MP/26-27/0451,20-11-2026,TAX INVOICE,On settlement (marketplace statement),Marketplace Commission,10000,
+D5,MP/26-27/0451,20-11-2026,TAX INVOICE,On settlement (marketplace statement),Input GST on Commission,1800,
+D5,MP/26-27/0451,20-11-2026,TAX INVOICE,On settlement (marketplace statement),Marketplace Receivable – ShopKart,,118000
+D6,RV/26-27/0014,21-11-2026,RECEIPT VOUCHER,On receipt,Bank,50000,
+D6,RV/26-27/0014,21-11-2026,RECEIPT VOUCHER,On receipt,Customer Advance – XYZ Traders,,50000
+D7-a,RV/26-27/0015,21-11-2026,RECEIPT VOUCHER,On receipt,Bank,118000,
+D7-a,RV/26-27/0015,21-11-2026,RECEIPT VOUCHER,On receipt,GST Paid on Advance (asset),18000,
+D7-a,RV/26-27/0015,21-11-2026,RECEIPT VOUCHER,On receipt,Customer Advance – XYZ Pvt Ltd,,118000
+D7-a,RV/26-27/0015,21-11-2026,RECEIPT VOUCHER,On receipt,Output CGST,,9000
+D7-a,RV/26-27/0015,21-11-2026,RECEIPT VOUCHER,On receipt,Output SGST,,9000
+D7-b,TI/26-27/0123,30-11-2026,TAX INVOICE,On invoice,XYZ Pvt Ltd (Debtor),118000,
+D7-b,TI/26-27/0123,30-11-2026,TAX INVOICE,On invoice,Revenue – Services,,100000
+D7-b,TI/26-27/0123,30-11-2026,TAX INVOICE,On invoice,Output CGST,,9000
+D7-b,TI/26-27/0123,30-11-2026,TAX INVOICE,On invoice,Output SGST,,9000
+D7-b,TI/26-27/0123,30-11-2026,TAX INVOICE,Remove double tax,Output CGST,9000,
+D7-b,TI/26-27/0123,30-11-2026,TAX INVOICE,Remove double tax,Output SGST,9000,
+D7-b,TI/26-27/0123,30-11-2026,TAX INVOICE,Remove double tax,GST Paid on Advance (asset),,18000
+D7-b,TI/26-27/0123,30-11-2026,TAX INVOICE,Adjust advance,Customer Advance – XYZ Pvt Ltd,118000,
+D7-b,TI/26-27/0123,30-11-2026,TAX INVOICE,Adjust advance,XYZ Pvt Ltd (Debtor),,118000
+D8,RFV/26-27/0002,25-11-2026,REFUND VOUCHER,On refund,Customer Advance – XYZ Pvt Ltd,118000,
+D8,RFV/26-27/0002,25-11-2026,REFUND VOUCHER,On refund,Output CGST,9000,
+D8,RFV/26-27/0002,25-11-2026,REFUND VOUCHER,On refund,Output SGST,9000,
+D8,RFV/26-27/0002,25-11-2026,REFUND VOUCHER,On refund,Bank,,118000
+D8,RFV/26-27/0002,25-11-2026,REFUND VOUCHER,On refund,GST Paid on Advance (asset),,18000
+D9,TI/26-27/0124,26-11-2026,TAX INVOICE,On invoice,XYZ Traders (Debtor),118000,
+D9,TI/26-27/0124,26-11-2026,TAX INVOICE,On invoice,Sales – Domestic Goods,,100000
+D9,TI/26-27/0124,26-11-2026,TAX INVOICE,On invoice,Output CGST,,9000
+D9,TI/26-27/0124,26-11-2026,TAX INVOICE,On invoice,Output SGST,,9000
+D10,SLT/26-27/0213,27-11-2026,BILL OF SUPPLY,On invoice (books of Sri Lakshmi Traders),XYZ Traders (Debtor),100000,
+D10,SLT/26-27/0213,27-11-2026,BILL OF SUPPLY,On invoice (books of Sri Lakshmi Traders),Sales,,100000
+D10,SLT/26-27/0213,27-11-2026,BILL OF SUPPLY,"Quarter-end (CMP-08), 1% of turnover",Composition Tax Expense,1000,
+D10,SLT/26-27/0213,27-11-2026,BILL OF SUPPLY,"Quarter-end (CMP-08), 1% of turnover",GST Payable (CMP-08),,1000
+E1,CN/26-27/0009,28-11-2026,CREDIT NOTE,On credit note,Sales Returns,100000,
+E1,CN/26-27/0009,28-11-2026,CREDIT NOTE,On credit note,Output CGST,9000,
+E1,CN/26-27/0009,28-11-2026,CREDIT NOTE,On credit note,Output SGST,9000,
+E1,CN/26-27/0009,28-11-2026,CREDIT NOTE,On credit note,XYZ Traders (Debtor),,118000
+E1,CN/26-27/0009,28-11-2026,CREDIT NOTE,Stock back (GRN),Inventory,70000,
+E1,CN/26-27/0009,28-11-2026,CREDIT NOTE,Stock back (GRN),COGS,,70000
+E2,CN/26-27/0010,30-11-2026,CREDIT NOTE,On credit note,Discount Allowed,5000,
+E2,CN/26-27/0010,30-11-2026,CREDIT NOTE,On credit note,Output CGST,450,
+E2,CN/26-27/0010,30-11-2026,CREDIT NOTE,On credit note,Output SGST,450,
+E2,CN/26-27/0010,30-11-2026,CREDIT NOTE,On credit note,XYZ Traders (Debtor),,5900
+E3,CCN/26-27/0004,30-11-2026,CREDIT NOTE (COMMERCIAL – NO GST),On credit note,Discount Allowed,5000,
+E3,CCN/26-27/0004,30-11-2026,CREDIT NOTE (COMMERCIAL – NO GST),On credit note,XYZ Traders (Debtor),,5000
+E4,DN/26-27/0003,30-11-2026,DEBIT NOTE,On debit note,XYZ Traders (Debtor),11800,
+E4,DN/26-27/0003,30-11-2026,DEBIT NOTE,On debit note,Sales – Domestic Goods,,10000
+E4,DN/26-27/0003,30-11-2026,DEBIT NOTE,On debit note,Output CGST,,900
+E4,DN/26-27/0003,30-11-2026,DEBIT NOTE,On debit note,Output SGST,,900

@@ -59,7 +59,13 @@ export function PartiesScreen() {
                   ...(sel.side === 'payable' ? [{ label: 'Buys under GSTIN', value: sel.gstin ?? (partyOf(s, sel.partyId)?.gstins[0]?.value ?? 'Unregistered') }] : []),
                   { label: 'Category', value: categoriesFor(sel.side)[sel.category] ?? sel.category },
                   { label: 'Credit days', value: sel.creditDays ?? '—' },
-                  ...(sel.side === 'receivable' ? [{ label: 'Credit limit', value: inr(sel.creditLimit) }] : []),
+                  ...(sel.side === 'receivable'
+                    ? [
+                        { label: 'Credit limit', value: inr(sel.creditLimit) },
+                        { label: 'Ships to', value: shipToWords(sel, partyOf(s, sel.partyId)) },
+                        { label: 'Bank (for refunds)', value: sel.bankLast4 ? `•••• ${sel.bankLast4} since ${fmtDate(sel.bankSince)} · unverified until the first refund` : 'Not given (optional)' },
+                      ]
+                    : []),
                   ...(sel.side === 'payable'
                     ? [
                         { label: 'MSME', value: sel.msme === 'yes' ? `${MSME_CATEGORY[sel.msmeCategory ?? ''] ?? 'Yes'} · ${sel.udyam ?? 'Udyam not received'}` : sel.msme ?? '—' },
@@ -81,12 +87,18 @@ export function PartiesScreen() {
   );
 }
 
-/** fin.customer_branch: one account, many branches. Each links a P&C location to the P&C GSTIN of its state. */
+/** The customer's ship-to (fin.debtor_location, usage ship_to), else the billing address. */
+function shipToWords(a: Account, p: Party | null): string {
+  const l = a.shipTo && p ? locationsOf(p).find((x) => x.locationId === a.shipTo!.locationId) : undefined;
+  return l ? `${[l.line, l.city, l.pincode].filter(Boolean).join(', ')} (${l.stateCode}) · ${a.shipTo!.linkId}` : 'The billing address (no shipping address on the form)';
+}
+
+/** fin.debtor_location (usage bill_to): one account, many branches. Each links a P&C location to the P&C GSTIN of its state. */
 function Branches({ a, p }: { a: Account; p: Party }) {
   const s = useOnboarding();
   const all = branchesOf(a, p).map((b) => viewOf(p, b));
   const open = all.filter((v) => !v.branch.until);
-  const free = locationsOf(p).filter((l) => !open.some((v) => v.branch.locationId === l.locationId));
+  const free = locationsOf(p).filter((l) => l.purpose !== 'ship_to' && !open.some((v) => v.branch.locationId === l.locationId));
   const [pick, setPick] = useState('');
   return (
     <Section title={`Branches (${open.length} billed)`} aside={<span className="subtle small-note">one account · {a.accountId}</span>}>

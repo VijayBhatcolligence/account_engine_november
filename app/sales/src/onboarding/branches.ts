@@ -1,4 +1,5 @@
-// A customer's branches (docs/sales/sales_engine/customer_onboarding_schema.dbml, fin.customer_branch).
+// A customer's billing branches (docs/sales/sales_engine/customer_onboarding_schema.dbml, fin.debtor_location, usage bill_to).
+// The ship-to (usage ship_to) is a P&C location with purpose 'ship_to' and Account.shipTo: never a billing branch.
 // One party and one customer account, however many branches. P&C holds the locations and the GSTINs but not which
 // GSTIN goes with which location; the account's branch rows say so (ids only). The first location is the party's
 // registered address; the account's first branch is the one the onboarding form gave.

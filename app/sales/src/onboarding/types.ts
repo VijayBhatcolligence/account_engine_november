@@ -10,7 +10,7 @@ import type { ISODate, ISODateTime } from '../domain/types';
 
 export type Side = 'payable' | 'receivable';
 
-export type ActorKey = 'teja' | 'rajan' | 'usha' | 'venkat' | 'farid' | 'ravi' | 'kiran' | 'arun' | 'latha' | 'nisha' | 'system' | 'bank' | 'gst' | 'irp';
+export type ActorKey = 'teja' | 'rajan' | 'usha' | 'venkat' | 'farid' | 'ravi' | 'kiran' | 'arun' | 'latha' | 'nisha' | 'billing' | 'system' | 'bank' | 'gst' | 'irp';
 
 // ---------- The party, as P&C holds it (mock copy) ----------
 
@@ -44,8 +44,17 @@ export interface Party {
   email?: string;
   phones: string[];
   roles: PartyRole[];
-  /** P&C business_location rows besides the registered address (branches in other cities / states). */
+  /** P&C business_location rows besides the registered address (branches in other cities / states, a ship-to). */
   locations?: PartyLocation[];
+  /** More contact people besides the first (pc.contact + contact_party_association + contact_point each). */
+  contacts?: PartyContact[];
+}
+
+/** One more contact person of the party (mock copy of pc.contact and its contact points). */
+export interface PartyContact {
+  name: string;
+  phone?: string;
+  email?: string;
 }
 
 /** A P&C business location (mock copy): a physical presence of the party. It carries no GSTIN. */
@@ -57,9 +66,11 @@ export interface PartyLocation {
   stateCode: string;
   pincode: string;
   country: string;
+  /** 'ship_to': the customer's delivery address (form section C). Not a billing branch. */
+  purpose?: 'ship_to';
 }
 
-/** fin.customer_branch: which P&C location this account bills, under which P&C GSTIN. Ids only. */
+/** fin.debtor_location (usage bill_to): which P&C location this account bills, under which P&C GSTIN. Ids only. */
 export interface CustomerBranch {
   branchId: string;
   locationId: string;
@@ -82,6 +93,8 @@ export interface PaperForm {
   values: Values;
   /** Section B1 of the form: the customer's other GST registrations (branches in other states). */
   registrations?: Omit<GstRegistration, 'id'>[];
+  /** Section C: more contact people besides the first. */
+  contacts?: Omit<ExtraContact, 'id'>[];
   attachments: string[];
   /** Illustrative: not a scenario party (shown on the paper). */
   illustrative?: boolean;
@@ -90,7 +103,7 @@ export interface PaperForm {
 /**
  * One more GST registration of the customer (form section B1: "if the customer has multiple GSTINs across states").
  * On approval P&C holds the GSTIN (party_identifier IN_GST). With its branch address it also becomes a
- * P&C location and a fin.customer_branch row (that location, billed under this GSTIN); without one, the
+ * P&C location and a fin.debtor_location row, usage bill_to (that location, billed under this GSTIN); without one, the
  * branch is added on the account once the address is known.
  */
 export interface GstRegistration {
@@ -100,6 +113,14 @@ export interface GstRegistration {
   line?: string;
   city?: string;
   pincode?: string;
+}
+
+/** One more contact person on the request (section C), besides the form's Contact person / Mobile / Email. */
+export interface ExtraContact {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
 }
 
 // ---------- The request and the account (Finance) ----------
@@ -169,6 +190,8 @@ export interface Request {
   values: Values;
   /** Form section B1: the other GST registrations (the main GSTIN is values.gstin). */
   registrations?: GstRegistration[];
+  /** Section C: more contact people (the first is values.contactPerson / phone / email). */
+  contacts?: ExtraContact[];
   gstCheck?: GstCheck;
   /** GST portal results for the other registrations, by GSTIN. */
   regChecks?: Record<string, GstCheck>;
@@ -210,6 +233,8 @@ export interface Account {
   gstin?: string | null;
   /** Customer: the branches it bills (one account, many branches). Absent: one branch, the registered address. */
   branches?: CustomerBranch[];
+  /** Customer: where goods are delivered, when the form gave a shipping address (fin.debtor_location, usage ship_to). */
+  shipTo?: { linkId: string; locationId: string; since: ISODate };
   /** The control account (ledger group) is effective-dated: since when, and how it was set. */
   controlSince?: ISODate;
   controlSource?: 'suggested' | 'chosen';

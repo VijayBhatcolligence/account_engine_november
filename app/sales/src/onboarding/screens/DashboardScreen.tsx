@@ -17,11 +17,10 @@ const FLOW = [
 ];
 
 const SALES_FLOW = [
-  { who: 'Sales · Stores', where: 'Their apps', what: 'Arun raises the order (Nisha approves); Latha records the delivery challan. Under Perpetual the challan posts the cost: Dr cost of goods sold, Cr FG inventory' },
-  { who: 'You', where: 'This app', what: 'Pick the challan under To bill: the invoice pulls its lines at the order rates. Add the customer PO, check quantities (never above the challan)' },
-  { who: 'System', where: 'Finance backend', what: 'Works out place of supply, CGST + SGST or IGST, HSN summary, round off, margin; runs the e-invoice pre-check' },
-  { who: 'Checker', where: 'His app', what: 'Rajan approves every invoice (Billing combined, §9). His approval triggers the IRN and e-way bill Part-A' },
-  { who: 'System', where: 'Posting engine', what: 'One entry: Dr customer, Cr sales, Cr output GST. Invoice number, IRN, QR. Stores then releases the challan' },
+  { who: 'Billing', where: 'Their app', what: 'Raises the invoice (number, IRN, lines, GST) and hands it to you' },
+  { who: 'You', where: 'This app', what: 'Book its entry: the ledgers are suggested, pick others if needed; Dr = Cr; the GST lines equal the invoice\'s' },
+  { who: 'Checker', where: 'His app', what: 'Rajan approves (the entry posts), sends it back or rejects it' },
+  { who: 'System', where: 'Posting engine', what: 'One journal entry: Dr customer, Cr sales, Cr output GST' },
 ];
 
 export function DashboardScreen() {
@@ -41,7 +40,7 @@ export function DashboardScreen() {
       <div className="ob-dash">
         <PageHeader
           title={`Good morning, ${ACTORS[ME].name}`}
-          subtitle="Two tasks in this mock: creating a customer from the paper form Sales hands you, and raising the sales invoice for each delivery challan."
+          subtitle="Two tasks in this mock: creating a customer from the paper form Sales hands you, and raising a sales invoice."
           actions={
             <span className="inline-gap">
               <Button icon={Plus} onClick={() => s.navigate('onboarding')}>Create a customer</Button>
@@ -77,9 +76,9 @@ export function DashboardScreen() {
                 {vMine.map((v) => (
                   <ListItem
                     key={v.id}
-                    tone={v.status === 'returned' ? 'critical' : 'warning'}
+                    tone={v.decisionReason ? 'critical' : 'warning'}
                     title={`Sales entry · ${titleOfV(v, ctx)}`}
-                    subtitle={v.status === 'returned' ? `Returned · ${v.returnedReason}` : `From challan ${v.dcId}, recorded by ${who(v.from)}`}
+                    subtitle={v.decisionReason ? `Sent back · ${v.decisionReason}` : `Invoice ${v.number} from Billing: book the entry`}
                     meta={`Opened ${relTime(v.arrivedAt, s.now)}`}
                     onClick={() => s.openVoucher(v.id)}
                   />
@@ -124,7 +123,7 @@ export function DashboardScreen() {
               ))}
             </ol>
             <Callout tone="info" title="One balance-sheet side, one P&L side">
-              The invoice debits the customer (balance sheet) and credits Sales (P&L) and Output GST (balance sheet). The cost side, Dr cost of goods sold (P&L) and Cr finished-goods inventory (balance sheet), is the challan's own entry under Perpetual (typed by hand for now, dated the challan date), never inside the invoice.
+              The invoice debits the customer (balance sheet) and credits Sales (P&L) and Output GST (balance sheet). Stock and cost of goods sold are not part of the invoice: Stores' delivery challan posts them, a separate task (G30).
             </Callout>
           </Tile>
         </TileGrid>

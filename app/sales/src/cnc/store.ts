@@ -32,7 +32,7 @@ function seedThreads(): Thread[] {
       people: ['arun', 'teja', 'farid'],
       unread: true,
       messages: [
-        { at: '2026-10-07T09:40', by: 'arun', text: "Coastal Bakes' first order SO-0019 is ready to load. Latha can record its challan only once their account is live, and you invoice it from that challan. Form CRF-0019 is with you." },
+        { at: '2026-10-07T09:40', by: 'arun', text: "Coastal Bakes' first order SO-0019 is ready to load. You can invoice it once their account is live. Form CRF-0019 is with you." },
         { at: '2026-10-07T09:55', by: 'farid', text: 'I agreed ₹4,00,000 with them. I will approve the credit limit as soon as it reaches me.' },
       ],
     },
@@ -54,7 +54,7 @@ function seedThreads(): Thread[] {
       people: ['rajan', 'teja'],
       unread: false,
       messages: [
-        { at: '2026-10-05T11:40', by: 'rajan', text: 'Checked KA/INV/2627/0142 against DC-0619: 100 cartons of milk cream at ₹990, CGST + SGST 2.5% each. Fine.' },
+        { at: '2026-10-05T11:40', by: 'rajan', text: 'Checked KA/INV/2627/0142: 100 cartons of milk cream at ₹990, CGST + SGST 2.5% each. Fine.' },
         { at: '2026-10-05T11:50', by: 'teja', text: 'Thanks. The goods left on 03-Oct under the offline fallback, so the IRN came today.' },
       ],
     },

@@ -9,7 +9,7 @@ import { ACTORS, ME, SIDE_LABEL, STATES, stateOfGstin } from './catalogue';
 import { branchesOf, gstinsForLocation, locationsOf, openBranches } from './branches';
 import { afterOf, checksOf, follow, GSTIN_RE, isEmpty, mask, PARTY_KEYS, partyValues, routesFor, stops, suggestionsOf } from './rules';
 import { newRequest, PAPERS, seedAccounts, seedLog, seedNotices, seedParties, seedRequests, START } from './seed';
-import type { Account, ActorKey, Change, CustomerBranch, FieldValue, GstCheck, GstRegistration, LogEntry, Notice, Party, PartyLocation, Request, Side } from './types';
+import type { Account, ActorKey, Change, CustomerBranch, ExtraContact, FieldValue, GstCheck, GstRegistration, LogEntry, Notice, Party, PartyLocation, Request, Side } from './types';
 
 /** A page. The top menu groups them: Tasks (onboarding, sales) · Rules (checks, posting rules, backend) · Forms (forms, parties, books). */
 export type TabId = 'dashboard' | 'tasks' | 'onboarding' | 'sales' | 'checks' | 'postingRules' | 'backend' | 'forms' | 'parties' | 'books' | 'cnc';
@@ -40,6 +40,10 @@ interface State extends Data {
   addRegistration: (reqId: string) => void;
   setRegistration: (reqId: string, regId: string, patch: Partial<Omit<GstRegistration, 'id'>>) => void;
   removeRegistration: (reqId: string, regId: string) => void;
+  /** Section C: more contact people of the customer (the first is the form's Contact person / Mobile / Email). */
+  addContact: (reqId: string) => void;
+  setContact: (reqId: string, contactId: string, patch: Partial<Omit<ExtraContact, 'id'>>) => void;
+  removeContact: (reqId: string, contactId: string) => void;
   useSuggestion: (reqId: string, key: string) => void;
   /** Mock only: types everything on the paper form for you. */
   typeFromPaper: (reqId: string) => void;
@@ -52,7 +56,7 @@ interface State extends Data {
   decide: (reqId: string, changeId: string, approve: boolean, reason?: string) => void;
   sendBack: (reqId: string, reason: string) => void;
   discard: (reqId: string) => void;
-  /** A customer's branches (fin.customer_branch): link a P&C location under its GSTIN, deactivate, make default. */
+  /** A customer's billing branches (fin.debtor_location, usage bill_to): link a P&C location under its GSTIN, deactivate, make default. */
   addBranch: (accountId: string, locationId: string) => void;
   deactivateBranch: (accountId: string, branchId: string) => void;
   setDefaultBranch: (accountId: string, branchId: string) => void;
@@ -172,6 +176,12 @@ export const useOnboarding = create<State>()(
               r.values.msmeCategory = '';
               r.values.udyam = '';
             }
+            if (key === 'shippingAddress' && isEmpty(value)) {
+              // No shipping address: goods go to the billing address, so no ship-to city, state or PIN.
+              r.values.shipCity = '';
+              r.values.shipState = '';
+              r.values.shipPincode = '';
+            }
             if (key === 'gstRegistered' && value !== 'yes') {
               // Not registered: no GSTIN, no registration type, no other registrations.
               r.values.gstin = '';
@@ -219,6 +229,32 @@ export const useOnboarding = create<State>()(
             follow(r, before, s.accounts);
           }),
 
+        addContact: (reqId) =>
+          set((s) => {
+            const r = requestOf(s, reqId);
+            if (!r || !isMine(r) || r.partyId) return;
+            const rows = (r.contacts ??= []);
+            rows.push({ id: `K${nextNo(rows.map((c) => c.id), 'K', 0)}`, name: '' });
+            r.dirty = true;
+          }),
+
+        setContact: (reqId, contactId, patch) =>
+          set((s) => {
+            const r = requestOf(s, reqId);
+            const c = r?.contacts?.find((x) => x.id === contactId);
+            if (!r || !c || !isMine(r) || r.partyId) return;
+            Object.assign(c, patch);
+            r.dirty = true;
+          }),
+
+        removeContact: (reqId, contactId) =>
+          set((s) => {
+            const r = requestOf(s, reqId);
+            if (!r || !isMine(r) || r.partyId || !r.contacts) return;
+            r.contacts = r.contacts.filter((x) => x.id !== contactId);
+            r.dirty = true;
+          }),
+
         useSuggestion: (reqId, key) => {
           const r = requestOf(get(), reqId);
           const sug = r && suggestionsOf(r, get().accounts)[key];
@@ -240,6 +276,10 @@ export const useOnboarding = create<State>()(
               q.registrations = paper.registrations!.map((g, i) => ({ id: `G${i + 1}`, ...g }));
               follow(q, before, s.accounts);
             });
+          if (paper.contacts?.length && !r.partyId)
+            set((s) => {
+              requestOf(s, reqId)!.contacts = paper.contacts!.map((c, i) => ({ id: `K${i + 1}`, ...c }));
+            });
         },
 
         useParty: (reqId, partyId) =>
@@ -259,6 +299,8 @@ export const useOnboarding = create<State>()(
               return { id: `G${i + 1}`, gstin: x.value, line: l?.line, city: l?.city, pincode: l?.pincode };
             });
             r.regChecks = Object.fromEntries(p.gstins.slice(1).map((x) => [x.value, { status: x.status, nameAtGst: p.legalName.toUpperCase(), at: s.now, forValue: x.value }]));
+            // More contacts from the master too: P&C holds them, so they are locked here like B1.
+            r.contacts = (p.contacts ?? []).map((c, i) => ({ id: `K${i + 1}`, ...c }));
             follow(r, before, s.accounts);
             r.dirty = true;
             r.history.push({ at: s.now, by: ME, text: `Used party ${p.partyId} ${p.legalName} from the master (no new party)` });
@@ -422,14 +464,28 @@ export const useOnboarding = create<State>()(
                 locations: (r.registrations ?? [])
                   .filter((g) => !isEmpty(g.line ?? '') || !isEmpty(g.city ?? ''))
                   .map((g, i): PartyLocation => ({ locationId: `${partyId}-L${i + 2}`, label: `${g.city || STATE_NAME(g.gstin)} branch`, line: g.line ?? '', city: g.city ?? '', stateCode: stateOfGstin(g.gstin) ?? '', pincode: g.pincode ?? '', country: 'IN' })),
+                contacts: (r.contacts ?? []).filter((c) => c.name.trim()).map(({ id: _id, ...c }) => c),
               };
+              // The shipping address (section C) is a P&C location too, named "Ship-to": the invoice reads its state.
+              if (r.side === 'receivable' && !isEmpty(v.shippingAddress)) {
+                const n = (created.locations?.length ?? 0) + 2;
+                (created.locations ??= []).push({ locationId: `${partyId}-L${n}`, label: 'Ship-to', line: String(v.shippingAddress), city: String(v.shipCity ?? ''), stateCode: String(v.shipState ?? ''), pincode: String(v.shipPincode ?? ''), country: 'IN', purpose: 'ship_to' });
+              }
               s.parties.push(created);
               p = s.parties[s.parties.length - 1];
               r.partyId = partyId;
               log(s, 'api', 'system', `${PM}: create party (P&C's action, its own checks)`, `${created.legalName} · ${[created.pan && `PAN ${created.pan}`, ...created.gstins.map((g) => `GSTIN ${g.value}`)].filter(Boolean).join(' · ')} · ${created.address.city} → party_id ${partyId}`);
               log(s, 'db', 'system', 'P&C writes pc.party · party_identifier · business_location · contact · contact_point', `${partyId} (P&C's tables, not ours)`);
               if (created.gstins.length > 1) log(s, 'db', 'system', `P&C writes pc.party_identifier ×${created.gstins.length} (IN_GST)`, created.gstins.map((g) => `${g.value} (IN-${g.stateCode})`).join(' · '));
-              if (created.locations?.length) log(s, 'db', 'system', `P&C writes pc.business_location ×${created.locations.length + 1}`, ['registered address', ...created.locations.map((l) => l.label)].join(' · '));
+              if (created.locations?.length) log(s, 'db', 'system', `P&C writes pc.business_location ×${created.locations.length + 1}`, ['registered address', ...created.locations.map((l) => (l.purpose === 'ship_to' ? `Ship-to (${l.city}, ${l.stateCode})` : l.label))].join(' · '));
+              if (r.side === 'receivable') {
+                // One pc.contact per person: the form's first contact, then the extra ones. No name on the form: the customer
+                // name stands in (placeholder rule, to confirm with P&C: pc.contact needs a display name).
+                const first = isEmpty(v.contactPerson) ? `${String(v.tradeName || v.legalName)} (no contact name on the form)` : String(v.contactPerson);
+                const people = [first, ...(created.contacts ?? []).map((c) => c.name)];
+                const points = (isEmpty(v.phone) ? 0 : 1) + (isEmpty(v.email) ? 0 : 1) + (created.contacts ?? []).reduce((n, c) => n + (c.phone ? 1 : 0) + (c.email ? 1 : 0), 0);
+                log(s, 'db', 'system', `P&C writes pc.contact ×${people.length} · contact_party_association ×${people.length} (customer_contact) · contact_point ×${points}`, people.join(' · '));
+              }
             }
             const standingId = `S-${p.partyId.slice(2)}-${roleType === 'customer' ? 'C' : 'S'}`;
             p.roles.push({ standingId, type: roleType, since: s.now.slice(0, 10), enteredBy: ME, formFrom: r.from, formNo: r.formNo });
@@ -482,6 +538,11 @@ export const useOnboarding = create<State>()(
               acct.branches = rows;
               acct.gstin = bill || acct.gstin;
             }
+            const shipLoc = (p.locations ?? []).find((l) => l.purpose === 'ship_to');
+            if (r.side === 'receivable' && shipLoc) {
+              const n = nextNo(s.accounts.flatMap((x) => (x.shipTo ? [x.shipTo.linkId] : [])), 'ST-', 0);
+              acct.shipTo = { linkId: `ST-${String(n).padStart(4, '0')}`, locationId: shipLoc.locationId, since: s.now.slice(0, 10) };
+            }
             s.accounts.push(acct);
             r.status = 'active';
             r.activatedAt = s.now;
@@ -494,14 +555,21 @@ export const useOnboarding = create<State>()(
             log(s, 'db', 'system', 'INSERT accounting_support.party_account', `${accountId} · ${r.side} · ${acct.category} · standing ${standingId}${acct.gstin ? ` · GST registration ${acct.gstin}` : ''}`);
             if (r.side === 'receivable') log(s, 'db', 'system', 'INSERT accounting_support.party_credit_limit', `${accountId} · ${acct.creditLimit ?? 0} · from ${acct.activatedAt}`);
             if (acct.branches) {
-              log(s, 'db', 'system', `INSERT fin.customer_branch ×${acct.branches.length}`, acct.branches.map((b) => `${b.branchId} · ${b.gstin ?? 'unregistered'}${b.isDefault ? ' (default)' : ''}`).join(' · '));
+              log(s, 'db', 'system', `INSERT fin.debtor_location ×${acct.branches.length} (usage bill_to)`, acct.branches.map((b) => `${b.branchId} · ${b.gstin ?? 'unregistered'}${b.isDefault ? ' (default)' : ''}`).join(' · '));
               const without = (r.registrations ?? []).filter((g) => !acct.branches!.some((b) => b.gstin === g.gstin));
               if (without.length) log(s, 'db', 'system', 'No branch yet', `${without.map((g) => g.gstin).join(' · ')}: P&C holds the GSTIN; add the branch on the customer once its address is known`);
             }
-            if (acct.bankLast4) log(s, 'db', 'system', 'INSERT accounting_support.party_bank_account', `${mask(String(v.bankAccountNo))} · since ${acct.bankSince}`);
+            if (acct.shipTo) log(s, 'db', 'system', 'INSERT fin.debtor_location (usage ship_to)', `${acct.shipTo.linkId} · location ${acct.shipTo.locationId} (${shipLoc?.city}, ${shipLoc?.stateCode}) · no GSTIN: where goods go, not a billing branch`);
+            if (acct.bankLast4 && r.side === 'payable') log(s, 'db', 'system', 'INSERT accounting_support.party_bank_account', `${mask(String(v.bankAccountNo))} · since ${acct.bankSince}`);
+            if (acct.bankLast4 && r.side === 'receivable') {
+              // One bank row per party (shared with the vendor side): a party that is already our vendor with this account keeps its row.
+              const reused = s.accounts.some((a) => a !== acct && a.partyId === acct.partyId && a.bankAccountNo === acct.bankAccountNo);
+              log(s, 'db', 'system', reused ? 'fin.party_bank_account: row reused' : 'INSERT fin.party_bank_account', `${mask(String(v.bankAccountNo))} · ${v.ifsc} · ${v.beneficiary} · unverified (checked before the first refund)`);
+              log(s, 'db', 'system', 'debtor_account.refund_bank_account_id set', `${accountId} → that bank row`);
+            }
             log(s, 'db', 'system', 'UPDATE accounting_support.party_account_request', `${r.id} · active · subledger_account_id ${accountId}`);
             log(s, 'event', 'system', 'PartyAccountRequestActivated', `${accountId} · ${SIDE_LABEL[r.side].toLowerCase()} · ${r.side === 'payable' ? 'Purchase can post vouchers; Payables gets the MSME clock' : 'Sales can confirm orders; Billing reads the instructions'}`);
-            if (acct.bankLast4) log(s, 'event', 'system', 'PartyAccountRequestActivated · bank_account_added', `${accountId} · flag "new bank details" on the next payment proposal`);
+            if (acct.bankLast4 && r.side === 'payable') log(s, 'event', 'system', 'PartyAccountRequestActivated · bank_account_added', `${accountId} · flag "new bank details" on the next payment proposal`);
             r.history.push({ at: s.now, by: 'system', text: `Active: party ${p.partyId}, account ${accountId} under ${acct.under}` });
             notice(s, { tone: 'success', title: `${SIDE_LABEL[r.side]} active: ${p.legalName}`, body: `${accountId} under ${acct.under}. ${r.side === 'payable' ? 'Purchase can now post vouchers to it.' : 'Sales can now confirm orders.'}`, requestId: r.id });
           }),
@@ -541,7 +609,7 @@ export const useOnboarding = create<State>()(
             const today = s.now.slice(0, 10);
             all.push({ branchId: id, locationId, gstin: g?.value ?? null, isDefault: false, since: today });
             log(s, 'api', ME, `POST /api/v1/fin/customer-accounts/${accountId}/branches`, `${loc.label} (${PM} location ${locationId}) under ${g ? `GSTIN ${g.value}` : 'no GSTIN: unregistered'}`);
-            log(s, 'db', 'system', 'INSERT fin.customer_branch', `${id} · ${accountId} · location ${locationId} · gst_registration ${g?.value ?? 'NULL'}`);
+            log(s, 'db', 'system', 'INSERT fin.debtor_location', `${id} · usage bill_to · ${accountId} · location ${locationId} · gst_registration ${g?.value ?? 'NULL'}`);
             log(s, 'db', 'system', 'INSERT fin.customer_account_history', `${accountId} · add_branch ${id}`);
             log(s, 'event', 'system', 'CustomerBranchAdded.v1', `${accountId} · ${id}`);
           }),
@@ -562,7 +630,7 @@ export const useOnboarding = create<State>()(
               open.find((x) => x !== b)!.isDefault = true;
             }
             log(s, 'api', ME, `POST /api/v1/fin/customer-accounts/${accountId}/branches/${branchId}/deactivate`, 'no new invoices to it; past invoices keep their copy');
-            log(s, 'db', 'system', 'UPDATE fin.customer_branch', `${branchId} · until ${b.until}`);
+            log(s, 'db', 'system', 'UPDATE fin.debtor_location', `${branchId} · until ${b.until}`);
             log(s, 'event', 'system', 'CustomerBranchDeactivated.v1', `${accountId} · ${branchId}`);
           }),
 
@@ -576,7 +644,7 @@ export const useOnboarding = create<State>()(
             a.branches = all;
             all.forEach((x) => (x.isDefault = x.branchId === branchId));
             log(s, 'api', ME, `PATCH /api/v1/fin/customer-accounts/${accountId}/branches/${branchId}`, 'is_default = true');
-            log(s, 'db', 'system', 'UPDATE fin.customer_branch', `${branchId} default; the previous default off`);
+            log(s, 'db', 'system', 'UPDATE fin.debtor_location', `${branchId} default; the previous default off`);
             log(s, 'event', 'system', 'CustomerBranchChanged.v1', `${accountId} · ${branchId} is the default`);
           }),
 
@@ -612,7 +680,7 @@ export const useOnboarding = create<State>()(
       };
     }),
     {
-      name: 'aikyat-ae-onboarding-v5',
+      name: 'aikyat-ae-onboarding-v6',
       partialize: (s) => ({ now: s.now, parties: s.parties, accounts: s.accounts, requests: s.requests, log: s.log, notices: s.notices, nav: s.nav }),
     },
   ),

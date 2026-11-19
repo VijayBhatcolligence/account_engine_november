@@ -1,17 +1,18 @@
 // Books: what the posted entries did. Day book (every journal entry and its lines), trial balance (this month's
-// movements, balance sheet and P&L apart, Dr = Cr), and customer outstanding (the AR sub-ledger, tied to control).
+// movements, balance sheet and P&L apart, Dr = Cr), and customer outstanding: the subledger is a view (Manoj, ledger_and_subledger.md),
+// the receivable ledgers' lines grouped by the customer account they name, so it always ties to the ledgers.
 
 import { useState } from 'react';
 import { Check } from 'lucide-react';
 import { fmtDate } from '../domain/dates';
 import { inr } from '../domain/money';
 import { PageHeader, SegmentedControl } from '../ui';
-import { BATCHES, costOn, ITEMS, LEDGERS, OPENING_DUE, RECEIVABLES_CODE } from './catalogue';
-import { accountOf, customers, dueOf, r2, rupees } from './rules';
+import { LEDGERS, OPENING_DUE } from './catalogue';
+import { accountOf, customers, dueOf, r2, receivableOf, rupees } from './rules';
 import { useSalesCtx } from './SalesScreen';
 import type { JournalLine } from './types';
 
-type View = 'daybook' | 'tb' | 'stock' | 'ar';
+type View = 'daybook' | 'tb' | 'ar';
 
 export function BooksScreen() {
   const [view, setView] = useState<View>('daybook');
@@ -19,12 +20,11 @@ export function BooksScreen() {
     <div className="ob-page">
       <PageHeader
         title="Books"
-        subtitle="Mock only: the journal the posting engine wrote. Invoices post the revenue side; under Perpetual, Stores' challans post the cost side. Nothing here is typed."
-        actions={<SegmentedControl label="Show" value={view} onChange={setView} options={[{ value: 'daybook', label: 'Day book' }, { value: 'tb', label: 'Trial balance' }, { value: 'stock', label: 'Stock' }, { value: 'ar', label: 'Customer outstanding' }]} />}
+        subtitle="Mock only: the journal the posting engine wrote for sales invoices (revenue, receivable, GST). Stock and cost of goods sold are Stores' challan task (G30). Nothing here is typed."
+        actions={<SegmentedControl label="Show" value={view} onChange={setView} options={[{ value: 'daybook', label: 'Day book' }, { value: 'tb', label: 'Trial balance' }, { value: 'ar', label: 'Customer outstanding' }]} />}
       />
       {view === 'daybook' && <DayBook />}
       {view === 'tb' && <TrialBalance />}
-      {view === 'stock' && <Stock />}
       {view === 'ar' && <Outstanding />}
     </div>
   );
@@ -35,7 +35,7 @@ function useLedgerName() {
   return (l: JournalLine) => {
     if (l.ledger === 'party') {
       const a = accountOf(ctx, l.accountId ?? '');
-      return { name: `${a?.name ?? l.accountId} (${l.accountId})`, code: `${RECEIVABLES_CODE[a?.under ?? ''] ?? '107010'} › AR`, st: 'BS' as const };
+      return { name: `${a?.name ?? l.accountId} (${l.accountId})`, code: `${l.code ?? receivableOf(a).code} › ${l.accountId}`, st: 'BS' as const };
     }
     const L = LEDGERS[l.ledger];
     return { name: L.name, code: L.code, st: L.statement };
@@ -63,7 +63,7 @@ function DayBook() {
           <tr className="sv-daybook__head">
             <td>{fmtDate(e.date)}</td>
             <td colSpan={5}>
-              <strong>{e.voucherNo}</strong> · {e.kind === 'sales' ? 'Sales invoice' : e.kind === 'challan_cost' ? 'Goods issue (Stores, cost)' : 'Credit note'} · <span className="mono">{e.id}</span>
+              <strong>{e.voucherNo}</strong> · {e.kind === 'sales' ? (e.reverses ? 'Sales invoice cancelled (IRN): reversal' : 'Sales invoice') : 'Sales invoicete'}{e.branch ? ` · ${e.branch}` : ''} · <span className="mono">{e.id}</span>
               {e.reverses ? ` reverses ${e.reverses}` : ''} · <span className="subtle">{e.narration}</span>
             </td>
           </tr>
@@ -158,10 +158,9 @@ function Outstanding() {
   const { s, ctx } = useSalesCtx();
   const rows = customers(ctx).map((a) => {
     const lines = s.journal.flatMap((e) => e.lines.map((l) => ({ l, kind: e.kind }))).filter((x) => x.l.accountId === a.accountId);
-    const invoiced = r2(lines.filter((x) => x.kind === 'sales').reduce((t, x) => t + x.l.dr, 0));
-    const credited = r2(lines.filter((x) => x.kind === 'credit_note').reduce((t, x) => t + x.l.cr, 0));
+    const invoiced = r2(lines.filter((x) => x.kind === 'sales').reduce((t, x) => t + x.l.dr - x.l.cr, 0)); // net of IRN cancellations
     const due = dueOf(ctx, a.accountId);
-    return { a, opening: OPENING_DUE[a.accountId] ?? 0, invoiced, credited, due, free: a.creditLimit === null ? null : a.creditLimit - due };
+    return { a, opening: OPENING_DUE[a.accountId] ?? 0, invoiced, due, free: a.creditLimit === null ? null : a.creditLimit - due };
   });
   const total = r2(rows.reduce((t, r) => t + r.due, 0));
   const control = r2(rows.reduce((t, r) => t + r.opening, 0) + s.journal.flatMap((e) => e.lines).filter((l) => l.ledger === 'party').reduce((t, l) => t + l.dr - l.cr, 0));
@@ -172,9 +171,9 @@ function Outstanding() {
           <span className="subtle">AR sub-ledger total</span> <strong>{inr(total)}</strong>
         </span>
         <span>
-          <span className="subtle">Trade Receivables (control)</span> <strong>{inr(control)}</strong>
+          <span className="subtle">Receivable ledgers (107010–107130)</span> <strong>{inr(control)}</strong>
         </span>
-        <span className={total === control ? 'tone-success' : 'tone-critical'}>{total === control ? <><Check size={13} aria-hidden /> Sub-ledger ties to the control account</> : 'Does not tie'}</span>
+        <span className={total === control ? 'tone-success' : 'tone-critical'}>{total === control ? <><Check size={13} aria-hidden /> The customers add up to the receivable ledgers (same lines)</> : 'Does not tie'}</span>
       </div>
       <table className="sv-post">
         <thead>
@@ -182,7 +181,6 @@ function Outstanding() {
             <th>Customer account</th>
             <th className="num">Brought forward</th>
             <th className="num">Invoiced (Oct)</th>
-            <th className="num">Credit notes</th>
             <th className="num">Owes now</th>
             <th className="num">Credit limit</th>
             <th className="num">Available</th>
@@ -196,68 +194,11 @@ function Outstanding() {
               </td>
               <td className="num">{inr(r.opening)}</td>
               <td className="num">{r.invoiced ? inr(r.invoiced) : '—'}</td>
-              <td className="num">{r.credited ? inr(r.credited) : '—'}</td>
               <td className="num">
                 <strong>{inr(r.due)}</strong>
               </td>
               <td className="num">{inr(r.a.creditLimit)}</td>
               <td className={`num${r.free !== null && r.free < 0 ? ' tone-critical' : ''}`}>{r.free === null ? '—' : inr(r.free)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
-  );
-}
-
-/** Stock at KA-FG: opening on 05-Oct by batch, less every challan Stores recorded since; valued at standard cost. */
-function Stock() {
-  const { s, ctx } = useSalesCtx();
-  const rows = BATCHES.map((b) => {
-    const out = s.challans.filter((c) => c.recordedAt && c.date >= '2026-10-05').flatMap((c) => c.lines.filter((l) => l.batch === b.batch).map((l) => ({ dc: c.id, qty: l.qty })));
-    const issued = out.reduce((t, x) => t + x.qty, 0);
-    const closing = b.opening - issued;
-    const cost = costOn(b.item, ctx.now.slice(0, 10));
-    return { ...b, issued, closing, dcs: out.map((x) => `${x.dc} ${x.qty}`).join(' · '), cost };
-  });
-  return (
-    <>
-      <div className="sv-party">
-        <span>
-          <span className="subtle">Method</span> <strong>{s.method === 'perpetual' ? 'Perpetual (Run 1)' : 'Periodic (Run 2)'}</strong>
-        </span>
-        <span className="subtle small-note">
-          {s.method === 'perpetual' ? 'Each challan reduces the stock value at once (Dr cost of goods sold, Cr FG inventory).' : 'Quantities move on each challan; the value only at month end through closing stock (T11).'}
-        </span>
-      </div>
-      <table className="sv-post">
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th>Batch · expiry</th>
-            <th className="num">Opening 05-Oct</th>
-            <th>Issued on challans</th>
-            <th className="num">Closing</th>
-            <th className="num">Standard cost</th>
-            <th className="num">Closing value</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.batch}>
-              <td>
-                {ITEMS[r.item].name} <span className="subtle small-note">{r.item}</span>
-              </td>
-              <td>
-                {r.batch} · {r.expiry}
-              </td>
-              <td className="num">{r.opening}</td>
-              <td className="small-note">{r.dcs || '—'}</td>
-              <td className="num">
-                <strong>{r.closing}</strong>
-              </td>
-              <td className="num">{inr(r.cost)}</td>
-              <td className="num">{inr(r.closing * r.cost)}</td>
             </tr>
           ))}
         </tbody>

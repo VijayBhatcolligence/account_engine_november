@@ -6,15 +6,14 @@ import { ctxOf, useSales } from './store';
 import type { Voucher } from './types';
 
 export const V_STATUS: Record<Voucher['status'], { label: string; tone: Tone }> = {
-  draft: { label: 'Draft · needs me', tone: 'warning' },
-  returned: { label: 'Returned', tone: 'critical' },
+  draft: { label: 'To book · needs me', tone: 'warning' },
   submitted: { label: 'With Rajan', tone: 'info' },
-  posted: { label: 'Confirmed', tone: 'success' },
-  cancelled: { label: 'Credited (credit note)', tone: 'normal' },
-  sent_back: { label: 'Challan sent back', tone: 'normal' },
+  posted: { label: 'Posted', tone: 'success' },
+  rejected: { label: 'Rejected', tone: 'critical' },
+  returned: { label: 'Returned to Billing', tone: 'normal' },
 };
 
-/** The rules' context, live: onboarding's accounts + this task's challans, invoices and journal. */
+/** The rules' context, live: onboarding's accounts + this task's invoices and journal. */
 export function useSalesCtx() {
   const app = useOnboarding();
   const s = useSales();

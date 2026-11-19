@@ -380,6 +380,7 @@ function SectionBlock({ sec, r, editable, checks }: { sec: SectionDef; r: Reques
           </div>
         )}
         {worked.length > 0 && <WorkedTable fields={worked} r={r} readOnly={!editable} />}
+        {sec.id === 'C' && r.side === 'receivable' && <Contacts r={r} editable={editable && !linked} />}
         {sec.id === 'B' && <GstinCheck r={r} editable={editable && !linked} />}
         {sec.id === 'E' && <p className="ob-note">{EXPORT_REALISATION_NORM}</p>}
         {sec.id === 'K' && <PennyDrop r={r} editable={editable} />}
@@ -458,6 +459,51 @@ function Registrations({ r, editable }: { r: Request; editable: boolean }) {
         )}
         <span className="subtle small-note">
           {all.length} GSTIN{all.length === 1 ? '' : 's'} in {states.size} state{states.size === 1 ? '' : 's'} · one party, one account
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** Section C: more contact people besides the form's first one, a row each (cmp.form-section, repeatable). */
+function Contacts({ r, editable }: { r: Request; editable: boolean }) {
+  const s = useOnboarding();
+  const rows = r.contacts ?? [];
+  const first = String(r.values.contactPerson ?? '').trim();
+  return (
+    <div className="ob-regs">
+      <div className="ob-reg ob-reg--main">
+        <span className="ob-reg__no">1</span>
+        <span>{first || <span className="subtle">no name on the form: the customer name stands in (to confirm with P&amp;C)</span>}</span>
+        <span className="subtle small-note">the form&apos;s contact person, mobile and email above</span>
+      </div>
+      {rows.map((c, i) => (
+        <div key={c.id} className="ob-reg">
+          <div className="ob-reg__top">
+            <span className="ob-reg__no">{i + 2}</span>
+            <label className="ob-reg__name">
+              <TextInput value={c.name} disabled={!editable} placeholder="Name (and role)" aria-label={`Name of contact ${i + 2}`} onChange={(e) => s.setContact(r.id, c.id, { name: e.target.value })} />
+            </label>
+            {editable && (
+              <button className="link-btn" onClick={() => s.removeContact(r.id, c.id)} aria-label={`Remove contact ${i + 2}`} title="Remove">
+                <X size={14} aria-hidden />
+              </button>
+            )}
+          </div>
+          <div className="ob-reg__reach">
+            <TextInput value={c.phone ?? ''} disabled={!editable} placeholder="Mobile" inputMode="tel" aria-label={`Mobile of contact ${i + 2}`} onChange={(e) => s.setContact(r.id, c.id, { phone: e.target.value })} />
+            <TextInput value={c.email ?? ''} disabled={!editable} placeholder="Email" inputMode="email" aria-label={`Email of contact ${i + 2}`} onChange={(e) => s.setContact(r.id, c.id, { email: e.target.value.trim() })} />
+          </div>
+        </div>
+      ))}
+      <div className="ob-row">
+        {editable && (
+          <Button size="sm" icon={Plus} onClick={() => s.addContact(r.id)}>
+            Add a contact
+          </Button>
+        )}
+        <span className="subtle small-note">
+          {1 + rows.length} contact{rows.length ? 's' : ''} · each becomes a P&amp;C contact (customer_contact) with its mobile and email
         </span>
       </div>
     </div>
@@ -609,7 +655,7 @@ function PaperPanel({ r, onClose }: { r: Request; onClose: () => void }) {
           No. {p.formNo} · from {ACTORS[p.from].name}
         </p>
         {bySection.map(({ sec, lines }) =>
-          lines.length || (sec.id === 'B1' && p.registrations?.length) ? (
+          lines.length || (sec.id === 'B1' && p.registrations?.length) || (sec.id === 'C' && p.contacts?.length) ? (
             <div key={sec.id}>
               <p className="ob-paper__sec">{sec.title.replace('System suggestions', 'Suggestions')}</p>
               <dl className="ob-paper__list">
@@ -629,6 +675,13 @@ function PaperPanel({ r, onClose }: { r: Request; onClose: () => void }) {
                     <dd>{v}</dd>
                   </div>
                 ))}
+                {sec.id === 'C' &&
+                  (p.contacts ?? []).map((c, i) => (
+                    <div key={c.name}>
+                      <dt>Contact {i + 2}</dt>
+                      <dd>{[c.name, c.phone, c.email].filter(Boolean).join(' · ')}</dd>
+                    </div>
+                  ))}
               </dl>
             </div>
           ) : null,
@@ -651,6 +704,7 @@ const PAPER_LABEL: Record<string, string> = {
   legalName: 'Legal name',
   category: 'Debtor category',
   addressLine: 'Address',
+  shippingAddress: 'Shipping address',
   phone: 'Mobile',
   email: 'Email',
   tcsConfirmed: 'TCS confirmed?',
@@ -833,7 +887,10 @@ function ChangeSummary({ r }: { r: Request }) {
       </ul>
       <p className="subtle small-note">
         When all three approve: P&amp;C {linked ? `adds the customer standing to ${linked.partyId}` : 'registers a new party'}
-        {n ? ` with ${n} GSTIN${n > 1 ? 's' : ''}` : ''}; Finance opens one account{n > 1 ? ` with ${branches} branch${branches > 1 ? 'es' : ''}` : ''}.
+        {n ? ` with ${n} GSTIN${n > 1 ? 's' : ''}` : ''}
+        {!linked && !isEmpty(v.shippingAddress) ? ' and a ship-to location' : ''}
+        {!linked && (r.contacts?.length ?? 0) > 0 ? `, ${1 + r.contacts!.length} contacts` : ''}; Finance opens one account{n > 1 ? ` with ${branches} branch${branches > 1 ? 'es' : ''}` : ''}
+        {!isEmpty(v.bankAccountNo) ? ' and keeps the bank account for refunds' : ''}.
       </p>
     </div>
   );

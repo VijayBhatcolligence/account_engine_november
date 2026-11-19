@@ -36,7 +36,7 @@ We build the accounting engine **one task at a time, in this order**. Each task 
 | 7 | T17 | Maintain a vendor's MSME (Udyam) data | Maintain a vendor's Udyam (MSME) data | MSME status and category: the 45-day payment rule | — | ⬜ |
 | 8 | T8 | Create and maintain an item's accounting fields | Create or edit an item's accounting fields | HSN, GST rate, costing and ledgers per item | — | ⬜ |
 | **Stage 3 · Sales documents** (the first entries posted: event → rule → entry) |||||||
-| 9 | T24 | Raise a sales invoice | Raise a sales invoice | **The first posting:** the engine's posting rules, the journal, the customer's open items | — | ⬜ |
+| 9 | T24 | Raise a sales invoice | Raise a sales invoice | **The first posting:** the engine's posting rules, the journal, the customer's open items | G12, G24 (covered); G7 (partly) | 🟡 rev 2 (16-Nov): app + schema, proved on PostgreSQL; code in the engine repo next |
 | 10 | T13 | Record a customer advance against a sales order | Record an advance against a sales order | An advance as an open item, adjusted later against the invoice | — | ⬜ |
 | 11 | T25 | Issue a sales credit note | Issue a sales credit note | A reduction against the original invoice | — | ⬜ |
 | 12 | T26 | Issue a sales debit note | Issue a sales debit note | An increase against the original invoice | — | ⬜ |
@@ -72,7 +72,7 @@ We build the accounting engine **one task at a time, in this order**. Each task 
 - **Then settling and matching**, which needs balances from both sides.
 - **Month end last.** It reads everything above it.
 
-**We started at #5 (T12), out of order.** That is allowed: what #1–#2 own is held as labelled stubs (`fin.book`, `fin.account`), and each stub is replaced when its setup task is built. Next to build: **#1 S1 Set up the company's books** (it closes 3 gaps).
+**We started at #5 (T12), out of order, then #9 (T24).** That is allowed: what #1–#4 own is held as labelled stubs (the company key `operated_party_id`, `fin.ledger_account`, and from Manoj's books core `fin.branch`, `fin.fiscal_year`), and each stub is replaced when its setup task is built. **Now (16-Nov): T24 rev 2 is designed, built in the app and proved on PostgreSQL; its code goes into the engine repo (Manoj's hand-over list).** Then the next task to open, by Vijay's choice: T25 (credit note, reads T24) or #1 S1 (closes G1, G2, G4, G17, G27).
 
 ---
 

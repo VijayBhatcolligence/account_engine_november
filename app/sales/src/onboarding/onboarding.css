@@ -357,6 +357,8 @@
 .ob-reg__state { flex: 1 1 140px; }
 .ob-reg__addr { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr) 84px; gap: var(--space-2); }
 .ob-reg .link-btn { margin-left: auto; }
+.ob-reg__name { flex: 1 1 260px; }
+.ob-reg__reach { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: var(--space-2); }
 
 /* Is the customer already in P&C? */
 .ob-dup { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); background: var(--surface); }
