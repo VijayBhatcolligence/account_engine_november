@@ -6,7 +6,8 @@
 import { fmtDate } from '../domain/dates';
 import { categoriesFor, STATES } from '../onboarding/catalogue';
 import { COMPANY, ENDORSEMENT, ITEMS, LEDGERS, PARAMS } from './catalogue';
-import { accountOf, calcOf, countryName, dueDateOf, ewbDays, ewbNeeded, issuerOf, itemOf, partyOfAccount, placesOf, receivableOf, rupees, type SalesCtx } from './rules';
+import { COST_METHODS } from './inventory';
+import { accountOf, calcOf, costOfV, countryName, dueDateOf, ewbDays, ewbNeeded, issuerOf, itemOf, partyOfAccount, placesOf, receivableOf, rupees, type SalesCtx } from './rules';
 import type { Voucher } from './types';
 
 export interface Logic {
@@ -33,6 +34,7 @@ export function logicOf(v: Voucher, ctx: SalesCtx): Logic[] {
   const local = c.intra === true;
   const exp = c.kind !== 'domestic';
   const revKeys = [...new Set(c.rows.map((r) => r.revenue))];
+  const cost = costOfV(v, ctx, c);
 
   const out: Logic[] = [
     {
@@ -84,6 +86,11 @@ export function logicOf(v: Voucher, ctx: SalesCtx): Logic[] {
       key: 'tax', id: 'D2', what: 'Tax ledgers and amounts', value: c.intra === null ? '—' : exp && c.exportType === 'lut' ? 'IGST nil (LUT)' : local ? `CGST ${rupees(c.cgst)} + SGST ${rupees(c.sgst)}` : `IGST ${rupees(c.igst)}`,
       business: exp && c.exportType === 'lut' ? 'Zero-rated under our LUT: no tax is charged, so no tax line.' : local ? 'Half the rate to the Centre (CGST), half to Karnataka (SGST). We owe both until paid.' : 'The full rate is IGST, owed to the Centre until paid.',
       engineer: { reads: 'taxable value · gst_rate · supply type', rule: 'per line: CGST = SGST = round2(taxable × rate / 200), IGST = round2(taxable × rate / 100) → 206011 / 206012 / 206013 (proposed under 206010, G18); locked in the entry', stores: 'sales_invoice_line tax columns · journal_line' },
+    },
+    {
+      key: 'cost', id: 'R13', what: 'Cost of goods sold', value: !cost ? 'no goods: no cost' : cost.problems.length ? cost.problems.map((p) => `${p.code} ${p.item}`).join(' · ') : `${rupees(cost.total)} by ${COST_METHODS[cost.method].label}`,
+      business: !cost ? 'Only services on this invoice: no stock goes out, so there is no cost of goods sold.' : `What the goods cost us, from the stock records, never the selling price. ${cost.method === 'fifo' ? 'FIFO: the oldest lot goes out first, each at its own cost' : 'Weighted average: every unit at the stock value ÷ its quantity'}${cost.picks.length ? ` (${cost.picks.map((p) => `${p.qty} ${p.item}${p.lot ? ` from ${p.lot}` : ''} at ${rupees(p.unitCost)}`).join(' + ')})` : ''}. It is booked with the sale, in the same entry, so the sale and its cost meet in the same period.`,
+      engineer: { reads: 'inv.stock_lot (branch, item, received_on order) · the company costing method (G3)', rule: 'R13: FIFO = oldest lots first at their unit_cost; weighted average = Σ(qty_left × unit_cost) ÷ Σ qty_left; short or no record → Stop (STOCK_SHORT, NO_STOCK_RECORD). Dr 501040 (proposed) · Cr 106020 per lot / per item', stores: 'sales_invoice.costing_method · sales_invoice_line.inventory_item_code, quantity, stock_lot_id · journal_line · at approval: stock_lot.quantity_left' },
     },
     {
       key: 'rate', id: 'C7 · C9', what: 'Rate and discount', value: c.rows.map((r) => `${r.item} ${c.currency === 'INR' ? '₹' : `${c.currency} `}${r.rate}${r.discount ? ` less ${r.discount}` : ''}`).filter((x, i, xs) => xs.indexOf(x) === i).join(', ') || '—',

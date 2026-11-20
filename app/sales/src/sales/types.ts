@@ -144,6 +144,10 @@ export interface JournalLine {
   code?: string;
   /** The AE's reason for an edited line. */
   reason?: string;
+  /** Rev 15, a cost line (R13): the item, its lot (null: weighted average) and the quantity that left stock. */
+  item?: string;
+  lot?: string | null;
+  qty?: number;
 }
 
 export interface JournalEntry {
@@ -163,4 +167,6 @@ export interface JournalEntry {
   reverses?: string;
   /** The AE's edit, kept with the rule: "why was this posted?" (§8.4). */
   edit?: { by: ActorKey; approvedBy: ActorKey; diff: string; reasons: string[] };
+  /** Rev 15: the costing method of its cost lines (R13). */
+  costMethod?: 'fifo' | 'wam';
 }

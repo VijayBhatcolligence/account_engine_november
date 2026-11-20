@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { useOnboarding } from '../onboarding/store';
 import { LEDGERS } from './catalogue';
 import { calcOf, checksOf, dueOf, entryDiffOf, entryOf, rankLedgers, stops, sum } from './rules';
+import { stockValue } from './inventory';
 import { goodsLine, type InvoiceSpec } from './seed';
 import { ctxOf, useSales, voucherOf } from './store';
 import { rupeesInWords } from './words';
@@ -38,10 +39,9 @@ describe('the invoice comes from Billing; the AE books its entry (B4-01, SV-0012
     expect(rupeesInWords(c.total)).toBe('Indian Rupees Seven Lakh Forty Eight Thousand One Hundred Twenty Five Only');
   });
 
-  it('the suggested entry (rule R1): Dr the customer on its receivable ledger · Cr sales · Cr output CGST · Cr output SGST', () => {
-    expect(entry('SV-0012')).toEqual([['party 107100', 7_48_125, 0], ['401010', 0, 7_12_500], ['206011', 0, 17_812.5], ['206012', 0, 17_812.5]]);
+  it('the suggested entry (rule R1 + R13): the customer · sales · CGST · SGST, then the cost from inventory (FIFO)', () => {
+    expect(entry('SV-0012')).toEqual([['party 107100', 7_48_125, 0], ['401010', 0, 7_12_500], ['206011', 0, 17_812.5], ['206012', 0, 17_812.5], ['501040', 5_58_000, 0], ['106020', 0, 1_62_000], ['106020', 0, 1_68_000], ['106020', 0, 2_28_000]]);
     expect(entryDiffOf(v('SV-0012'), ctx())).toBeNull();
-    expect(entryOf(v('SV-0012'), ctx()).some((l) => l.ledger === 'cogs' || l.ledger === 'fg_inventory')).toBe(false); // stock is Stores' (G30)
   });
 
   it('the AE cannot change the invoice: the store has no invoice setters, only the entry', () => {
@@ -66,19 +66,19 @@ describe('the invoice comes from Billing; the AE books its entry (B4-01, SV-0012
     expect([x.status, x.number]).toEqual(['posted', 'KA/INV/2627/0143']);
     expect(dueOf(sl(), 'ACC-1201')).toBe(before + 7_48_125);
     const je = sl().journal.find((e) => e.id === x.entryId)!;
-    expect(je.rule).toBe('SALES_INVOICE v1 (effective 1-Apr-2026) · R1');
+    expect(je.rule).toBe('SALES_INVOICE v1 (effective 1-Apr-2026) · R1 + R13 (FIFO)');
     const all = sl().journal.flatMap((e) => e.lines);
     expect(sum(all).dr).toBe(sum(all).cr);
   });
 
   it('Kerala Traders (SV-0013): inter-state R2: one IGST line; Gulf Snack (SV-0014): export under LUT R4, no GST line', () => {
-    expect(entry('SV-0013')).toEqual([['party 107010', 60_480, 0], ['401010', 0, 57_600], ['206013', 0, 2_880]]);
-    expect(entry('SV-0014')).toEqual([['party 107040', 9_39_840, 0], ['401030', 0, 9_39_840]]);
+    expect(entry('SV-0013')).toEqual([['party 107010', 60_480, 0], ['401010', 0, 57_600], ['206013', 0, 2_880], ['501040', 43_200, 0], ['106020', 0, 43_200]]);
+    expect(entry('SV-0014')).toEqual([['party 107040', 9_39_840, 0], ['401030', 0, 9_39_840], ['501040', 6_66_000, 0], ['106020', 0, 1_62_000], ['106020', 0, 5_04_000]]);
   });
 
   it("an export with IGST (the CA's C2): the buyer owes the value only; Dr IGST Refund Receivable (R5)", () => {
     const id = receive({ accountId: 'ACC-1203', lines: [goodsLine('FG-101', 1_200, 8.9)], exportType: 'igst' });
-    expect(entry(id)).toEqual([['party 107040', 9_39_840, 0], ['109040', 46_992, 0], ['401030', 0, 9_39_840], ['206013', 0, 46_992]]);
+    expect(entry(id)).toEqual([['party 107040', 9_39_840, 0], ['109040', 46_992, 0], ['401030', 0, 9_39_840], ['206013', 0, 46_992], ['501040', 6_66_000, 0], ['106020', 0, 1_62_000], ['106020', 0, 5_04_000]]);
   });
 
   it('periods: an invoice dated in a closed month cannot be booked; a soft-closed month warns (K7, K8)', () => {
@@ -124,7 +124,7 @@ describe('the entry: suggested ledgers, the AE may pick others (§8.4)', () => {
     sl().setLedger('SV-0012', 'tax:cgst', 'out_sgst'); // CGST into the SGST ledger: refused
     expect(stopTitles('SV-0012').some((t) => t.startsWith('Output SGST in the entry is ₹35,625.00'))).toBe(true);
     sl().setLedger('SV-0012', 'tax:cgst', 'out_cgst');
-    expect(entry('SV-0012')).toEqual([['party 107010', 7_48_125, 0], ['401010', 0, 7_12_500], ['206011', 0, 17_812.5], ['206012', 0, 17_812.5]]);
+    expect(entry('SV-0012')).toEqual([['party 107010', 7_48_125, 0], ['401010', 0, 7_12_500], ['206011', 0, 17_812.5], ['206012', 0, 17_812.5], ['501040', 5_58_000, 0], ['106020', 0, 1_62_000], ['106020', 0, 1_68_000], ['106020', 0, 2_28_000]]);
     sl().submit('SV-0012');
     approveAll('SV-0012');
     expect(sl().journal.find((e) => e.id === v('SV-0012').entryId)!.lines[0]).toMatchObject({ ledger: 'party', accountId: 'ACC-1201', code: '107010', dr: 7_48_125 });
@@ -144,7 +144,7 @@ describe('the entry: suggested ledgers, the AE may pick others (§8.4)', () => {
     sl().setEditing('SV-0012', true);
     sl().splitEditLine('SV-0012', 'rev:sale_products');
     sl().setEditLine('SV-0012', 'split:1', { ledger: 'sale_services', cr: 12_500 });
-    expect(stopTitles('SV-0012')).toContain('Dr ₹7,48,125.00 ≠ Cr ₹7,60,625.00');
+    expect(stopTitles('SV-0012')).toContain('Dr ₹13,06,125.00 ≠ Cr ₹13,18,625.00');
     sl().setEditLine('SV-0012', 'rev:sale_products', { cr: 7_00_000, reason: 'Part is a service' });
     sl().setEditLine('SV-0012', 'split:1', { reason: 'Packing service on the order' });
     expect(stopTitles('SV-0012')).toEqual([]);
@@ -233,5 +233,54 @@ describe("the CA's specimens: the entry the rule suggests for each kind of invoi
   it('B3 a service on immovable property in Tamil Nadu → place of supply Tamil Nadu, IGST', () => {
     const id = receive({ accountId: 'ACC-1204', lines: [service('SV-01', 1_00_000)], propertyState: 'TN' });
     expect([calcOf(v(id), ctx()).pos, calcOf(v(id), ctx()).igst]).toEqual(['TN', 18_000]);
+  });
+});
+
+describe('rev 15: the cost of goods sold comes from inventory (R13), FIFO or weighted average, in the same entry', () => {
+  it('FIFO: the oldest lot first, each at its own cost; one Cr Finished Goods line per lot', () => {
+    const cl = entryOf(v('SV-0012'), ctx()).filter((l) => l.role === 'cost');
+    expect(cl.map((l) => [l.ledger, l.item ?? '', l.lot ?? '', l.qty ?? 0, l.dr, l.cr])).toEqual([
+      ['cogs', '', '', 0, 5_58_000, 0],
+      ['fg_inventory', 'FG-101', 'G-2604', 300, 0, 1_62_000],
+      ['fg_inventory', 'FG-101', 'G-2608', 300, 0, 1_68_000],
+      ['fg_inventory', 'FG-102', 'C-2607', 300, 0, 2_28_000],
+    ]);
+    expect(checks('SV-0012').find((c) => c.code === 'COST_FROM_INVENTORY')?.title).toBe('Cost of goods sold by FIFO: ₹5,58,000.00 from inventory');
+  });
+
+  it('weighted average: every unit at value ÷ quantity (Glucose ₹12,82,000 ÷ 2,300); one line per item', () => {
+    sl().setCostMethod('wam');
+    expect(entry('SV-0012').slice(4)).toEqual([['501040', 5_62_434.78, 0], ['106020', 0, 3_34_434.78], ['106020', 0, 2_28_000]]);
+    const t = sum(entryOf(v('SV-0012'), ctx()));
+    expect(t.dr).toBe(t.cr);
+  });
+
+  it('at approval the stock goes down in the same transaction; the posted entry keeps its cost; stock = Finished Goods', () => {
+    const before = stockValue(sl().lots, 'KA-01');
+    sl().submit('SV-0012');
+    approveAll('SV-0012');
+    expect(sl().lots.map((l) => [l.lot, l.qtyLeft])).toEqual([['G-2604', 0], ['G-2608', 1_700], ['C-2607', 1_200]]);
+    const je = sl().journal.find((e) => e.id === v('SV-0012').entryId)!;
+    const fg = je.lines.filter((l) => l.ledger === 'fg_inventory').reduce((t, l) => t + l.cr - l.dr, 0);
+    expect(before - stockValue(sl().lots, 'KA-01')).toBe(fg);
+    expect(je.costMethod).toBe('fifo');
+    // the next sale takes the next lot: Kerala's 80 cartons now come from G-2608 at ₹560
+    expect(entry('SV-0013').slice(3)).toEqual([['501040', 44_800, 0], ['106020', 0, 44_800]]);
+    // the posted voucher still shows what it posted
+    expect(entry('SV-0012').slice(4)).toEqual([['501040', 5_58_000, 0], ['106020', 0, 1_62_000], ['106020', 0, 1_68_000], ['106020', 0, 2_28_000]]);
+  });
+
+  it('weighted average after an issue: the stock left keeps the value left (no paisa lost)', () => {
+    sl().setCostMethod('wam');
+    const before = stockValue(sl().lots, 'KA-01');
+    sl().submit('SV-0012');
+    approveAll('SV-0012');
+    expect(stockValue(sl().lots, 'KA-01')).toBe(Math.round((before - 5_62_434.78) * 100) / 100);
+  });
+
+  it('stock short or no stock record: a Stop (an exception, never a guess); a service has no cost line', () => {
+    expect(stops(checks(receive({ ...B401, lines: [goodsLine('FG-101', 2_400, 700)] }))).map((c) => c.code)).toContain('STOCK_SHORT');
+    expect(stops(checks(receive({ accountId: 'ACC-1204', branch: 'TN-01', lines: [goodsLine('FG-101', 10, 700)] }))).map((c) => c.code)).toContain('NO_STOCK_RECORD');
+    expect(entryOf(v(receive({ accountId: 'ACC-1204', lines: [service('SV-01', 72_000)] })), ctx()).some((l) => l.role === 'cost')).toBe(false);
   });
 });

@@ -3,8 +3,9 @@
 //
 // Rev 5 (18-Nov): an independent invoice, as the CA's 43 specimens show it: no challan, no order, no customer PO.
 // Who writes what (one owner per fact, CLAUDE.md §3):
-//   this invoice               Dr customer (its account's receivable ledger), Cr sales, Cr output GST (± round off): never stock or cost
-//   Stores (task G30)          the goods leaving the store, stock and cost of goods sold: not here
+//   this invoice               Dr customer (its account's receivable ledger), Cr sales, Cr output GST (± round off)
+//                              + rev 15 (R13): Dr Cost of Goods Sold, Cr Finished Goods, the cost read from inventory (inventory.ts)
+//   Stores (task G30)          the physical challan where goods move without a sale (on approval, job work, transfers)
 //   the engine                 picks the rule (R1–R7) and the ledgers; the AE may edit the entry with a reason (§8.4)
 //   our branch (fin.branch)    issues it: its GSTIN, its state (local or inter-state), its number series (rev 2)
 // Every check carries a code in the engine's style (Manoj's gates: MISSING_REQUIRED_DETAILS, LEDGER_NOT_POSTABLE …):
@@ -17,6 +18,7 @@ import { branchFor, locationsOf, type BranchView } from '../onboarding/branches'
 import type { Account, ActorKey, Party, PartyLocation, Request } from '../onboarding/types';
 import { BILLING, BRANCHES, branchOf, COMPANY, COUNTRIES, CURRENCY, EXTRAS, fiscalYearOf, IRN_CANCEL_HOURS, ITEMS, LEDGERS, MONTH, OPENING_DUE, PARAMS, periodOf, PICKABLE, receivableKeyOf, SERVICES, type Statement, type Taxability } from './catalogue';
 import { caseOf, postingFor, type FactLine, type Facts } from './engine';
+import { COST_METHODS, costOf, issueOf, type CostMethod, type CostResult, type StockLot } from './inventory';
 import type { ApprovalWhy, InvoiceLine, JournalEntry, JournalLine, Voucher } from './types';
 
 export interface SalesCtx {
@@ -26,7 +28,13 @@ export interface SalesCtx {
   journal: JournalEntry[];
   vouchers: Voucher[];
   now: string;
+  /** Rev 15: the stock lots (inventory, a demo stub) and the company's costing method. Absent: no cost lines. */
+  lots?: StockLot[];
+  costMethod?: CostMethod;
 }
+
+/** What the entry reads. */
+export type EntryCtx = Pick<SalesCtx, 'accounts' | 'parties' | 'requests' | 'lots' | 'costMethod'> & Partial<Pick<SalesCtx, 'journal'>>;
 
 /** A check with its spec id (T24 §7: K1–K19) and its code (the engine's refusal code, the schema's check). */
 export type SCheck = CheckResult & { k?: string; code?: string };
@@ -37,7 +45,7 @@ export const CHECK_CODE: Record<string, string> = {
   K11: 'LUT_NOT_VALID', K12: 'SHIPPING_BILL_PENDING', E4: 'COUNTRY_MISSING', E5: 'PORT_CODE_MISSING',
   K15: 'OVER_CREDIT_LIMIT', R7: 'TCS_RATE_UNCONFIRMED', K16: 'DEBITS_CREDITS_DIFFER', K17: 'ENTRY_DIFFERS_FROM_RULE', K18: 'IRP_30_DAY_LIMIT',
   K19: 'MAKER_MAY_NOT_DECIDE', A3: 'BRANCH_NOT_VALID', B9: 'TAX_SPLIT', B5: 'BUYER_UNREGISTERED',
-  K20: 'THIRD_PARTY_SHIP_TO_INCOMPLETE', K21: 'PLACE_OF_SUPPLY_PROPERTY', K22: 'SERVICE_PERIOD_REQUIRED', K23: 'NON_TAXABLE_LINES', K24: 'IGST_REFUND_CLAIMED', K25: 'ADVANCE_ADJUSTMENT_INVALID',
+  K26: 'STOCK_SHORT', K20: 'THIRD_PARTY_SHIP_TO_INCOMPLETE', K21: 'PLACE_OF_SUPPLY_PROPERTY', K22: 'SERVICE_PERIOD_REQUIRED', K23: 'NON_TAXABLE_LINES', K24: 'IGST_REFUND_CLAIMED', K25: 'ADVANCE_ADJUSTMENT_INVALID',
 };
 
 export const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -299,7 +307,23 @@ export function calcOf(v: Voucher, ctx: Pick<SalesCtx, 'accounts' | 'parties' | 
 }
 
 /** The facts the invoice sends the posting rule (the engine model: the slice sends facts, the engine picks the ledgers). */
-export const factsOf = (v: Voucher, c: Calc, receivableKey: string): Facts => ({
+/** Rev 15 (R13): the cost of the invoice's goods, from the stock lots by the company's method (null: no inventory in the context). */
+export function costOfV(v: Voucher, ctx: EntryCtx, c: Calc = calcOf(v, ctx)): CostResult | null {
+  // Posted: the cost is what the entry posted (the stock has moved since), never recomputed.
+  if (v.entryId) {
+    const je = ctx.journal?.find((e) => e.id === v.entryId);
+    const cl = je?.lines.filter((l) => !!l.item && l.cr > 0) ?? [];
+    if (!je || !cl.length) return null;
+    const picks = cl.map((l) => ({ item: l.item!, lotId: null, lot: l.lot ?? null, receivedOn: null, qty: l.qty ?? 0, unitCost: r2(l.cr / (l.qty || 1)), amount: l.cr }));
+    return { method: je.costMethod ?? 'fifo', picks, total: r2(picks.reduce((t, p) => t + p.amount, 0)), problems: [] };
+  }
+  if (!ctx.lots) return null;
+  const items = issueOf(c.rows);
+  if (!items.length) return null;
+  return costOf(ctx.lots, ctx.costMethod ?? 'fifo', v.branch, items);
+}
+
+export const factsOf = (v: Voucher, c: Calc, receivableKey: string, cost?: CostResult | null): Facts => ({
   buyer: c.kind,
   exportType: c.exportType,
   settlement: v.settlement ?? 'credit',
@@ -307,13 +331,14 @@ export const factsOf = (v: Voucher, c: Calc, receivableKey: string): Facts => ({
   lines: c.rows.map((x) => ({ kind: x.kind, taxability: x.taxability, amount: x.amount, cgst: x.cgst, sgst: x.sgst, igst: x.igst, deferred: x.deferred })),
   roundOff: c.roundOff,
   receivableKey,
+  ...(cost && !cost.problems.length ? { cost: cost.picks.map((p) => ({ item: p.item, lot: p.lot, qty: p.qty, amount: p.amount })) } : {}),
 });
 
 // ---------- The engine's entry (§8.2) and the AE's edit (§8.4) ----------
 
 export interface EntryLine {
   id: string; // 'party' · 'settle' · 'refund' · 'rev:sale_products' · 'tax:cgst' · 'round' · edit ids
-  role: 'party' | 'settlement' | 'refund' | 'revenue' | 'tax' | 'round' | 'added';
+  role: 'party' | 'settlement' | 'refund' | 'revenue' | 'tax' | 'round' | 'cost' | 'added';
   ledger: string; // LEDGERS key, or 'party'
   name: string;
   code: string;
@@ -332,6 +357,11 @@ export interface EntryLine {
   ruleLedger?: string;
   /** The ledger key shown in the picker (the customer line: its receivable ledger; others: = ledger). */
   ledgerKey?: string;
+  /** A cost line (R13): item, lot (null: weighted average), quantity, unit cost. */
+  item?: string;
+  lot?: string | null;
+  qty?: number;
+  unitCost?: number;
 }
 
 const L = (key: string) => LEDGERS[key] ?? { code: '—', name: key ? `(${key})` : '(no ledger chosen)', statement: 'PL' as Statement };
@@ -347,13 +377,16 @@ const REV_WHY: Record<string, string> = {
 };
 
 /** The entry the posting rule writes (read-only unless the AE edits it): engine.postingFor on the invoice's facts. */
-export function ruleEntryOf(v: Voucher, ctx: Pick<SalesCtx, 'accounts' | 'parties' | 'requests'>): EntryLine[] {
+export function ruleEntryOf(v: Voucher, ctx: EntryCtx): EntryLine[] {
   const c = calcOf(v, ctx);
+  const cost = costOfV(v, ctx, c);
   const a = accountOf(ctx, v.accountId);
   if (!a || c.pos === null || c.taxable + c.exempt + c.reimbursement <= 0) return [];
   const ar = receivableOf(a);
   const home = STATES[issuerOf(v).state]?.name ?? issuerOf(v).state;
-  return postingFor(factsOf(v, c, ar.key)).map((p): EntryLine => {
+  const method = cost ? COST_METHODS[cost.method].label : '';
+  return postingFor(factsOf(v, c, ar.key, cost)).map((p): EntryLine => {
+    const pick = p.role === 'cost' && p.item ? cost?.picks.find((x) => x.item === p.item && x.lot === (p.lot ?? null)) : undefined;
     const lg = p.ledger === 'party' ? { code: ar.code, name: `${a.name} (${a.accountId})`, statement: 'BS' as Statement } : L(p.ledger);
     const why =
       p.role === 'party' ? `What the buyer owes${c.refund ? ' (the invoice value less the IGST we claim back)' : ''}, on ${ar.name} (${ar.code}), the receivable ledger of its debtor category; the line names the account`
@@ -361,13 +394,14 @@ export function ruleEntryOf(v: Voucher, ctx: Pick<SalesCtx, 'accounts' | 'partie
       : p.role === 'refund' ? 'IGST paid by us on the export / SEZ supply and claimed back: not the buyer\'s (R5 / R6; specimens C2, C4, C6)'
       : p.role === 'tax' ? (p.ledger === 'out_cgst' ? 'Half the GST rate, owed to the Centre (local sale)' : p.ledger === 'out_sgst' ? `Half the GST rate, owed to ${home} (local sale)` : c.kind === 'domestic' ? 'Full GST rate: inter-state' : 'IGST on the export / SEZ supply, paid by us')
       : p.role === 'round' ? (p.cr ? 'Total rounded up to the rupee' : 'Total rounded down to the rupee')
+      : p.role === 'cost' ? (p.dr ? `The cost of the goods sold (${method}), from inventory: never the selling price` : pick?.lot ? `${p.qty} ${p.item} out of lot ${pick.lot} at ${rupees(pick.unitCost)} (${method})` : `${p.qty} ${p.item} out at the average cost ${rupees(pick?.unitCost ?? 0)} (${method})`)
       : REV_WHY[p.ledger] ?? '';
-    return { id: p.id, role: p.role, ledger: p.ledger, ledgerKey: p.ledger === 'party' ? ar.key : p.ledger, name: lg.name, code: lg.code, statement: lg.statement, dr: p.dr, cr: p.cr, rule: p.rule, why, locked: p.locked };
+    return { id: p.id, role: p.role, ledger: p.ledger, ledgerKey: p.ledger === 'party' ? ar.key : p.ledger, name: lg.name, code: lg.code, statement: lg.statement, dr: p.dr, cr: p.cr, rule: p.rule, why, locked: p.locked, ...(p.role === 'cost' && p.item ? { item: p.item, lot: p.lot ?? null, qty: p.qty, unitCost: pick?.unitCost } : {}) };
   });
 }
 
 /** The entry that posts: the rule's, or the AE's edit (party and tax lines always the rule's: locked). */
-export function entryOf(v: Voucher, ctx: Pick<SalesCtx, 'accounts' | 'parties' | 'requests'>): EntryLine[] {
+export function entryOf(v: Voucher, ctx: EntryCtx): EntryLine[] {
   const rule = ruleEntryOf(v, ctx);
   if (!v.edit || !rule.length) return rule;
   // Lines whose amount is the invoice's: the ledger may still be picked (Vijay, 18-Nov: every ledger is a suggestion).
@@ -389,11 +423,11 @@ export function entryOf(v: Voucher, ctx: Pick<SalesCtx, 'accounts' | 'parties' |
   });
   const isRound = (l: EntryLine) => v.edit!.lines.find((e) => e.id === l.id)?.from === 'round';
   const head = locked.filter((l) => l.role === 'party' || l.role === 'settlement' || l.role === 'refund');
-  return [...head, ...edited.filter((l) => !isRound(l)), ...locked.filter((l) => l.role === 'tax'), ...edited.filter(isRound)];
+  return [...head, ...edited.filter((l) => !isRound(l)), ...locked.filter((l) => l.role === 'tax'), ...edited.filter(isRound), ...locked.filter((l) => l.role === 'cost')];
 }
 
 /** "Entry differs from rule R1: lines 2, 4" (§8.4), or null when the entry is the rule's. */
-export function entryDiffOf(v: Voucher, ctx: Pick<SalesCtx, 'accounts' | 'parties' | 'requests'>): string | null {
+export function entryDiffOf(v: Voucher, ctx: EntryCtx): string | null {
   if (!v.edit) return null;
   const lines = entryOf(v, ctx);
   const nos = lines.map((l, i) => (l.changed ? i + 1 : 0)).filter(Boolean);
@@ -404,7 +438,7 @@ export function entryDiffOf(v: Voucher, ctx: Pick<SalesCtx, 'accounts' | 'partie
 }
 
 export const toJournal = (lines: EntryLine[], accountId?: string): JournalLine[] =>
-  lines.filter((l) => l.dr || l.cr).map((l) => (l.ledger === 'party' ? { ledger: 'party', accountId, dr: l.dr, cr: l.cr, code: l.code } : { ledger: l.ledger, dr: l.dr, cr: l.cr, ...(l.changed && l.reason ? { reason: l.reason } : {}) }));
+  lines.filter((l) => l.dr || l.cr).map((l) => (l.ledger === 'party' ? { ledger: 'party', accountId, dr: l.dr, cr: l.cr, code: l.code } : { ledger: l.ledger, dr: l.dr, cr: l.cr, ...(l.changed && l.reason ? { reason: l.reason } : {}), ...(l.item ? { item: l.item, lot: l.lot ?? null, qty: l.qty } : {}) }));
 /** ReverseJournalEntry (Manoj's journal.py): the exact mirror, Dr and Cr swapped, line by line. */
 export const mirrorOf = (lines: JournalLine[]): JournalLine[] => lines.map((l) => ({ ...l, dr: l.cr, cr: l.dr }));
 export const sum = (lines: { dr: number; cr: number }[]) => ({ dr: r2(lines.reduce((t, l) => t + l.dr, 0)), cr: r2(lines.reduce((t, l) => t + l.cr, 0)) });
@@ -477,6 +511,15 @@ export function checksOf(v: Voucher, ctx: SalesCtx): SCheck[] {
   // D3 / R7 TCS.
   if (isTcsCategory(a)) add('R7', 'warn', 'TCS item (income tax s.394): the rate is not confirmed', 'R7 adds Cr TCS payable; the rate and its ledger wait for the CA (G18).');
   if (missing.length) add('Fill', 'stop', `Still to fill: ${missing.join(' · ')}`, undefined, { code: 'MISSING_REQUIRED_DETAILS' });
+
+  // K26 (rev 15, R13): the cost of the goods, from inventory by the company's method.
+  const cost = costOfV(v, ctx, c);
+  if (cost) {
+    for (const p of cost.problems)
+      if (p.code === 'NO_STOCK_RECORD') add('K26', 'stop', `No stock record for ${p.item} at ${v.branch}`, "The cost of goods sold cannot be found: the item is not in this branch's stock (inventory). An exception, never a guess.", { code: 'NO_STOCK_RECORD' });
+      else add('K26', 'stop', `Stock short: ${p.item} ${p.want} on the invoice, ${p.have} in stock`, 'Goods cannot go out of stock that is not there: check the stock with Stores before booking.', { code: 'STOCK_SHORT' });
+    if (!cost.problems.length) add('K26', 'ok', `Cost of goods sold by ${COST_METHODS[cost.method].label}: ${rupees(cost.total)} from inventory`, undefined, { code: 'COST_FROM_INVENTORY' });
+  }
 
   // K16, K17: the entry.
   const lines = entryOf(v, ctx);

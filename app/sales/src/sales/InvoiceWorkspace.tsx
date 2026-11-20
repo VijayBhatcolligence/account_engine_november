@@ -13,11 +13,12 @@ import { Button, Callout, Dialog, SegmentedControl, StatusPill, Switch, TextInpu
 import { ACTORS, ME, STATES, who } from '../onboarding/catalogue';
 import { ReasonDialog } from '../onboarding/screens/OnboardingScreen';
 import { StatusSteps, type Step } from '../onboarding/screens/parts';
-import { ENDORSEMENT, LEDGERS } from './catalogue';
+import { ENDORSEMENT, ITEMS, LEDGERS } from './catalogue';
+import { COST_METHODS, lotsOf, stockValue, type CostMethod } from './inventory';
 import { useSalesCtx, V_STATUS } from './hooks';
 import { InvoiceDoc } from './InvoiceDoc';
 import { logicOf, type Logic } from './logic';
-import { accountOf, calcOf, checksOf, countryName, dueDateOf, entryDiffOf, entryOf, isTcsCategory, issuerOf, money, partyOfAccount, placesOf, POSTING_RULE, rankLedgers, RECEIVABLES, routesOf, rupees, stops, sum, type EntryLine, type SCheck } from './rules';
+import { accountOf, calcOf, checksOf, costOfV, countryName, dueDateOf, entryDiffOf, entryOf, isTcsCategory, issuerOf, money, partyOfAccount, placesOf, POSTING_RULE, rankLedgers, RECEIVABLES, routesOf, rupees, stops, sum, type EntryLine, type SCheck } from './rules';
 import { T24_SPEC } from './screenSpec';
 import { isMineV, titleOfV } from './store';
 import type { Outcome, Voucher } from './types';
@@ -446,10 +447,127 @@ function EntryTab({ v, editable }: { v: Voucher; editable: boolean }) {
         <Lock size={11} aria-hidden /> Every ledger is a suggestion: pick another on any line. The customer and GST lines keep the invoice's amounts (what the buyer owes, the tax printed on the invoice and the IRN); to change them, change the invoice lines. The customer line picks among receivable ledgers and always names the customer. Never a group ledger (LEDGER_NOT_POSTABLE). Codes marked <Prop /> are not in the CA's chart yet (G18).
       </p>
 
-      <p className="sv-g30">
-        This entry is the invoice's only: the customer, revenue and output GST. Stock and cost of goods sold are posted by Stores' delivery challan, a separate task (G30), never here.
-      </p>
+      <CostPanel v={v} editable={editable} />
     </div>
+  );
+}
+
+/** Rev 15 (R13): the cost of the goods sold, from inventory (FIFO or weighted average), shown with the lots it came from. */
+function CostPanel({ v, editable }: { v: Voucher; editable: boolean }) {
+  const { s, ctx } = useSalesCtx();
+  const c = calcOf(v, ctx);
+  const cost = costOfV(v, ctx, c);
+  const goods = [...new Set(c.rows.filter((r) => r.kind === 'goods').map((r) => r.item))];
+  if (!goods.length) return <p className="sv-g30">No goods on this invoice (services only): no stock goes out, so there is no cost of goods sold.</p>;
+  const posted = !!v.entryId;
+  const method: CostMethod = cost?.method ?? s.costMethod;
+  return (
+    <section className="sv-cost" aria-label="Cost of goods sold from inventory">
+      <div className="sv-entry-bar">
+        <span>
+          <strong>Cost of goods sold</strong> (rule R13): the invoice gives the item and the quantity; <b>inventory</b> gives the cost, never the selling price.
+          {posted ? ` Posted by ${COST_METHODS[method].label}.` : ''}
+        </span>
+        {!posted && editable && (
+          <SegmentedControl
+            label="Costing method"
+            value={s.costMethod}
+            onChange={(m) => s.setCostMethod(m)}
+            options={(Object.keys(COST_METHODS) as CostMethod[]).map((m) => ({ value: m, label: COST_METHODS[m].label }))}
+          />
+        )}
+      </div>
+      <p className="subtle small-note">
+        {COST_METHODS[method].words}. A company setting (Ind AS 2: one method for items of the same kind); the demo lets you switch it to compare. LIFO is not allowed in India.
+      </p>
+      {cost?.problems.map((p) => (
+        <Callout key={p.item} tone="critical" title={p.code === 'STOCK_SHORT' ? `Stock short: ${p.item} ${p.want} on the invoice, ${p.have} in stock` : `No stock record for ${p.item}`}>
+          The cost cannot be found, so the entry cannot post (an exception, never a guess).
+        </Callout>
+      ))}
+      {cost && !cost.problems.length && (
+        <div className="sv-scroll">
+        <table className="sv-post">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>{method === 'fifo' ? 'Lot (oldest first)' : 'Lots'}</th>
+              <th className="num">Qty</th>
+              <th className="num">Cost / unit ₹</th>
+              <th className="num">Cost ₹</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cost.picks.map((p) => (
+              <tr key={`${p.item}:${p.lot ?? 'avg'}`}>
+                <td>
+                  <span className="mono">{p.item}</span> <span className="subtle">{ITEMS[p.item]?.name}</span>
+                </td>
+                <td>
+                  {p.lot ? <span className="mono">{p.lot}</span> : 'all lots: the average'}
+                  {p.receivedOn ? <span className="subtle"> · received {fmtDate(p.receivedOn)}</span> : ''}
+                </td>
+                <td className="num">{p.qty.toLocaleString('en-IN')}</td>
+                <td className="num">{rupees(p.unitCost)}</td>
+                <td className="num">{rupees(p.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={4}>Dr Cost of Goods Sold · Cr Finished Goods (in the entry above)</td>
+              <td className="num">{rupees(cost.total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+        </div>
+      )}
+      <StockLots branch={v.branch} items={goods} />
+    </section>
+  );
+}
+
+/** inv.stock_lot, read-only: the inventory the cost comes from (a rough demo stub; costs illustrative). */
+function StockLots({ branch, items }: { branch: string; items: string[] }) {
+  const { s } = useSalesCtx();
+  const rows = items.flatMap((i) => lotsOf(s.lots, branch, i));
+  return (
+    <details className="sv-lots">
+      <summary>
+        Stock lots now at {branch} (inventory, not accounting): {rows.length} lot{rows.length === 1 ? '' : 's'} · value {rupees(stockValue(s.lots.filter((l) => items.includes(l.item)), branch))}
+      </summary>
+      <div className="sv-scroll">
+      <table className="sv-post">
+        <thead>
+          <tr>
+            <th>Lot</th>
+            <th>Item</th>
+            <th>Received</th>
+            <th className="num">Qty left</th>
+            <th className="num">Cost / unit ₹</th>
+            <th className="num">Value ₹</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((l) => (
+            <tr key={l.lotId}>
+              <td className="mono">{l.lot}</td>
+              <td className="mono">{l.item}</td>
+              <td>{fmtDate(l.receivedOn)}</td>
+              <td className="num">
+                {l.qtyLeft.toLocaleString('en-IN')} <span className="subtle">of {l.qtyReceived.toLocaleString('en-IN')}</span>
+              </td>
+              <td className="num">{rupees(Math.round(l.unitCost * 100) / 100)}</td>
+              <td className="num">{rupees(Math.round(l.qtyLeft * l.unitCost * 100) / 100)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      </div>
+      <p className="subtle small-note">
+        Table inv.stock_lot (a stub: the inventory module owns it, T8 / S4). Quantities and batches: the scenario. Lot costs and dates: illustrative, so FIFO and weighted average can differ. Stock goes down when Rajan approves, in the same transaction as the entry.
+      </p>
+    </details>
   );
 }
 
@@ -554,7 +672,7 @@ function EntryRow({ v, l, n, editing, editable }: { v: Voucher; l: EntryLine; n:
   );
   const amountNote = l.locked && (
     <span className="sv-rule-hint">
-      <Lock size={10} aria-hidden /> Amount = {l.role === 'party' || l.role === 'settlement' ? 'what the buyer owes' : l.role === 'refund' ? 'the IGST we claim back' : "the invoice's tax"}
+      <Lock size={10} aria-hidden /> Amount = {l.role === 'party' || l.role === 'settlement' ? 'what the buyer owes' : l.role === 'refund' ? 'the IGST we claim back' : l.role === 'cost' ? `the cost from inventory${l.lot ? `, lot ${l.lot}` : ''}` : "the invoice's tax"}
       {party ? ` · names ${l.name}` : ''}
       {l.changed && l.ruleLedger ? ` · suggested ${ledgerLabel(l.ruleLedger)}` : ''}
     </span>
@@ -584,7 +702,7 @@ function EntryRow({ v, l, n, editing, editable }: { v: Voucher; l: EntryLine; n:
         <td>{n}</td>
         <td>
           {name} {l.locked && editable && <Lock size={11} aria-label="locked" className="subtle sv-lock" />}
-          {l.locked && editable && <span className="sv-rule-hint">Locked: {l.role === 'party' || l.role === 'settlement' ? '= what the buyer owes' : l.role === 'refund' ? '= the IGST we claim back' : "= the invoice's tax"}</span>}
+          {l.locked && editable && <span className="sv-rule-hint">Locked: {l.role === 'party' || l.role === 'settlement' ? '= what the buyer owes' : l.role === 'refund' ? '= the IGST we claim back' : l.role === 'cost' ? '= the cost from inventory' : "= the invoice's tax"}</span>}
         </td>
         <td className="num">{l.dr ? rupees(l.dr) : ''}</td>
         <td className="num">{l.cr ? rupees(l.cr) : ''}</td>
@@ -890,7 +1008,7 @@ function ChangeSummary({ v }: { v: Voucher }) {
         </li>
       </ul>
       <p className="subtle small-note">
-        When he approves (every check again): the journal entry posts by {c.rules.join(' + ') || 'the rule'}: {lines.map((l) => `${l.dr ? 'Dr' : 'Cr'} ${l.code}`).join(' · ')}{v.settlement === 'credit' ? `; the customer owes it, due ${fmtDate(dueDateOf(v, accountOf(ctx, v.accountId)))}` : ''}.
+        When he approves (every check again): the journal entry posts by {[...c.rules, ...(lines.some((l) => l.role === 'cost') ? ['R13 (cost from inventory)'] : [])].join(' + ') || 'the rule'}: {lines.map((l) => `${l.dr ? 'Dr' : 'Cr'} ${l.code}`).join(' · ')}{v.settlement === 'credit' ? `; the customer owes it, due ${fmtDate(dueDateOf(v, accountOf(ctx, v.accountId)))}` : ''}.
       </p>
     </div>
   );

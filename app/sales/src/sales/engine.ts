@@ -9,6 +9,8 @@
 //   R7 TCS item · R8 paid at once (cash / UPI / card): the clearing account, not the customer
 //   R9 nil-rated, exempt or non-GST line · R10 freight charged (part of the value, taxed) · R11 pure-agent expense (outside
 //   the value, no GST) · R12 a period service: revenue deferred to Contract Liability, released month by month
+//   R13 (rev 15) goods sold: their cost, from inventory (FIFO or weighted average), in the same entry:
+//       Dr Cost of Goods Sold · Cr Finished Goods (one line per lot, or per item under weighted average)
 
 export type FactLineKind = 'goods' | 'service' | 'charge' | 'reimbursement';
 export type FactTaxability = 'taxable' | 'nil_rated' | 'exempt' | 'non_gst';
@@ -35,9 +37,11 @@ export interface Facts {
   roundOff: number;
   /** The customer account's receivable ledger key (debtor_account.ledger_account_code). */
   receivableKey: string;
+  /** Rev 15 (R13): the cost of the goods sold, read from inventory by the method (absent: no cost lines). */
+  cost?: { item: string; lot: string | null; qty: number; amount: number }[];
 }
 
-export type Role = 'party' | 'settlement' | 'refund' | 'revenue' | 'tax' | 'round';
+export type Role = 'party' | 'settlement' | 'refund' | 'revenue' | 'tax' | 'round' | 'cost';
 export interface PostLine {
   id: string;
   role: Role;
@@ -45,8 +49,12 @@ export interface PostLine {
   dr: number;
   cr: number;
   rule: string;
-  /** Locked: the books must agree with the invoice and the IRN (§8.4). */
+  /** Locked: the books must agree with the invoice and the IRN (§8.4); a cost line: with inventory. */
   locked: boolean;
+  /** A cost line (R13): the item, its lot (null: weighted average) and the quantity. */
+  item?: string;
+  lot?: string | null;
+  qty?: number;
 }
 
 export const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -95,5 +103,10 @@ export function postingFor(f: Facts): PostLine[] {
     if (amt > 0) out.push({ id: `tax:${head}`, role: 'tax', ledger: `out_${head}`, dr: 0, cr: amt, rule: ruleWords, locked: true });
   }
   if (f.roundOff) out.push({ id: 'round', role: 'round', ledger: 'round_off', dr: f.roundOff < 0 ? -f.roundOff : 0, cr: f.roundOff > 0 ? f.roundOff : 0, rule: ruleWords, locked: false });
+  const cost = (f.cost ?? []).filter((c) => c.amount > 0);
+  if (cost.length) {
+    out.push({ id: 'cost:cogs', role: 'cost', ledger: 'cogs', dr: r2(cost.reduce((t, c) => t + c.amount, 0)), cr: 0, rule: 'R13', locked: true });
+    for (const c of cost) out.push({ id: `cost:${c.item}:${c.lot ?? 'avg'}`, role: 'cost', ledger: 'fg_inventory', dr: 0, cr: c.amount, rule: 'R13', locked: true, item: c.item, lot: c.lot, qty: c.qty });
+  }
   return out;
 }

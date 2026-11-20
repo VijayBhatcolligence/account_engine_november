@@ -1,4 +1,4 @@
--- Generated from customer_onboarding_schema.dbml (rev 14, 18-Nov-2026) by @dbml/core 12.0.0 (export.js).
+-- Generated from customer_onboarding_schema.dbml (rev 15, 20-Nov-2026) by @dbml/core 12.0.0 (export.js).
 -- Partial indexes come from their WHERE notes (8). Checked: pglast parses it; it runs on PostgreSQL 18.
 -- Not here (they are in the engine migrations, by hand): append-only and clock triggers, workspace isolation,
 -- fin.check_journal_entry (the 8 commit rules), the fiscal_year no-overlap EXCLUDE, seeds.
@@ -7,6 +7,8 @@
 CREATE SCHEMA "pc";
 
 CREATE SCHEMA "fin";
+
+CREATE SCHEMA "inv";
 
 CREATE TABLE "pc"."operated_party" (
   "operated_party_id" uuid PRIMARY KEY,
@@ -477,6 +479,7 @@ CREATE TABLE "fin"."sales_invoice" (
   "due_date" date NOT NULL,
   "invoice_financial_year" integer GENERATED ALWAYS AS ((EXTRACT(year FROM invoice_date)::integer - CASE WHEN EXTRACT(month FROM invoice_date) < 4 THEN 1 ELSE 0 END)) STORED NOT NULL,
   "narration" text,
+  "costing_method" text,
   "stage" text NOT NULL,
   "version_number" integer NOT NULL DEFAULT 1,
   "submitted_by_contact_id" uuid NOT NULL,
@@ -494,7 +497,8 @@ CREATE TABLE "fin"."sales_invoice" (
   CONSTRAINT "sales_invoice_revision_matches_amends" CHECK ((revision_no = 0) = (amends_sales_invoice_id IS NULL)),
   CONSTRAINT "sales_invoice_maker_may_not_decide" CHECK (decided_by_contact_id IS NULL OR decided_by_contact_id <> submitted_by_contact_id),
   CONSTRAINT "sales_invoice_due_after_invoice" CHECK (due_date >= invoice_date),
-  CONSTRAINT "sales_invoice_original_is_itself" CHECK (revision_no > 0 OR original_sales_invoice_id = sales_invoice_id)
+  CONSTRAINT "sales_invoice_original_is_itself" CHECK (revision_no > 0 OR original_sales_invoice_id = sales_invoice_id),
+  CONSTRAINT "sales_invoice_costing_method_valid" CHECK (costing_method IN ('fifo', 'weighted_average'))
 );
 
 CREATE TABLE "fin"."sales_invoice_line" (
@@ -505,11 +509,18 @@ CREATE TABLE "fin"."sales_invoice_line" (
   "side" text NOT NULL,
   "ledger_account_code" text,
   "debtor_account_id" uuid,
+  "inventory_item_code" text,
+  "quantity" numeric(18,3),
+  "stock_lot_id" uuid,
   "amount" numeric(18,2) NOT NULL,
   CONSTRAINT "sales_invoice_line_side_valid" CHECK (side IN ('Dr', 'Cr')),
   CONSTRAINT "sales_invoice_line_ledger_or_customer" CHECK ((ledger_account_code IS NULL) <> (debtor_account_id IS NULL)),
   CONSTRAINT "sales_invoice_line_customer_is_debit" CHECK (debtor_account_id IS NULL OR side = 'Dr'),
-  CONSTRAINT "sales_invoice_line_amount_positive" CHECK (amount > 0)
+  CONSTRAINT "sales_invoice_line_amount_positive" CHECK (amount > 0),
+  CONSTRAINT "sales_invoice_line_item_has_quantity" CHECK ((inventory_item_code IS NULL) = (quantity IS NULL)),
+  CONSTRAINT "sales_invoice_line_quantity_positive" CHECK (quantity IS NULL OR quantity > 0),
+  CONSTRAINT "sales_invoice_line_lot_needs_item" CHECK (stock_lot_id IS NULL OR inventory_item_code IS NOT NULL),
+  CONSTRAINT "sales_invoice_line_item_on_a_stock_credit" CHECK (inventory_item_code IS NULL OR (side = 'Cr' AND ledger_account_code IS NOT NULL))
 );
 
 CREATE TABLE "fin"."sales_invoice_history" (
@@ -525,6 +536,24 @@ CREATE TABLE "fin"."sales_invoice_history" (
   "recorded_at" timestamptz NOT NULL DEFAULT (now()),
   CONSTRAINT "sales_invoice_history_operation_valid" CHECK (operation IN ('submit', 'decide', 'amended')),
   CONSTRAINT "sales_invoice_history_has_an_actor" CHECK (performer_contact_id IS NOT NULL OR acting_on_event_id IS NOT NULL)
+);
+
+CREATE TABLE "inv"."stock_lot" (
+  "stock_lot_id" uuid PRIMARY KEY DEFAULT (gen_random_uuid()),
+  "workspace_id" text NOT NULL,
+  "branch_id" uuid NOT NULL,
+  "godown_code" text NOT NULL,
+  "item_code" text NOT NULL,
+  "lot_no" text NOT NULL,
+  "received_on" date NOT NULL,
+  "quantity_received" numeric(18,3) NOT NULL,
+  "quantity_left" numeric(18,3) NOT NULL,
+  "unit_cost" numeric(18,4) NOT NULL,
+  "recorded_at" timestamptz NOT NULL DEFAULT (now()),
+  "updated_at" timestamptz NOT NULL DEFAULT (now()),
+  CONSTRAINT "stock_lot_quantity_received_positive" CHECK (quantity_received > 0),
+  CONSTRAINT "stock_lot_quantity_left_in_range" CHECK (quantity_left >= 0 AND quantity_left <= quantity_received),
+  CONSTRAINT "stock_lot_unit_cost_not_negative" CHECK (unit_cost >= 0)
 );
 
 CREATE UNIQUE INDEX ON "pc"."operated_party" ("workspace_id", "operated_party_id");
@@ -608,6 +637,12 @@ CREATE INDEX "sales_invoice_debtor_idx" ON "fin"."sales_invoice" ("workspace_id"
 CREATE UNIQUE INDEX "sales_invoice_line_no_key" ON "fin"."sales_invoice_line" ("workspace_id", "sales_invoice_id", "line_no");
 
 CREATE UNIQUE INDEX "sales_invoice_history_one_per_version" ON "fin"."sales_invoice_history" ("workspace_id", "sales_invoice_id", "version_number");
+
+CREATE UNIQUE INDEX "stock_lot_workspace_identity_key" ON "inv"."stock_lot" ("workspace_id", "stock_lot_id");
+
+CREATE UNIQUE INDEX "stock_lot_lot_key" ON "inv"."stock_lot" ("workspace_id", "branch_id", "godown_code", "item_code", "lot_no");
+
+CREATE INDEX "stock_lot_fifo_idx" ON "inv"."stock_lot" ("workspace_id", "branch_id", "item_code", "received_on");
 
 COMMENT ON TABLE "pc"."operated_party" IS 'P&C says which party is our company. THE company key in Finance (as on the vendor side): no legal_entity_id, no separate book key.';
 
@@ -1022,7 +1057,9 @@ WHERE (stage NOT IN (''rejected'', ''amended'')): Billing''s invoice number is b
 GATES at Submit and again at Approve (his + the sales ones): MISSING_REQUIRED_DETAILS · BRANCH_NOT_VALID · LEDGER_OR_CUSTOMER ·
 AMOUNT_NOT_VALID · LEDGER_NOT_POSTABLE · CUSTOMER_NOT_FOUND · DEBTOR_ACCOUNT_CLOSED · CUSTOMER_LINE_ON_CREDIT · NO_CUSTOMER_LINE
 (unless paid at once) · MANY_CUSTOMERS · DUPLICATE_INVOICE · GST_HEAD_MISMATCH (same state → CGST + SGST; other state → IGST) ·
-DEBITS_CREDITS_DIFFER · NOT_AS_INVOICED (the customer, GST and total lines must equal Billing''s invoice) · AMEND_NOT_POSTED ·
+DEBITS_CREDITS_DIFFER · NOT_AS_INVOICED (the customer, GST and total lines must equal Billing''s invoice) · rev 15: NO_STOCK_RECORD ·
+STOCK_SHORT · COST_NOT_AS_INVENTORY (the cost lines = the lots by costing_method; FIFO names its lot, weighted average none) ·
+STOCK_LINE_NEEDS_ITEM (a stock ledger line names its item) · AMEND_NOT_POSTED ·
 AMENDMENT_PENDING · FINANCIAL_YEAR_CLOSED · MAKER_MAY_NOT_DECIDE · NO_REASON_GIVEN.
 DIFFERENCES FROM HIS (deliberate): no source_extraction_id (no PDF: Billing hands the invoice over, G37); debtor_account_id may
 be NULL (a B2C sale paid at once, his vendor is always there); the never-twice key is per branch, not per party (the number is
@@ -1056,6 +1093,8 @@ COMMENT ON COLUMN "fin"."sales_invoice"."invoice_financial_year" IS 'GENERATED: 
 
 COMMENT ON COLUMN "fin"."sales_invoice"."narration" IS 'Being goods sold to Sri Lakshmi Distributors: copied to the journal entry';
 
+COMMENT ON COLUMN "fin"."sales_invoice"."costing_method" IS 'rev 15: fifo | weighted_average, the company''s method when the cost lines were made (the "why" of their amounts). NULL: no goods (services only)';
+
 COMMENT ON COLUMN "fin"."sales_invoice"."stage" IS 'submitted | posted | rejected | draft (sent back) | amended';
 
 COMMENT ON COLUMN "fin"."sales_invoice"."submitted_by_contact_id" IS 'the maker: Teja (AE)';
@@ -1068,8 +1107,11 @@ COMMENT ON COLUMN "fin"."sales_invoice"."journal_entry_id" IS 'the posted entry 
 
 COMMENT ON TABLE "fin"."sales_invoice_line" IS 'T24: the twin of fin.purchase_invoice_line: side, a ledger OR the customer, amount. Replaced whole on each Submit.
 At Post: one journal_line per row, same order; the customer line goes to its account''s ledger (107100) naming the account.
-His vendor line must be Cr; our customer line must be Dr (a sale debits the customer). His inventory_item_code is not here: a
-sales line takes no stock (cost of goods is posted by the delivery challan, not the invoice).';
+His vendor line must be Cr; our customer line must be Dr (a sale debits the customer).
+Rev 15 (R13): the cost lines: Dr 501040 Cost of Goods Sold (the total) · Cr 106020 Finished Goods per lot (FIFO) or per item
+(weighted average), each naming its item and quantity (and its lot under FIFO). B4-01, FIFO: 300 FG-101 from G-2604 at ₹540 +
+300 from G-2608 at ₹560 + 300 FG-102 from C-2607 at ₹760 = ₹5,58,000.00 (lot costs illustrative). The item has no foreign key:
+the item master is in code until T8 (G20).';
 
 COMMENT ON COLUMN "fin"."sales_invoice_line"."line_no" IS '1, 2, 3 … (Screen: #)';
 
@@ -1078,6 +1120,12 @@ COMMENT ON COLUMN "fin"."sales_invoice_line"."side" IS 'Dr | Cr';
 COMMENT ON COLUMN "fin"."sales_invoice_line"."ledger_account_code" IS 'a ledger line: 401010 Sale of Products · 206011 Output CGST … (suggested by the rule, the AE may pick another)';
 
 COMMENT ON COLUMN "fin"."sales_invoice_line"."debtor_account_id" IS 'the customer line (instead of a ledger): posts to the customer account''s own receivable ledger';
+
+COMMENT ON COLUMN "fin"."sales_invoice_line"."inventory_item_code" IS 'rev 15 (his purchase line has it): the item whose cost leaves stock on this line: FG-101. Set only on a Cr stock line (106020)';
+
+COMMENT ON COLUMN "fin"."sales_invoice_line"."quantity" IS 'rev 15: the quantity that leaves stock: 300 (cartons). With the item, never without';
+
+COMMENT ON COLUMN "fin"."sales_invoice_line"."stock_lot_id" IS 'rev 15: FIFO: the lot it came from (G-2604). NULL under weighted average (all lots, at the average)';
 
 COMMENT ON COLUMN "fin"."sales_invoice_line"."amount" IS '7,48,125.00';
 
@@ -1092,6 +1140,27 @@ COMMENT ON COLUMN "fin"."sales_invoice_history"."performer_contact_id" IS 'who d
 COMMENT ON COLUMN "fin"."sales_invoice_history"."acting_on_event_id" IS 'set when an event did it, not a person';
 
 COMMENT ON COLUMN "fin"."sales_invoice_history"."reason" IS 'the decision reason';
+
+COMMENT ON TABLE "inv"."stock_lot" IS 'Rev 15: one row per lot received. Where the cost of goods sold comes from: FIFO takes the oldest lots, each at its own
+unit_cost; weighted average takes Σ(quantity_left × unit_cost) ÷ Σ quantity_left. A ROUGH STUB for the demo: the inventory
+module (receipts, issues, batches, its own history) replaces it (T8 / S4, G3). Σ(quantity_left × unit_cost) = the balance of
+106020 Finished Goods (the T9 reconciliation).';
+
+COMMENT ON COLUMN "inv"."stock_lot"."branch_id" IS 'the branch holding it: KA-01';
+
+COMMENT ON COLUMN "inv"."stock_lot"."godown_code" IS 'KA-FG (finished goods)';
+
+COMMENT ON COLUMN "inv"."stock_lot"."item_code" IS 'FG-101 Glucose biscuit (the item master is in code until T8, G20)';
+
+COMMENT ON COLUMN "inv"."stock_lot"."lot_no" IS 'the batch: G-2604';
+
+COMMENT ON COLUMN "inv"."stock_lot"."received_on" IS 'FIFO order: the oldest goes out first. 14-Apr-2026 (illustrative)';
+
+COMMENT ON COLUMN "inv"."stock_lot"."quantity_received" IS '300';
+
+COMMENT ON COLUMN "inv"."stock_lot"."quantity_left" IS '300 → 0 after B4-01 (FIFO)';
+
+COMMENT ON COLUMN "inv"."stock_lot"."unit_cost" IS '₹540.0000 (illustrative). Weighted average: rewritten to the average after each issue';
 
 ALTER TABLE "pc"."operated_party" ADD FOREIGN KEY ("party_id") REFERENCES "pc"."party" ("party_id") DEFERRABLE INITIALLY IMMEDIATE;
 
@@ -1239,9 +1308,13 @@ ALTER TABLE "fin"."sales_invoice_line" ADD FOREIGN KEY ("workspace_id", "debtor_
 
 ALTER TABLE "fin"."sales_invoice_line" ADD FOREIGN KEY ("ledger_account_code") REFERENCES "fin"."ledger_account" ("account_code") DEFERRABLE INITIALLY IMMEDIATE;
 
+ALTER TABLE "fin"."sales_invoice_line" ADD FOREIGN KEY ("workspace_id", "stock_lot_id") REFERENCES "inv"."stock_lot" ("workspace_id", "stock_lot_id") DEFERRABLE INITIALLY IMMEDIATE;
+
 ALTER TABLE "fin"."sales_invoice_history" ADD FOREIGN KEY ("workspace_id", "sales_invoice_id") REFERENCES "fin"."sales_invoice" ("workspace_id", "sales_invoice_id") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "fin"."sales_invoice_history" ADD FOREIGN KEY ("workspace_id", "performer_contact_id") REFERENCES "pc"."contact" ("workspace_id", "contact_id") DEFERRABLE INITIALLY IMMEDIATE;
+
+ALTER TABLE "inv"."stock_lot" ADD FOREIGN KEY ("workspace_id", "branch_id") REFERENCES "fin"."branch" ("workspace_id", "branch_id") DEFERRABLE INITIALLY IMMEDIATE;
 
 -- ---------------------------------------------------------------- by hand (rev 14), as Manoj's 0005 does for purchase_invoice
 -- Billing's invoice number is booked once per GSTIN (branch) per financial year, ignoring case and spaces. A rejected or amended

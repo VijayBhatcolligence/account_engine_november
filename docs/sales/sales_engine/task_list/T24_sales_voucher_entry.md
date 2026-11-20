@@ -956,3 +956,25 @@ The lesson: parsing is not enough; **run** the SQL. This is now part of check 4.
 **Not stored any more (the app still shows them):** which ledger the rule proposed (recomputed for the Accounts Manager); "return to Billing" (a message to Billing, G37).
 
 **Proof:** PostgreSQL 18: 32 tables, 394 columns. B4-01 posts; the correction SV-0012-1 reverses JE-233 and posts the new entry (the customer still owes ₹7,48,125.00); a sent-back voucher is sent again; a B2C UPI sale has no customer line; 24 / 24 wrong rows refused. Walkthrough rebuilt (his tables beside ours). App: unchanged.
+
+## 20. Rev 15 (20-Nov): the cost of goods sold, from inventory, on the same voucher
+
+**Input (Vijay, 20-Nov):** we get only the sales invoice (product and quantity), no challan; the actual cost comes from inventory; a demo inventory table (not accounting) shows where it comes from; one entry per sale; the method selectable in the app, FIFO or weighted average for now; the ledger "Cost of goods sold", as the CA's example names it.
+
+**Checked first:** the CA's answer key (`expected_postings.csv`) posts no cost on a normal invoice (A1: 4 lines); "COGS" appears only on goods on approval (D1-b), consignment (D2) and a return (E1). So the CA's normal sale reads as Periodic: logged for the CA (G3 (4)). LIFO is not allowed in India (Ind AS 2 / AS 2).
+
+| Part | Rev 15 |
+|---|---|
+| Rule R13 (code, `engine.ts`) | goods on the invoice → Dr 501040 Cost of Goods Sold (the total) · Cr 106020 Finished Goods, one line per lot (FIFO) or per item (weighted average). In the same journal entry as the sale |
+| Where the cost comes from | `inv.stock_lot` (a stub of inventory, 12 columns): FIFO takes the oldest lots, each at its own cost; weighted average = Σ value ÷ Σ quantity |
+| Voucher | `fin.sales_invoice.costing_method` · `fin.sales_invoice_line.inventory_item_code`, `quantity`, `stock_lot_id` (+4 CHECKs) |
+| At approval | the lots go down in the same transaction as the entry; weighted average rewrites the lots' cost to value left ÷ quantity left |
+| Checks | K26 NO_STOCK_RECORD · STOCK_SHORT (Stop: an exception, never a guess) · COST_FROM_INVENTORY (ok) |
+| Ledger | 501040 Cost of Goods Sold, **proposed** (G18, G3 (3)) |
+
+**B4-01:** FIFO ₹5,58,000 (300 Glucose from G-2604 at ₹540 + 300 from G-2608 at ₹560 + 300 Cream from C-2607 at ₹760); weighted average ₹5,62,434.78. **Lot costs and dates are illustrative**: the scenario gives one standard cost (₹560 / ₹760), which would give ₹5,64,000 by either method.
+
+**Business answer (CA):** "The cost of the goods sold is what they cost us, from the stock records, by our costing method; never the selling price. It is booked with the sale, so revenue and its cost meet in the same period."
+**Engineer answer:** R13 reads `inv.stock_lot` (branch, item; `received_on` order) by `costing_method` → lines with item, quantity, lot; Approve runs every gate again, posts, and lowers `quantity_left`.
+
+**Proof:** app 77 / 77 tests (FIFO, weighted average, stock down at approval, posted cost kept, stock short, no stock record, a service has no cost); PostgreSQL 18: 33 tables, 410 columns; B4-01 cost = the stock that left; 33 / 33 wrong rows refused. Walkthrough and `t24_example_data.md` rebuilt. **Replaces** §4's "the cost is posted by Stores' delivery challan (G30)": G30 is re-scoped.

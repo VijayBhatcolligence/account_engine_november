@@ -1,10 +1,12 @@
--- T24 · the schema proved on PostgreSQL (rev 14, 18-Nov-2026): fin.sales_invoice / _line / _history, the TWIN of Manoj's
+-- T24 · the schema proved on PostgreSQL (rev 15, 20-Nov-2026): fin.sales_invoice / _line / _history, the TWIN of Manoj's
 -- purchase voucher (fin.purchase_invoice / _line / _history), posting into the shared fin.journal_entry / fin.journal_line.
+-- Rev 15: the sale also posts its COST in the same entry (rule R13): Dr 501040 Cost of Goods Sold · Cr 106020 Finished Goods per
+-- lot (FIFO), from inv.stock_lot (a stub of inventory; lot costs illustrative); the lots go down at approval.
 -- Billing raises the invoice; the Accounts Executive books its entry; the Accounts Manager approves; it posts.
 -- Run after out.sql on an empty database:  psql -v ON_ERROR_STOP=1 -f out.sql -f t24_schema_test.sql
 -- 1. Seeds the smallest master data (scenario names; ids are fixed test values).
 -- 2. Walks scenario B4-01 (Billing's KA/INV/2627/0143 → Sri Lakshmi Distributors, ₹7,48,125.00): submitted → approved → posted.
--- 3. Tries 24 wrong rows (N1–N24): each must be refused by the named CHECK, key, EXCLUDE or foreign key
+-- 3. Tries 33 wrong rows (N1–N33): each must be refused by the named CHECK, key, EXCLUDE or foreign key
 --    (23503 = a foreign key; 428C9 = a generated column).
 -- 4. Accepted, as his: a correction of a posted voucher (SV-0012-1: the old entry reversed, the new one posted, same invoice
 --    number in one chain); a voucher sent back and sent again; a B2C sale paid by UPI (no customer line).
@@ -94,6 +96,16 @@ INSERT INTO fin.branch (branch_id, workspace_id, operated_party_id, branch_code,
   ('6b1d0a52-0002-4f0e-8a51-5c0b7a000002', 'aikyat-biscuits', '0f000000-0000-4000-8000-000000000001', 'TN-01', 'Hosur unit', 'b0000000-0000-4000-8000-000000000002', 'd0000000-0000-4000-8000-000000000002', '2020-04-01');
 INSERT INTO fin.fiscal_year (fiscal_year_id, workspace_id, operated_party_id, label, start_date, end_date) VALUES
   ('6b1d0a52-1026-4f0e-8a51-5c0b7a002026', 'aikyat-biscuits', '0f000000-0000-4000-8000-000000000001', 'FY 2026-27', '2026-04-01', '2027-03-31');
+-- Rev 15: the stock and cost ledgers (501040 proposed, G18) and the lots on 07-Oct (scenario quantities; costs and dates illustrative).
+INSERT INTO fin.ledger_account (account_code, display_name, kind, parent_account_code, is_group, account_type) VALUES
+  ('106000', 'Inventories', 'asset', '100000', true, NULL),
+  ('106020', 'Finished Goods', 'asset', '106000', false, 'stock'),
+  ('501000', 'Cost of Goods Sold (group: test seed)', 'expense', '500000', true, NULL),
+  ('501040', 'Cost of Goods Sold', 'expense', '501000', false, NULL);
+INSERT INTO inv.stock_lot (stock_lot_id, workspace_id, branch_id, godown_code, item_code, lot_no, received_on, quantity_received, quantity_left, unit_cost) VALUES
+  ('5a000000-0000-4000-8000-000000000001', 'aikyat-biscuits', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 'KA-FG', 'FG-101', 'G-2604', '2026-04-14', 300, 300, 540),
+  ('5a000000-0000-4000-8000-000000000002', 'aikyat-biscuits', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 'KA-FG', 'FG-101', 'G-2608', '2026-08-12', 2000, 2000, 560),
+  ('5a000000-0000-4000-8000-000000000003', 'aikyat-biscuits', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 'KA-FG', 'FG-102', 'C-2607', '2026-07-16', 1500, 1500, 760);
 INSERT INTO fin.document_sequence (workspace_id, operated_party_id, document_type, last_number) VALUES
   ('aikyat-biscuits', '0f000000-0000-4000-8000-000000000001', 'sales_invoice', 11);
 
@@ -101,21 +113,32 @@ INSERT INTO fin.document_sequence (workspace_id, operated_party_id, document_typ
 -- Submit (Teja): the voucher is created at Submit (as his), number SV-0012; the lines the rule R1 proposed, kept as they are.
 UPDATE fin.document_sequence SET last_number = last_number + 1 WHERE document_type = 'sales_invoice';
 INSERT INTO fin.sales_invoice (sales_invoice_id, workspace_id, operated_party_id, branch_id, debtor_account_id, internal_ref_no, amends_sales_invoice_id, original_sales_invoice_id, revision_no, posting_date, invoice_no, invoice_date, due_date, narration, stage, submitted_by_contact_id, submitted_at) VALUES ('51000000-0000-4000-8000-000000000012', 'aikyat-biscuits', '0f000000-0000-4000-8000-000000000001', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 'da000000-0000-4000-8000-000000000001', 'SV-0012', NULL, '51000000-0000-4000-8000-000000000012', 0, '2026-10-07', 'KA/INV/2627/0143', '2026-10-07', '2026-11-06', 'Being goods sold', 'submitted', 'c0000000-0000-4000-8000-000000000001', now());
-INSERT INTO fin.sales_invoice_line (workspace_id, sales_invoice_id, line_no, side, ledger_account_code, debtor_account_id, amount) VALUES
-  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000012', 1, 'Dr', NULL, 'da000000-0000-4000-8000-000000000001', 748125.00),
-  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000012', 2, 'Cr', '401010', NULL, 712500.00),
-  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000012', 3, 'Cr', '206011', NULL, 17812.50),
-  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000012', 4, 'Cr', '206012', NULL, 17812.50);
+UPDATE fin.sales_invoice SET costing_method = 'fifo' WHERE sales_invoice_id = '51000000-0000-4000-8000-000000000012';
+INSERT INTO fin.sales_invoice_line (workspace_id, sales_invoice_id, line_no, side, ledger_account_code, debtor_account_id, inventory_item_code, quantity, stock_lot_id, amount) VALUES
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000012', 1, 'Dr', NULL, 'da000000-0000-4000-8000-000000000001', NULL, NULL, NULL, 748125.00),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000012', 2, 'Cr', '401010', NULL, NULL, NULL, NULL, 712500.00),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000012', 3, 'Cr', '206011', NULL, NULL, NULL, NULL, 17812.50),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000012', 4, 'Cr', '206012', NULL, NULL, NULL, NULL, 17812.50),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000012', 5, 'Dr', '501040', NULL, NULL, NULL, NULL, 558000.00),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000012', 6, 'Cr', '106020', NULL, 'FG-101', 300, '5a000000-0000-4000-8000-000000000001', 162000.00),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000012', 7, 'Cr', '106020', NULL, 'FG-101', 300, '5a000000-0000-4000-8000-000000000002', 168000.00),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000012', 8, 'Cr', '106020', NULL, 'FG-102', 300, '5a000000-0000-4000-8000-000000000003', 228000.00);
 INSERT INTO fin.sales_invoice_history (workspace_id, sales_invoice_id, version_number, operation, row_snapshot, performer_contact_id, reason)
   SELECT 'aikyat-biscuits', sales_invoice_id, 1, 'submit', to_jsonb(x), 'c0000000-0000-4000-8000-000000000001', NULL FROM fin.sales_invoice x WHERE sales_invoice_id = '51000000-0000-4000-8000-000000000012';
--- Approve (Rajan) → PostJournalEntry: one journal line per voucher line; the customer line on its account's ledger (107100), naming the account.
+-- Approve (Rajan) → PostJournalEntry: one journal line per voucher line; the customer line on its account's ledger (107100), naming the account;
+-- in the same transaction the lots go down (FIFO: G-2604 300 → 0, G-2608 2,000 → 1,700, C-2607 1,500 → 1,200).
 INSERT INTO fin.journal_entry (journal_entry_id, workspace_id, operated_party_id, fiscal_year_id, branch_id, posting_date, voucher_type, source_document_id, source_ref_no, narration, posted_by_contact_id) VALUES
   ('7e000000-0000-4000-8000-000000000233', 'aikyat-biscuits', '0f000000-0000-4000-8000-000000000001', '6b1d0a52-1026-4f0e-8a51-5c0b7a002026', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', '2026-10-07', 'sales', '51000000-0000-4000-8000-000000000012', 'SV-0012', 'Being goods sold to Sri Lakshmi Distributors', 'c0000000-0000-4000-8000-000000000002');
 INSERT INTO fin.journal_line (workspace_id, journal_entry_id, line_no, ledger_account_code, debtor_account_id, branch_id, debit, credit) VALUES
   ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000233', 1, '107100', 'da000000-0000-4000-8000-000000000001', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 748125.00, 0),
   ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000233', 2, '401010', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 0, 712500.00),
   ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000233', 3, '206011', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 0, 17812.50),
-  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000233', 4, '206012', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 0, 17812.50);
+  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000233', 4, '206012', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 0, 17812.50),
+  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000233', 5, '501040', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 558000.00, 0),
+  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000233', 6, '106020', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 0, 162000.00),
+  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000233', 7, '106020', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 0, 168000.00),
+  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000233', 8, '106020', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 0, 228000.00);
+UPDATE inv.stock_lot SET quantity_left = quantity_left - 300, updated_at = now() WHERE stock_lot_id IN ('5a000000-0000-4000-8000-000000000001', '5a000000-0000-4000-8000-000000000002', '5a000000-0000-4000-8000-000000000003');
 UPDATE fin.sales_invoice SET stage = 'posted', decided_by_contact_id = 'c0000000-0000-4000-8000-000000000002', decided_at = now(), journal_entry_id = '7e000000-0000-4000-8000-000000000233', version_number = 2 WHERE sales_invoice_id = '51000000-0000-4000-8000-000000000012';
 INSERT INTO fin.sales_invoice_history (workspace_id, sales_invoice_id, version_number, operation, row_snapshot, performer_contact_id, reason)
   SELECT 'aikyat-biscuits', sales_invoice_id, 2, 'decide', to_jsonb(x), 'c0000000-0000-4000-8000-000000000002', NULL FROM fin.sales_invoice x WHERE sales_invoice_id = '51000000-0000-4000-8000-000000000012';
@@ -125,8 +148,15 @@ SELECT internal_ref_no, invoice_no, invoice_key, invoice_financial_year, stage, 
 SELECT a.account_name, a.ledger_account_code, sum(l.debit - l.credit) AS owes
   FROM fin.journal_line l JOIN fin.debtor_account a ON a.debtor_account_id = l.debtor_account_id GROUP BY 1, 2;
 SELECT ledger_account_code, sum(debit) AS dr, sum(credit) AS cr FROM fin.journal_line GROUP BY 1 ORDER BY 1;
+\echo '--- the cost came from inventory: the lots now, and the stock that left = Cr Finished Goods'
+SELECT lot_no, item_code, quantity_left, unit_cost, quantity_left * unit_cost AS value FROM inv.stock_lot ORDER BY received_on;
+SELECT 2422000 - sum(quantity_left * unit_cost) AS stock_value_out,
+       (SELECT sum(credit - debit) FROM fin.journal_line WHERE ledger_account_code = '106020') AS finished_goods_credited,
+       (SELECT sum(debit - credit) FROM fin.journal_line WHERE ledger_account_code = '501040') AS cost_of_goods_sold,
+       712500 - (SELECT sum(debit - credit) FROM fin.journal_line WHERE ledger_account_code = '501040') AS margin
+  FROM inv.stock_lot;
 
--- ---------------------------------------------------------------- 3 · 24 wrong rows, each refused
+-- ---------------------------------------------------------------- 3 · 33 wrong rows, each refused
 CREATE FUNCTION pg_temp.expect(label text, stmt text, want text) RETURNS text LANGUAGE plpgsql AS $$
 DECLARE got text; st text; msg text;
 BEGIN
@@ -189,17 +219,40 @@ SELECT r FROM (VALUES
   (pg_temp.expect('N23 a journal entry of an unknown voucher type',
     $q$UPDATE fin.journal_entry SET voucher_type = 'xyz'$q$, 'journal_entry_voucher_type_valid')),
   (pg_temp.expect('N24 a second forward entry for the same voucher',
-    $q$INSERT INTO fin.journal_entry (workspace_id, operated_party_id, fiscal_year_id, branch_id, posting_date, voucher_type, source_document_id) VALUES ('aikyat-biscuits', '0f000000-0000-4000-8000-000000000001', '6b1d0a52-1026-4f0e-8a51-5c0b7a002026', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', '2026-10-07', 'sales', '51000000-0000-4000-8000-000000000012')$q$, 'journal_entry_one_forward_entry_per_document'))
+    $q$INSERT INTO fin.journal_entry (workspace_id, operated_party_id, fiscal_year_id, branch_id, posting_date, voucher_type, source_document_id) VALUES ('aikyat-biscuits', '0f000000-0000-4000-8000-000000000001', '6b1d0a52-1026-4f0e-8a51-5c0b7a002026', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', '2026-10-07', 'sales', '51000000-0000-4000-8000-000000000012')$q$, 'journal_entry_one_forward_entry_per_document')),
+  (pg_temp.expect('N25 a quantity with no item',
+    $q$UPDATE fin.sales_invoice_line SET quantity = 5 WHERE line_no = 2$q$, 'sales_invoice_line_item_has_quantity')),
+  (pg_temp.expect('N26 a cost line of quantity 0',
+    $q$UPDATE fin.sales_invoice_line SET quantity = 0 WHERE line_no = 6$q$, 'sales_invoice_line_quantity_positive')),
+  (pg_temp.expect('N27 a lot on a line with no item',
+    $q$UPDATE fin.sales_invoice_line SET stock_lot_id = '5a000000-0000-4000-8000-000000000001' WHERE line_no = 2$q$, 'sales_invoice_line_lot_needs_item')),
+  (pg_temp.expect('N28 an item on a debit line',
+    $q$UPDATE fin.sales_invoice_line SET inventory_item_code = 'FG-101', quantity = 1 WHERE line_no = 5$q$, 'sales_invoice_line_item_on_a_stock_credit')),
+  (pg_temp.expect('N29 a lot that does not exist',
+    $q$UPDATE fin.sales_invoice_line SET stock_lot_id = gen_random_uuid() WHERE line_no = 6$q$, '23503')),
+  (pg_temp.expect('N30 an unknown costing method (LIFO)',
+    $q$UPDATE fin.sales_invoice SET costing_method = 'lifo'$q$, 'sales_invoice_costing_method_valid')),
+  (pg_temp.expect('N31 more left in a lot than was received',
+    $q$UPDATE inv.stock_lot SET quantity_left = quantity_received + 1$q$, 'stock_lot_quantity_left_in_range')),
+  (pg_temp.expect('N32 the same lot twice',
+    $q$INSERT INTO inv.stock_lot (workspace_id, branch_id, godown_code, item_code, lot_no, received_on, quantity_received, quantity_left, unit_cost) VALUES ('aikyat-biscuits', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 'KA-FG', 'FG-101', 'G-2604', '2026-04-14', 1, 1, 1)$q$, 'stock_lot_lot_key')),
+  (pg_temp.expect('N33 a negative cost',
+    $q$UPDATE inv.stock_lot SET unit_cost = -1$q$, 'stock_lot_unit_cost_not_negative'))
 ) AS t(r);
 
 -- ---------------------------------------------------------------- 4 · accepted, as his
 \echo '--- a correction of the posted SV-0012 (Sale of Services instead of Sale of Products): SV-0012-1, same invoice, one chain'
 INSERT INTO fin.sales_invoice (sales_invoice_id, workspace_id, operated_party_id, branch_id, debtor_account_id, internal_ref_no, amends_sales_invoice_id, original_sales_invoice_id, revision_no, posting_date, invoice_no, invoice_date, due_date, narration, stage, submitted_by_contact_id, submitted_at) VALUES ('51000000-0000-4000-8000-000000000112', 'aikyat-biscuits', '0f000000-0000-4000-8000-000000000001', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 'da000000-0000-4000-8000-000000000001', 'SV-0012-1', '51000000-0000-4000-8000-000000000012', '51000000-0000-4000-8000-000000000012', 1, '2026-10-07', 'KA/INV/2627/0143', '2026-10-07', '2026-11-06', 'Being goods sold', 'submitted', 'c0000000-0000-4000-8000-000000000001', now());
-INSERT INTO fin.sales_invoice_line (workspace_id, sales_invoice_id, line_no, side, ledger_account_code, debtor_account_id, amount) VALUES
-  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000112', 1, 'Dr', NULL, 'da000000-0000-4000-8000-000000000001', 748125.00),
-  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000112', 2, 'Cr', '401020', NULL, 712500.00),
-  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000112', 3, 'Cr', '206011', NULL, 17812.50),
-  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000112', 4, 'Cr', '206012', NULL, 17812.50);
+UPDATE fin.sales_invoice SET costing_method = 'fifo' WHERE sales_invoice_id = '51000000-0000-4000-8000-000000000112';
+INSERT INTO fin.sales_invoice_line (workspace_id, sales_invoice_id, line_no, side, ledger_account_code, debtor_account_id, inventory_item_code, quantity, stock_lot_id, amount) VALUES
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000112', 1, 'Dr', NULL, 'da000000-0000-4000-8000-000000000001', NULL, NULL, NULL, 748125.00),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000112', 2, 'Cr', '401020', NULL, NULL, NULL, NULL, 712500.00),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000112', 3, 'Cr', '206011', NULL, NULL, NULL, NULL, 17812.50),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000112', 4, 'Cr', '206012', NULL, NULL, NULL, NULL, 17812.50),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000112', 5, 'Dr', '501040', NULL, NULL, NULL, NULL, 558000.00),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000112', 6, 'Cr', '106020', NULL, 'FG-101', 300, '5a000000-0000-4000-8000-000000000001', 162000.00),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000112', 7, 'Cr', '106020', NULL, 'FG-101', 300, '5a000000-0000-4000-8000-000000000002', 168000.00),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000112', 8, 'Cr', '106020', NULL, 'FG-102', 300, '5a000000-0000-4000-8000-000000000003', 228000.00);
 INSERT INTO fin.sales_invoice_history (workspace_id, sales_invoice_id, version_number, operation, row_snapshot, performer_contact_id, reason)
   SELECT 'aikyat-biscuits', sales_invoice_id, 1, 'submit', to_jsonb(x), 'c0000000-0000-4000-8000-000000000001', NULL FROM fin.sales_invoice x WHERE sales_invoice_id = '51000000-0000-4000-8000-000000000112';
 -- Approve: the old entry reversed (its exact mirror), the new one posted, the old voucher amended.
@@ -210,12 +263,21 @@ INSERT INTO fin.journal_line (workspace_id, journal_entry_id, line_no, ledger_ac
   ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000234', 1, '107100', 'da000000-0000-4000-8000-000000000001', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 0, 748125.00),
   ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000234', 2, '401010', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 712500.00, 0),
   ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000234', 3, '206011', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 17812.50, 0),
-  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000234', 4, '206012', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 17812.50, 0);
+  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000234', 4, '206012', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 17812.50, 0),
+  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000234', 5, '501040', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 0, 558000.00),
+  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000234', 6, '106020', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 162000.00, 0),
+  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000234', 7, '106020', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 168000.00, 0),
+  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000234', 8, '106020', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 228000.00, 0);
 INSERT INTO fin.journal_line (workspace_id, journal_entry_id, line_no, ledger_account_code, debtor_account_id, branch_id, debit, credit) VALUES
   ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000235', 1, '107100', 'da000000-0000-4000-8000-000000000001', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 748125.00, 0),
   ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000235', 2, '401020', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 0, 712500.00),
   ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000235', 3, '206011', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 0, 17812.50),
-  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000235', 4, '206012', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 0, 17812.50);
+  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000235', 4, '206012', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 0, 17812.50),
+  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000235', 5, '501040', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 558000.00, 0),
+  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000235', 6, '106020', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 0, 162000.00),
+  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000235', 7, '106020', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 0, 168000.00),
+  ('aikyat-biscuits', '7e000000-0000-4000-8000-000000000235', 8, '106020', NULL, '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 0, 228000.00);
+-- The stock: the reversal puts the 900 cartons back, the new entry takes them again from the same lots: no net change.
 UPDATE fin.sales_invoice SET stage = 'amended', version_number = 3 WHERE sales_invoice_id = '51000000-0000-4000-8000-000000000012';
 INSERT INTO fin.sales_invoice_history (workspace_id, sales_invoice_id, version_number, operation, row_snapshot, performer_contact_id, reason)
   SELECT 'aikyat-biscuits', sales_invoice_id, 3, 'amended', to_jsonb(x), 'c0000000-0000-4000-8000-000000000002', 'Replaced by SV-0012-1' FROM fin.sales_invoice x WHERE sales_invoice_id = '51000000-0000-4000-8000-000000000012';
@@ -234,11 +296,11 @@ SELECT internal_ref_no, stage, version_number FROM fin.sales_invoice WHERE inter
 
 \echo '--- a B2C counter sale paid by UPI, no customer account (the CA''s A3): accepted'
 INSERT INTO fin.sales_invoice (sales_invoice_id, workspace_id, operated_party_id, branch_id, debtor_account_id, internal_ref_no, amends_sales_invoice_id, original_sales_invoice_id, revision_no, posting_date, invoice_no, invoice_date, due_date, narration, stage, submitted_by_contact_id, submitted_at) VALUES ('51000000-0000-4000-8000-000000000013', 'aikyat-biscuits', '0f000000-0000-4000-8000-000000000001', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', NULL, 'SV-0013', NULL, '51000000-0000-4000-8000-000000000013', 0, '2026-10-07', 'KA/INV/2627/0144', '2026-10-07', '2026-10-07', 'Being goods sold', 'submitted', 'c0000000-0000-4000-8000-000000000001', now());
-INSERT INTO fin.sales_invoice_line (workspace_id, sales_invoice_id, line_no, side, ledger_account_code, debtor_account_id, amount) VALUES
-  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000013', 1, 'Dr', '108030', NULL, 11800.00),
-  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000013', 2, 'Cr', '401010', NULL, 10000.00),
-  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000013', 3, 'Cr', '206011', NULL, 900.00),
-  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000013', 4, 'Cr', '206012', NULL, 900.00);
+INSERT INTO fin.sales_invoice_line (workspace_id, sales_invoice_id, line_no, side, ledger_account_code, debtor_account_id, inventory_item_code, quantity, stock_lot_id, amount) VALUES
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000013', 1, 'Dr', '108030', NULL, NULL, NULL, NULL, 11800.00),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000013', 2, 'Cr', '401010', NULL, NULL, NULL, NULL, 10000.00),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000013', 3, 'Cr', '206011', NULL, NULL, NULL, NULL, 900.00),
+  ('aikyat-biscuits', '51000000-0000-4000-8000-000000000013', 4, 'Cr', '206012', NULL, NULL, NULL, NULL, 900.00);
 SELECT internal_ref_no, debtor_account_id IS NULL AS no_customer, stage FROM fin.sales_invoice WHERE internal_ref_no = 'SV-0013';
 
 ROLLBACK;

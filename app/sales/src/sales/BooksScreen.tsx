@@ -20,7 +20,7 @@ export function BooksScreen() {
     <div className="ob-page">
       <PageHeader
         title="Books"
-        subtitle="Mock only: the journal the posting engine wrote for sales invoices (revenue, receivable, GST). Stock and cost of goods sold are Stores' challan task (G30). Nothing here is typed."
+        subtitle="Mock only: the journal the posting engine wrote for sales invoices (revenue, receivable, GST and, rev 15, the cost of goods sold from inventory). Nothing here is typed."
         actions={<SegmentedControl label="Show" value={view} onChange={setView} options={[{ value: 'daybook', label: 'Day book' }, { value: 'tb', label: 'Trial balance' }, { value: 'ar', label: 'Customer outstanding' }]} />}
       />
       {view === 'daybook' && <DayBook />}

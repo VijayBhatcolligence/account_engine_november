@@ -135,7 +135,10 @@ export const LEDGERS: Record<string, Ledger> = {
   igst_refund: { code: '109040', name: 'IGST Refund Receivable', group: 'Short-term loans and advances', nature: 'asset', statement: 'BS', proposed: true },
   upi_card_clearing: { code: '108030', name: 'UPI / Card Clearing', group: 'Cash and bank balances', nature: 'asset', statement: 'BS', proposed: true },
   cash_in_hand: { code: '108010', name: 'Cash in Hand', group: 'Cash and bank balances', nature: 'asset', statement: 'BS' },
-  cogs: { code: '501030', name: 'Change in Inventory', group: 'Changes in inventories of finished goods (Schedule III)', nature: 'expense', statement: 'PL' },
+  // Rev 15 (Vijay, 20-Nov): the cost of goods sold ledger, named as the CA's answer key names it ("COGS", specimens D1-b, D2, E1).
+  // The CA's chart has no such ledger (501030 is Change in Inventory): code proposed (G18).
+  cogs: { code: '501040', name: 'Cost of Goods Sold', group: 'Cost of materials consumed / goods sold', nature: 'expense', statement: 'PL', proposed: true },
+  change_in_inventory: { code: '501030', name: 'Change in Inventory', group: 'Changes in inventories of finished goods (Schedule III)', nature: 'expense', statement: 'PL' },
   fg_inventory: { code: '106020', name: 'Finished Goods', group: 'Inventories', nature: 'asset', statement: 'BS' },
   ...RECEIVABLE_LEDGERS,
 };

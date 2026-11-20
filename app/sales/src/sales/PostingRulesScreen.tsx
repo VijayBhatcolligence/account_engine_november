@@ -8,7 +8,7 @@ import { CHECK_CODE, POSTING_RULE } from './rules';
 const EVERY_VOUCHER: { rule: string; why: string }[] = [
   { rule: 'Total Dr = total Cr, to the paisa (K16)', why: 'Double entry. Nothing is posted unless it balances' },
   { rule: 'The engine picks the rule and the ledgers; the slice sends amounts', why: 'The invoice sends the business facts (customer, place of supply, lines, tax). The AE may edit the entry only with a reason, and Rajan sees it (§8.4)' },
-  { rule: 'One owner per entry: the invoice posts revenue, the receivable and GST only', why: "Stock and cost of goods sold are the Stores task's (G30), never the invoice's: crediting stock here as well would count it twice" },
+  { rule: 'One entry per invoice: revenue, the receivable, GST and (rev 15) the cost of the goods sold', why: 'The CA\'s specimens are invoice-only (no challan for a normal sale): the invoice gives the item and quantity, inventory gives the cost (R13, FIFO or weighted average), in the same entry. Stock is credited once, here' },
   { rule: 'Never a group ledger; a receivable ledger only through a customer (LEDGER_NOT_POSTABLE)', why: "206010 Statutory Dues becomes a group once the GST heads exist. 107010–107130 are receivable ledgers (account_type receivable): the customer line posts to its account's own ledger and names the account (the commit check: SUBLEDGER_MISMATCH, ACCOUNT_NOT_ON_ITS_LEDGER). No \"control ledger\" (Manoj, 13-Nov)" },
   { rule: 'The posting date must be in an open period (K7, K8)', why: 'Oct-2026 open · Sep-2026 soft-closed (Accounts Manager approval) · earlier months closed' },
   { rule: 'Approval re-runs every check, then posts in one transaction', why: "As Manoj's purchase voucher: the customer or the period may have changed since Submit (APPROVAL_REFUSED). If any step stops, nothing is saved" },
@@ -75,8 +75,8 @@ export function PostingRulesScreen() {
               <td colSpan={2}>Already inside the taxable value: no ledger (scope 4.14)</td>
             </tr>
             <tr>
-              <th scope="row">Stock and cost of goods sold</th>
-              <td colSpan={2}>Not in this rule. The goods leaving the store are posted by Stores' delivery challan, a separate task (G30), with its own posting rule. The invoice never credits stock.</td>
+              <th scope="row">Stock and cost of goods sold (R13, rev 15)</th>
+              <td colSpan={2}>Goods on the invoice: Dr 501040 Cost of Goods Sold (proposed) · Cr 106020 Finished Goods, one line per lot (FIFO) or per item (weighted average). The cost comes from inventory (inv.stock_lot), never the selling price; the lots go down at approval.</td>
             </tr>
           </tbody>
         </table>
@@ -86,6 +86,10 @@ export function PostingRulesScreen() {
    Cr 401010 Sale of Products                          7,12,500.00
    Cr 206011 Output CGST (proposed)                       17,812.50
    Cr 206012 Output SGST (proposed)                       17,812.50
+   Dr 501040 Cost of Goods Sold (proposed, R13 FIFO)    5,58,000.00
+   Cr 106020 Finished Goods  FG-101 300 lot G-2604      1,62,000.00
+   Cr 106020 Finished Goods  FG-101 300 lot G-2608      1,68,000.00
+   Cr 106020 Finished Goods  FG-102 300 lot C-2607      2,28,000.00
 Example B4-09 · Gulf Snack export under LUT (R4)
    Dr Gulf Snack Imports LLC (107040)                  9,39,840.00
    Cr 401030 Export Sales                              9,39,840.00   USD 10,680 × ₹88.00`}</pre>

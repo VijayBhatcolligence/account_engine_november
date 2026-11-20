@@ -18,12 +18,16 @@ import { ACTORS, ME } from '../onboarding/catalogue';
 import { useOnboarding } from '../onboarding/store';
 import { accountOf, calcOf, checksOf, entryDiffOf, entryOf, POSTING_RULE, routesOf, ruleEntryOf, stops, sum, toJournal, type SalesCtx } from './rules';
 import { received, seedSales, type InvoiceSpec } from './seed';
+import { COST_METHODS, issueOf, issueStock, seedLots, type CostMethod, type StockLot } from './inventory';
 import type { ActorKey } from '../onboarding/types';
 import type { EditLine, JournalEntry, Outcome, Voucher } from './types';
 
 interface Data {
   vouchers: Voucher[];
   journal: JournalEntry[];
+  /** Rev 15: inv.stock_lot (inventory, a demo stub) and the company's costing method (FIFO or weighted average). */
+  lots: StockLot[];
+  costMethod: CostMethod;
 }
 
 export interface DecideOpts {
@@ -50,6 +54,8 @@ interface State extends Data {
   decide: (id: string, approvalId: string, outcome: Outcome, opts?: DecideOpts) => boolean;
   /** The invoice cannot be booked as it is (wrong customer, wrong GST…): back to Billing with a reason. */
   returnToBilling: (id: string, reason: string) => void;
+  /** Rev 15: the company's costing method (a setting; the demo shows it on the voucher). */
+  setCostMethod: (m: CostMethod) => void;
   reset: () => void;
 }
 
@@ -65,7 +71,7 @@ const app = () => useOnboarding.getState();
 /** The context the rules read: onboarding's accounts and parties + this store's data. */
 export const ctxOf = (s: Data): SalesCtx => {
   const a = app();
-  return { accounts: a.accounts, parties: a.parties, requests: a.requests, journal: s.journal, vouchers: s.vouchers, now: a.now };
+  return { accounts: a.accounts, parties: a.parties, requests: a.requests, journal: s.journal, vouchers: s.vouchers, now: a.now, lots: s.lots, costMethod: s.costMethod };
 };
 
 const nextNo = (ids: string[], prefix: string, start: number) => Math.max(start, ...ids.filter((x) => x.startsWith(prefix)).map((x) => Number(x.slice(prefix.length)) || 0)) + 1;
@@ -95,14 +101,21 @@ export const useSales = create<State>()(
         const t = sum(lines);
         const diff = entryDiffOf(v, ctx);
         const entryId = nextJe(s);
+        const hasCost = lines.some((l) => l.role === 'cost');
+        if (hasCost) issueStock(s.lots, s.costMethod, v.branch, issueOf(c.rows));
         s.journal.push({
-          id: entryId, voucherNo: v.number!, voucherId: v.id, kind: 'sales', branch: v.branch, date: v.date, narration: v.narration, lines: toJournal(lines, a.accountId), rule: `${POSTING_RULE} · ${c.rules.join(' + ')}`, postedAt: now, postedBy: 'system',
+          id: entryId, voucherNo: v.number!, voucherId: v.id, kind: 'sales', branch: v.branch, date: v.date, narration: v.narration, lines: toJournal(lines, a.accountId), rule: `${POSTING_RULE} · ${c.rules.join(' + ')}${hasCost ? ` + R13 (${COST_METHODS[s.costMethod].label})` : ''}`, postedAt: now, postedBy: 'system',
+          ...(hasCost ? { costMethod: s.costMethod } : {}),
           ...(diff ? { edit: { by: v.edit!.by, approvedBy, diff, reasons: lines.filter((l) => l.changed).map((l) => `${l.name}: ${l.reason || 'ledger picked'}`) } } : {}),
         });
         Object.assign(v, { entryId, status: 'posted', postedAt: now });
         const r = app().record;
         r('api', 'system', `posting rule ${POSTING_RULE}`, `rule ${c.rules.join(' + ')} → ${lines.map((l) => `${l.dr ? 'Dr' : 'Cr'} ${l.code}`).join(' · ')}`);
         r('db', 'system', 'INSERT fin.journal_entry + journal_line', `${entryId} · voucher_type sales · source ${v.id} (${v.number}) · ${v.branch} · posting date ${v.date} · Dr = Cr ${inr(t.dr)}${diff ? ' · the AE\'s choices kept' : ''}`);
+        if (hasCost) {
+          const cl = lines.filter((l) => l.role === 'cost' && l.cr);
+          r('db', 'system', 'UPDATE inv.stock_lot', `${COST_METHODS[s.costMethod].label}: ${cl.map((l) => `${l.item} ${l.qty}${l.lot ? ` from ${l.lot}` : ''} ${inr(l.cr)}`).join(' · ')} · stock goes down in the same transaction as the entry`);
+        }
         if ((v.settlement ?? 'credit') === 'credit') r('db', 'system', 'open item', `${a.accountId} · ${v.number} · ${inr(c.payable)} due ${addDays(v.date, a.creditDays ?? 0)}: the journal line naming the account`);
         v.history.push({ at: now, by: 'system', text: `Posted ${entryId} (${c.rules.join(' + ')}${diff ? ', the AE\'s ledger choices approved by Rajan' : ''})` });
         app().notify({ tone: 'success', title: `Posted ${v.number}: ${a.name}`, body: `${inr(c.payable)} · journal ${entryId}.`, voucherId: v.id });
@@ -110,6 +123,8 @@ export const useSales = create<State>()(
 
       return {
         ...seedSales(),
+        lots: seedLots(),
+        costMethod: 'fifo' as CostMethod,
 
         receiveInvoice: (spec) => {
           const s = get();
@@ -264,12 +279,20 @@ export const useSales = create<State>()(
             app().record('api', ME, `POST ${API}/${v.id}/return`, `{reason: "${reason}"} · Billing corrects the invoice (a credit note or a new invoice) and sends it again`);
           }),
 
+        setCostMethod: (m) => {
+          if (get().costMethod === m) return;
+          set((s) => {
+            s.costMethod = m;
+          });
+          app().record('api', ME, 'PUT /api/v1/settings/costing-method', `{method: ${m}} · ${COST_METHODS[m].words} (a company setting; Ind AS 2: the same method for items of the same kind)`);
+        },
+
         reset: () =>
           set((s) => {
-            Object.assign(s, seedSales());
+            Object.assign(s, seedSales(), { lots: seedLots(), costMethod: 'fifo' as CostMethod });
           }),
       };
     }),
-    { name: 'aikyat-ae-sales-v12-t24', partialize: (s) => ({ vouchers: s.vouchers, journal: s.journal }) },
+    { name: 'aikyat-ae-sales-v15-t24', partialize: (s) => ({ vouchers: s.vouchers, journal: s.journal, lots: s.lots, costMethod: s.costMethod }) },
   ),
 );

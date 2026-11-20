@@ -385,3 +385,10 @@
 .sv-lp__name { flex: 1; min-width: 0; }
 .sv-lp__tag { flex-shrink: 0; padding: 0 6px; border-radius: var(--radius-full); background: var(--primary-soft); color: var(--primary); font-size: 11px; line-height: 18px; }
 .sv-lp__none { padding: 8px; color: var(--text-muted); font-size: var(--fs-sm); }
+
+/* Rev 15: cost of goods sold from inventory (R13) */
+.sv-cost { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: var(--space-2); margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.sv-lots summary { cursor: pointer; font-size: var(--fs-sm); color: var(--text-muted); }
+.sv-lots[open] summary { margin-bottom: var(--space-2); }
+.sv-scroll { overflow-x: auto; max-width: 100%; }
+.sv-scroll .sv-post { min-width: 560px; }
