@@ -1,8 +1,9 @@
--- Generated from customer_onboarding_schema.dbml (rev 15, 20-Nov-2026) by @dbml/core 12.0.0 (export.js).
--- Partial indexes come from their WHERE notes (8). Checked: pglast parses it; it runs on PostgreSQL 18.
+-- Generated from customer_onboarding_schema.dbml (rev 16, 23-Nov-2026) by @dbml/core 12.0.0 (export.js).
+-- Partial indexes come from their WHERE notes (9). Checked: pglast parses it; it runs on PostgreSQL 18.
 -- Not here (they are in the engine migrations, by hand): append-only and clock triggers, workspace isolation,
 -- fin.check_journal_entry (the 8 commit rules), the fiscal_year no-overlap EXCLUDE, seeds.
 -- Added by hand at the end (rev 14, as Manoj's 0005): sales_invoice's 2 GENERATED columns and its never-twice EXCLUDE.
+-- Added by hand at the end (rev 16, S1 part 1): book_setting's no-overlap EXCLUDE and its allowed-value trigger.
 
 CREATE SCHEMA "pc";
 
@@ -479,6 +480,7 @@ CREATE TABLE "fin"."sales_invoice" (
   "due_date" date NOT NULL,
   "invoice_financial_year" integer GENERATED ALWAYS AS ((EXTRACT(year FROM invoice_date)::integer - CASE WHEN EXTRACT(month FROM invoice_date) < 4 THEN 1 ELSE 0 END)) STORED NOT NULL,
   "narration" text,
+  "inventory_mode" text,
   "costing_method" text,
   "stage" text NOT NULL,
   "version_number" integer NOT NULL DEFAULT 1,
@@ -498,7 +500,9 @@ CREATE TABLE "fin"."sales_invoice" (
   CONSTRAINT "sales_invoice_maker_may_not_decide" CHECK (decided_by_contact_id IS NULL OR decided_by_contact_id <> submitted_by_contact_id),
   CONSTRAINT "sales_invoice_due_after_invoice" CHECK (due_date >= invoice_date),
   CONSTRAINT "sales_invoice_original_is_itself" CHECK (revision_no > 0 OR original_sales_invoice_id = sales_invoice_id),
-  CONSTRAINT "sales_invoice_costing_method_valid" CHECK (costing_method IN ('fifo', 'weighted_average'))
+  CONSTRAINT "sales_invoice_costing_method_valid" CHECK (costing_method IN ('fifo', 'weighted_average')),
+  CONSTRAINT "sales_invoice_inventory_mode_valid" CHECK (inventory_mode IN ('perpetual', 'periodic')),
+  CONSTRAINT "sales_invoice_method_only_when_perpetual" CHECK ((inventory_mode IS NOT DISTINCT FROM 'perpetual') = (costing_method IS NOT NULL))
 );
 
 CREATE TABLE "fin"."sales_invoice_line" (
@@ -536,6 +540,43 @@ CREATE TABLE "fin"."sales_invoice_history" (
   "recorded_at" timestamptz NOT NULL DEFAULT (now()),
   CONSTRAINT "sales_invoice_history_operation_valid" CHECK (operation IN ('submit', 'decide', 'amended')),
   CONSTRAINT "sales_invoice_history_has_an_actor" CHECK (performer_contact_id IS NOT NULL OR acting_on_event_id IS NOT NULL)
+);
+
+CREATE TABLE "fin"."book" (
+  "book_id" uuid PRIMARY KEY DEFAULT (gen_random_uuid()),
+  "workspace_id" text NOT NULL,
+  "operated_party_id" uuid NOT NULL,
+  "book_code" text NOT NULL,
+  "display_name" text NOT NULL,
+  "is_primary" boolean NOT NULL,
+  "recorded_at" timestamptz NOT NULL DEFAULT (now()),
+  "updated_at" timestamptz NOT NULL DEFAULT (now()),
+  CONSTRAINT "book_code_not_blank" CHECK (btrim(book_code) <> '')
+);
+
+CREATE TABLE "fin"."setting_definition" (
+  "setting_code" text PRIMARY KEY,
+  "display_name" text NOT NULL,
+  "allowed_values" text[] NOT NULL,
+  "owner_task" text NOT NULL,
+  "read_by" text NOT NULL,
+  CONSTRAINT "setting_definition_has_values" CHECK (cardinality(allowed_values) > 0)
+);
+
+CREATE TABLE "fin"."book_setting" (
+  "book_setting_id" uuid PRIMARY KEY DEFAULT (gen_random_uuid()),
+  "workspace_id" text NOT NULL,
+  "book_id" uuid NOT NULL,
+  "setting_code" text NOT NULL,
+  "setting_value" text NOT NULL,
+  "effective_from" date NOT NULL,
+  "effective_until" date,
+  "reason" text,
+  "approved_by_contact_id" uuid NOT NULL,
+  "approved_at" timestamptz NOT NULL,
+  "recorded_at" timestamptz NOT NULL DEFAULT (now()),
+  CONSTRAINT "book_setting_value_not_blank" CHECK (btrim(setting_value) <> ''),
+  CONSTRAINT "book_setting_period_is_ordered" CHECK (effective_until IS NULL OR effective_from < effective_until)
 );
 
 CREATE TABLE "inv"."stock_lot" (
@@ -637,6 +678,16 @@ CREATE INDEX "sales_invoice_debtor_idx" ON "fin"."sales_invoice" ("workspace_id"
 CREATE UNIQUE INDEX "sales_invoice_line_no_key" ON "fin"."sales_invoice_line" ("workspace_id", "sales_invoice_id", "line_no");
 
 CREATE UNIQUE INDEX "sales_invoice_history_one_per_version" ON "fin"."sales_invoice_history" ("workspace_id", "sales_invoice_id", "version_number");
+
+CREATE UNIQUE INDEX "book_workspace_identity_key" ON "fin"."book" ("workspace_id", "book_id");
+
+CREATE UNIQUE INDEX "book_code_per_company" ON "fin"."book" ("workspace_id", "operated_party_id", "book_code");
+
+CREATE UNIQUE INDEX "book_one_primary_per_company" ON "fin"."book" ("workspace_id", "operated_party_id") WHERE is_primary;
+
+CREATE UNIQUE INDEX "book_setting_workspace_identity_key" ON "fin"."book_setting" ("workspace_id", "book_setting_id");
+
+CREATE INDEX "book_setting_lookup_idx" ON "fin"."book_setting" ("workspace_id", "book_id", "setting_code", "effective_from");
 
 CREATE UNIQUE INDEX "stock_lot_workspace_identity_key" ON "inv"."stock_lot" ("workspace_id", "stock_lot_id");
 
@@ -1059,7 +1110,8 @@ AMOUNT_NOT_VALID · LEDGER_NOT_POSTABLE · CUSTOMER_NOT_FOUND · DEBTOR_ACCOUNT_
 (unless paid at once) · MANY_CUSTOMERS · DUPLICATE_INVOICE · GST_HEAD_MISMATCH (same state → CGST + SGST; other state → IGST) ·
 DEBITS_CREDITS_DIFFER · NOT_AS_INVOICED (the customer, GST and total lines must equal Billing''s invoice) · rev 15: NO_STOCK_RECORD ·
 STOCK_SHORT · COST_NOT_AS_INVENTORY (the cost lines = the lots by costing_method; FIFO names its lot, weighted average none) ·
-STOCK_LINE_NEEDS_ITEM (a stock ledger line names its item) · AMEND_NOT_POSTED ·
+STOCK_LINE_NEEDS_ITEM (a stock ledger line names its item) · rev 16: SETTING_MISSING (no inventory_mode / costing_method in force
+on the invoice date: the exception queue, never a guess) · COST_LINES_WHEN_PERIODIC · AMEND_NOT_POSTED ·
 AMENDMENT_PENDING · FINANCIAL_YEAR_CLOSED · MAKER_MAY_NOT_DECIDE · NO_REASON_GIVEN.
 DIFFERENCES FROM HIS (deliberate): no source_extraction_id (no PDF: Billing hands the invoice over, G37); debtor_account_id may
 be NULL (a B2C sale paid at once, his vendor is always there); the never-twice key is per branch, not per party (the number is
@@ -1093,7 +1145,9 @@ COMMENT ON COLUMN "fin"."sales_invoice"."invoice_financial_year" IS 'GENERATED: 
 
 COMMENT ON COLUMN "fin"."sales_invoice"."narration" IS 'Being goods sold to Sri Lakshmi Distributors: copied to the journal entry';
 
-COMMENT ON COLUMN "fin"."sales_invoice"."costing_method" IS 'rev 15: fifo | weighted_average, the company''s method when the cost lines were made (the "why" of their amounts). NULL: no goods (services only)';
+COMMENT ON COLUMN "fin"."sales_invoice"."inventory_mode" IS 'rev 16: perpetual | periodic, the book''s setting in force on the invoice date (fin.book_setting), stamped as used. Periodic: no cost lines (T11 posts the month''s cost). NULL: no goods (services only)';
+
+COMMENT ON COLUMN "fin"."sales_invoice"."costing_method" IS 'rev 15: fifo | weighted_average, the company''s method when the cost lines were made (the "why" of their amounts). NULL: no goods (services only), or periodic (rev 16)';
 
 COMMENT ON COLUMN "fin"."sales_invoice"."stage" IS 'submitted | posted | rejected | draft (sent back) | amended';
 
@@ -1140,6 +1194,48 @@ COMMENT ON COLUMN "fin"."sales_invoice_history"."performer_contact_id" IS 'who d
 COMMENT ON COLUMN "fin"."sales_invoice_history"."acting_on_event_id" IS 'set when an event did it, not a person';
 
 COMMENT ON COLUMN "fin"."sales_invoice_history"."reason" IS 'the decision reason';
+
+COMMENT ON TABLE "fin"."book" IS 'S1 part 1 (rev 16): a STUB. The book a company keeps; its settings hang here, so a second book (G1) never moves them.
+Columns come with the task that needs them, written in the engine history: base_currency (T23), framework Ind AS / AS / IFRS
+(a 2nd book, G4), books_from and go_live (G2). The journal still keys entries to the company: journal_entry.book_id is G39.';
+
+COMMENT ON COLUMN "fin"."book"."operated_party_id" IS 'the company whose book it is: Aikyat Biscuits (P&C''s "the company we run")';
+
+COMMENT ON COLUMN "fin"."book"."book_code" IS 'PRIMARY';
+
+COMMENT ON COLUMN "fin"."book"."display_name" IS 'Aikyat Biscuits · primary book';
+
+COMMENT ON COLUMN "fin"."book"."is_primary" IS 'the statutory book; one per company. A secondary book (e.g. IFRS) comes with its task (G1)';
+
+COMMENT ON TABLE "fin"."setting_definition" IS 'S1 part 1 (rev 16): the catalogue of settings a book can have. A NEW SETTING IS A ROW, NOT A COLUMN: the task that needs
+it adds its row (fx_rate_source T23, aato_band G17, period_close_level G27 …), so nothing built is migrated. Shared reference data,
+like fin.gst_state_code. Seeded with 2 rows (test: t24_schema_test.sql).';
+
+COMMENT ON COLUMN "fin"."setting_definition"."setting_code" IS 'inventory_mode · costing_method';
+
+COMMENT ON COLUMN "fin"."setting_definition"."display_name" IS 'Inventory accounting · Costing method';
+
+COMMENT ON COLUMN "fin"."setting_definition"."allowed_values" IS '{perpetual,periodic} · {fifo,weighted_average} (LIFO not allowed: Ind AS 2)';
+
+COMMENT ON COLUMN "fin"."setting_definition"."owner_task" IS 'the task that added it: S1 part 1 (for T24); later S4 owns both';
+
+COMMENT ON COLUMN "fin"."setting_definition"."read_by" IS 'T24 rule R13, T11 · T24 rule R13, T9';
+
+COMMENT ON TABLE "fin"."book_setting" IS 'S1 part 1 (rev 16): a book''s value of each setting, DATED. The rule reads the row in force on the invoice date and the
+voucher stamps what it used, so an old voucher replays under its old setting (CLAUDE.md §3: rules versioned with dates).
+BY HAND (out.sql): book_setting_no_overlap EXCLUDE (one value per book and setting on any day); trigger
+book_setting_value_allowed (the value is in setting_definition.allowed_values).
+Aikyat today (illustrative until the CA answers G3): inventory_mode = perpetual, costing_method = fifo, from 01-Apr-2026.';
+
+COMMENT ON COLUMN "fin"."book_setting"."setting_value" IS 'one of the definition''s allowed_values (trigger, by hand): perpetual · fifo';
+
+COMMENT ON COLUMN "fin"."book_setting"."effective_from" IS '01-Apr-2026 (illustrative: the CA decides, G3)';
+
+COMMENT ON COLUMN "fin"."book_setting"."effective_until" IS 'NULL = in force. A change closes this row and adds a new one: never edited';
+
+COMMENT ON COLUMN "fin"."book_setting"."reason" IS 'why the setting changed (Ind AS 8: a change of accounting policy is disclosed)';
+
+COMMENT ON COLUMN "fin"."book_setting"."approved_by_contact_id" IS 'the Accounts Manager (Rajan)';
 
 COMMENT ON TABLE "inv"."stock_lot" IS 'Rev 15: one row per lot received. Where the cost of goods sold comes from: FIFO takes the oldest lots, each at its own
 unit_cost; weighted average takes Σ(quantity_left × unit_cost) ÷ Σ quantity_left. A ROUGH STUB for the demo: the inventory
@@ -1316,6 +1412,14 @@ ALTER TABLE "fin"."sales_invoice_history" ADD FOREIGN KEY ("workspace_id", "perf
 
 ALTER TABLE "inv"."stock_lot" ADD FOREIGN KEY ("workspace_id", "branch_id") REFERENCES "fin"."branch" ("workspace_id", "branch_id") DEFERRABLE INITIALLY IMMEDIATE;
 
+ALTER TABLE "fin"."book" ADD FOREIGN KEY ("workspace_id", "operated_party_id") REFERENCES "pc"."operated_party" ("workspace_id", "operated_party_id") DEFERRABLE INITIALLY IMMEDIATE;
+
+ALTER TABLE "fin"."book_setting" ADD FOREIGN KEY ("workspace_id", "book_id") REFERENCES "fin"."book" ("workspace_id", "book_id") DEFERRABLE INITIALLY IMMEDIATE;
+
+ALTER TABLE "fin"."book_setting" ADD FOREIGN KEY ("setting_code") REFERENCES "fin"."setting_definition" ("setting_code") DEFERRABLE INITIALLY IMMEDIATE;
+
+ALTER TABLE "fin"."book_setting" ADD FOREIGN KEY ("workspace_id", "approved_by_contact_id") REFERENCES "pc"."contact" ("workspace_id", "contact_id") DEFERRABLE INITIALLY IMMEDIATE;
+
 -- ---------------------------------------------------------------- by hand (rev 14), as Manoj's 0005 does for purchase_invoice
 -- Billing's invoice number is booked once per GSTIN (branch) per financial year, ignoring case and spaces. A rejected or amended
 -- voucher frees it; a voucher and its amendments (one chain) may share it.
@@ -1323,3 +1427,22 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 ALTER TABLE "fin"."sales_invoice" ADD CONSTRAINT "sales_invoice_never_twice"
   EXCLUDE USING gist (workspace_id WITH =, branch_id WITH =, invoice_key WITH =, invoice_financial_year WITH =,
                       original_sales_invoice_id WITH <>) WHERE (stage NOT IN ('rejected', 'amended'));
+
+-- ---------------------------------------------------------------- by hand (rev 16), S1 part 1: the book's dated settings
+-- One value per book and setting on any day (as his fiscal_year no-overlap EXCLUDE).
+ALTER TABLE "fin"."book_setting" ADD CONSTRAINT "book_setting_no_overlap"
+  EXCLUDE USING gist (workspace_id WITH =, book_id WITH =, setting_code WITH =,
+                      daterange(effective_from, effective_until, '[)') WITH &&);
+
+-- The value must be one the catalogue allows (a CHECK cannot read another table).
+CREATE FUNCTION fin.book_setting_value_allowed() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM fin.setting_definition d
+                 WHERE d.setting_code = NEW.setting_code AND NEW.setting_value = ANY (d.allowed_values)) THEN
+    RAISE EXCEPTION 'SETTING_VALUE_NOT_ALLOWED: % = %', NEW.setting_code, NEW.setting_value
+      USING ERRCODE = 'check_violation', CONSTRAINT = 'book_setting_value_allowed';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER book_setting_value_allowed BEFORE INSERT OR UPDATE ON fin.book_setting
+  FOR EACH ROW EXECUTE FUNCTION fin.book_setting_value_allowed();

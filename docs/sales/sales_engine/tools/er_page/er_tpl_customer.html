@@ -1,0 +1,735 @@
+<title>Sales Engine ER</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Layout: Manoj's ER page (canvas of tables, bands per side, details and every table below), our whole schema (T12 + T24). */
+  :root{
+    --bg:#f4f5f7; --ink:#111827; --muted:#6b7280; --soft-ink:#374151; --line:#e5e7eb; --panel:#ffffff; --panel-2:#f9fafb; --hover:#f3f4f6;
+    --dot:#cfd3db; --tbl-stroke:#c7cbd4; --null:#9ca3af; --btn-line:#d1d5db; --code-bg:#f3f4f6;
+    --fin:#4f46e5; --fin-soft:#eef2ff; --fin-line:#475569;
+    --acct:#7c3aed; --acct-soft:#f3e8ff; --acct-band:#f6f0fe;
+    --jrnl:#b45309; --jrnl-soft:#fef3c7; --jrnl-band:#fffbeb;
+    --new:#15803d; --new-soft:#dcfce7;
+    --creditor:#2563eb; --creditor-soft:#dbeafe; --creditor-band:#e8f0fe;
+    --debtor:#c2410c; --debtor-soft:#ffedd5; --debtor-band:#fff0e3;
+    --shared-fin:#475569; --shared-fin-soft:#e2e8f0; --shared-band:#e2f5ef;
+    --pc:#0f766e; --pc-soft:#ecfdf5; --pc-line:#0f766e;
+    --pk:#b45309; --pk-bg:#fef3c7; --fk:#1d4ed8; --fk-bg:#dbeafe; --sel:#4f46e5; --sel-glow:rgba(79,70,229,.12);
+    --tip-bg:#111827; --tip-ink:#f9fafb; --tip-code:#fde68a; --on-hue:#ffffff;
+  }
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+    --bg:#0f1216; --ink:#e7eaee; --muted:#9aa3ad; --soft-ink:#c9cfd6; --line:#2a3038; --panel:#171b21; --panel-2:#1c2128; --hover:#232931;
+    --dot:#2b313a; --tbl-stroke:#3a414b; --null:#6b7480; --btn-line:#38404a; --code-bg:#232931;
+    --fin:#8b93f8; --fin-soft:#23264a; --fin-line:#9aa6b8;
+    --acct:#b69cff; --acct-soft:#2a2140; --acct-band:#1a1528;
+    --jrnl:#f0b45a; --jrnl-soft:#3a2a10; --jrnl-band:#1f1709;
+    --new:#4ade80; --new-soft:#123220;
+    --creditor:#6ea0ff; --creditor-soft:#1b2a48; --creditor-band:#121b2c;
+    --debtor:#f08a55; --debtor-soft:#3d2414; --debtor-band:#22160e;
+    --shared-fin:#9aa6b8; --shared-fin-soft:#262d36; --shared-band:#0f211d;
+    --pc:#4fd1bf; --pc-soft:#123331; --pc-line:#4fd1bf;
+    --pk:#f0a35a; --pk-bg:#3a2a17; --fk:#8fb2ff; --fk-bg:#1b2a48; --sel:#8b93f8; --sel-glow:rgba(139,147,248,.18);
+    --tip-bg:#e7eaee; --tip-ink:#111827; --tip-code:#7c4a03; --on-hue:#0f1216; color-scheme:dark;
+  }}
+  :root[data-theme="dark"]{
+    --bg:#0f1216; --ink:#e7eaee; --muted:#9aa3ad; --soft-ink:#c9cfd6; --line:#2a3038; --panel:#171b21; --panel-2:#1c2128; --hover:#232931;
+    --dot:#2b313a; --tbl-stroke:#3a414b; --null:#6b7480; --btn-line:#38404a; --code-bg:#232931;
+    --fin:#8b93f8; --fin-soft:#23264a; --fin-line:#9aa6b8;
+    --acct:#b69cff; --acct-soft:#2a2140; --acct-band:#1a1528;
+    --jrnl:#f0b45a; --jrnl-soft:#3a2a10; --jrnl-band:#1f1709;
+    --new:#4ade80; --new-soft:#123220;
+    --creditor:#6ea0ff; --creditor-soft:#1b2a48; --creditor-band:#121b2c;
+    --debtor:#f08a55; --debtor-soft:#3d2414; --debtor-band:#22160e;
+    --shared-fin:#9aa6b8; --shared-fin-soft:#262d36; --shared-band:#0f211d;
+    --pc:#4fd1bf; --pc-soft:#123331; --pc-line:#4fd1bf;
+    --pk:#f0a35a; --pk-bg:#3a2a17; --fk:#8fb2ff; --fk-bg:#1b2a48; --sel:#8b93f8; --sel-glow:rgba(139,147,248,.18);
+    --tip-bg:#e7eaee; --tip-ink:#111827; --tip-code:#7c4a03; --on-hue:#0f1216; color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font:13px/1.45 "Segoe UI",system-ui,-apple-system,sans-serif}
+  .app{display:flex;flex-direction:column}
+  header{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));background:var(--panel);border-bottom:1px solid var(--line)}
+  header .brand{min-width:0}
+  header .brand strong{font-size:15px}
+  header .brand span{color:var(--muted);margin-left:8px}
+  code{font-family:Consolas,"Cascadia Mono",ui-monospace,monospace}
+  .tools{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-left:auto}
+  .tools button{height:30px;min-width:30px;padding:0 10px;border:1px solid var(--btn-line);border-radius:6px;background:var(--panel);color:var(--ink);font:inherit;cursor:pointer}
+  .tools button:hover{background:var(--hover)}
+  .tools button:focus-visible,.tl:focus-visible,.show:focus-visible{outline:2px solid var(--sel);outline-offset:2px}
+  .tools #zoomPct{min-width:48px;text-align:center;font-variant-numeric:tabular-nums;color:var(--muted)}
+  .tools label{display:flex;align-items:center;gap:5px;margin-left:10px;color:var(--muted);cursor:pointer;user-select:none}
+  .views{display:inline-flex;margin-right:10px;flex-wrap:wrap}
+  .views button{border-radius:0;margin-left:-1px}
+  .views button:first-child{border-radius:6px 0 0 6px;margin-left:0}
+  .views button:last-child{border-radius:0 6px 6px 0}
+  .views button.on{background:var(--fin);border-color:var(--fin);color:var(--on-hue)}
+  .band rect{stroke-width:1.5;stroke-dasharray:10 8}
+  .band text{font:700 34px "Segoe UI",system-ui,sans-serif;letter-spacing:.04em}
+  .below{background:var(--panel);border-top:1px solid var(--line);padding-block:22px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  .below .inner{max-width:1500px;margin:0 auto}
+  .chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:18px}
+  .chips h4{margin:0 10px 0 0;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .chips h4 i,.ref h2.sec i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+  .chips .sep{width:100%;height:0}
+  .tl{padding:4px 10px;border:1px solid var(--line);border-radius:99px;background:var(--panel);font:inherit;color:var(--ink);cursor:pointer;font-family:Consolas,"Cascadia Mono",ui-monospace,monospace;font-size:12.5px}
+  .tl:hover{background:var(--hover)}
+  .tl.on{background:var(--fin-soft);color:var(--fin);border-color:var(--fin);font-weight:600}
+  .tl small{color:var(--muted);font-family:"Segoe UI",system-ui,sans-serif;margin-left:6px}
+  .howto{margin:0 0 18px;padding:10px 12px;border-radius:8px;background:var(--panel-2);color:var(--muted);font-size:12px;line-height:1.5}
+  .howto b{color:var(--ink);font-weight:600}
+  .d{padding:18px 20px;border:1px solid var(--line);border-radius:10px;background:var(--panel);margin-bottom:28px;min-width:0}
+  .d.sel{border-color:var(--sel);box-shadow:0 0 0 3px var(--sel-glow)}
+  .cols2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 32px}
+  .cols2>*{min-width:0}
+  @media (max-width:900px){.cols2{grid-template-columns:1fr}}
+  .ref h2.sec{margin:30px 0 12px;font-size:15px}
+  .show{float:right;margin-left:12px;padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font:inherit;font-size:12px;cursor:pointer}
+  .show:hover{background:var(--hover)}
+  #selbar{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:none;padding:7px 14px;border-radius:99px;background:var(--tip-bg);color:var(--tip-ink);font-size:12px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.25);z-index:4;white-space:nowrap;max-width:calc(100% - 28px);overflow:hidden;text-overflow:ellipsis}
+  #selbar code,#tip code{color:var(--tip-code)}
+  main{position:relative;overflow:hidden;cursor:grab;height:calc(100vh - 120px);min-height:480px;background:var(--bg);background-image:radial-gradient(var(--dot) 1px,transparent 1.3px);background-size:24px 24px;contain:strict;touch-action:none}
+  #world{will-change:transform}
+  main.panning{cursor:grabbing}
+  svg#svg{width:100%;height:100%;display:block}
+  #tip{position:absolute;pointer-events:none;display:none;max-width:360px;padding:8px 10px;background:var(--tip-bg);color:var(--tip-ink);border-radius:6px;font-size:12px;line-height:1.4;box-shadow:0 4px 14px rgba(0,0,0,.25);z-index:5}
+  .legend{position:absolute;left:14px;bottom:14px;background:var(--panel);opacity:.96;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.06);display:grid;grid-template-columns:auto auto;column-gap:24px}
+  .legend h5{grid-column:1/-1;margin:0 0 6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .legend .row{display:flex;align-items:center;gap:8px;margin:3px 0}
+  .legend svg{width:64px;height:18px;flex:none;fill:none;stroke-width:1.6}
+  .legend .lf{stroke:var(--fin-line)} .legend .lp{stroke:var(--pc-line)} .legend circle{fill:var(--panel)}
+  .badge{display:inline-block;padding:0 5px;border-radius:4px;font-size:10px;font-weight:700;line-height:16px;color:var(--on-hue)}
+  .minimap{position:absolute;right:14px;bottom:14px;width:240px;height:150px;background:var(--panel);opacity:.96;border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.06);cursor:pointer}
+  .minimap svg{width:100%;height:100%;display:block}
+  @media (max-width:760px){.legend{display:none}.minimap{width:150px;height:96px}main{height:70vh}}
+  .d h2{margin:0;font-size:16px;font-family:Consolas,ui-monospace,monospace;word-break:break-all}
+  .d h2 small{display:block;font:12px "Segoe UI",system-ui,sans-serif;color:var(--muted);margin-top:2px;word-break:normal}
+  .d .kind{display:inline-block;margin:8px 6px 10px 0;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+  .d p{margin:0 0 10px;color:var(--soft-ink);max-width:80ch}
+  .d h3{margin:14px 0 6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .d ul{margin:0;padding-left:18px}
+  .d li{margin:3px 0;overflow-wrap:anywhere}
+  .d code{font-size:12px;background:var(--code-bg);padding:1px 4px;border-radius:3px}
+  .d .tw{overflow-x:auto}
+  .d table{border-collapse:collapse;width:100%;font-size:12px}
+  .d td{padding:3px 4px;border-top:1px solid var(--line);vertical-align:top}
+  .d td:first-child{font-family:Consolas,ui-monospace,monospace;white-space:nowrap}
+  .d td.t{color:var(--muted);font-family:Consolas,ui-monospace,monospace;white-space:nowrap}
+  .d td.dv{color:var(--muted);font-family:Consolas,ui-monospace,monospace;font-size:11.5px;overflow-wrap:anywhere}
+  .d .b{display:inline-block;padding:0 4px;border-radius:3px;font-size:10px;font-weight:700;margin-right:3px;vertical-align:1px}
+  .b.pk{color:var(--pk);background:var(--pk-bg)} .b.fk{color:var(--fk);background:var(--fk-bg)}
+  .d i.n{color:var(--null)}
+  details.fn{border-top:1px solid var(--line);padding:6px 0}
+  details.fn summary{cursor:pointer;font-family:Consolas,ui-monospace,monospace;font-size:12.5px}
+  details.fn pre{margin:8px 0 4px;padding:10px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;overflow-x:auto;font:12px/1.45 Consolas,ui-monospace,monospace}
+  .kpis{display:flex;flex-wrap:wrap;gap:8px 18px;margin:6px 0 12px}
+  .kpis span{font-variant-numeric:tabular-nums;color:var(--muted)} .kpis b{color:var(--ink);font-size:15px;margin-right:4px}
+  /* svg */
+  .tbl{cursor:pointer}
+  .tbl .box{fill:var(--panel);stroke:var(--tbl-stroke);stroke-width:1}
+  .tbl .hd text{fill:#fff}
+  .tbl .nm{font:13px "Segoe UI",system-ui,sans-serif;fill:var(--ink)}
+  .tbl .ty{font:12px Consolas,"Cascadia Mono",ui-monospace,monospace;fill:var(--muted)}
+  .tbl .nl{font:10.5px "Segoe UI",system-ui,sans-serif;fill:var(--null)}
+  .tbl .bd{font:bold 9.5px "Segoe UI",system-ui,sans-serif}
+  .tbl .pkr{fill:var(--pk-bg)} .tbl .pkt{fill:var(--pk)} .tbl .fkr{fill:var(--fk-bg)} .tbl .fkt{fill:var(--fk)}
+  .tbl .sepl{stroke:var(--line)}
+  .tbl.sel .box{stroke:var(--sel);stroke-width:2.5}
+  .tbl.dim{opacity:.28}
+  .tbl.ghost{opacity:.1}
+  .tbl.new .box{stroke:var(--new);stroke-width:3.5}
+  .newtag{font:bold 12px "Segoe UI",system-ui,sans-serif;fill:var(--new)}
+  .newcol{fill:var(--new-soft)}
+  .futcol{opacity:.25}
+  .task{display:flex;align-items:center;gap:6px;color:var(--muted)}
+  .task select{height:30px;max-width:min(330px,calc(100vw - 110px));border:1px solid var(--btn-line);border-radius:6px;background:var(--panel);color:var(--ink);font:inherit;padding:0 6px}
+  .task.on select{border-color:var(--new);box-shadow:0 0 0 2px var(--new-soft)}
+  .steps{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+  .steps button{border:1px solid var(--btn-line);background:var(--panel);color:var(--ink);border-radius:999px;padding:4px 12px;font:inherit;cursor:pointer}
+  .steps button.on{border-color:var(--new);background:var(--new-soft);color:var(--new);font-weight:600}
+  .flow{background:var(--code-bg);border-radius:8px;padding:10px 12px;white-space:pre-wrap;font:12.5px/1.55 Consolas,ui-monospace,monospace;overflow-x:auto}
+  .addc{display:inline-block;font-size:11px;padding:0 6px;border-radius:999px;background:var(--new-soft);color:var(--new);margin-left:6px;white-space:nowrap}
+  .rel path.l{fill:none;stroke-width:1.6}
+  .rel path.hit{fill:none;stroke:transparent;stroke-width:14;cursor:pointer}
+  .rel.fin path.l,.rel.fin .sym{stroke:var(--fin-line)}
+  .rel.pc path.l,.rel.pc .sym{stroke:var(--pc-line)}
+  .rel .sym{fill:none;stroke-width:1.6}
+  .rel .sym circle{fill:var(--bg)}
+  .rel.hl path.l{stroke-width:3}
+  .rel.hl .sym{stroke-width:2.4}
+  .rel.dim{opacity:.18}
+  .tdoc{color:var(--soft-ink);max-width:90ch}
+  .cn{color:var(--soft-ink);font-family:"Segoe UI",system-ui,sans-serif;white-space:normal;margin-top:2px}
+  @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+
+<div class="app">
+  <header>
+    <div class="brand"><strong>Sales engine schema</strong><span>Ours (S1 part 1 books setup + T12 customer + T24 sales voucher) · schemas <code>fin</code>, <code>pc</code>, <code>inv</code> · {{tables}} tables · rev 16</span></div>
+    <div class="tools">
+      <label class="task" id="taskWrap" title="Show the schema as it grew, task by task">Task
+        <select id="task" aria-label="Show the schema at a task">
+          <option value="">All tables (no task)</option>
+        </select></label>
+      <span class="views" role="group" aria-label="Which side to show">
+        <button data-view="all" class="on">All</button><button data-view="setup">Books setup</button><button data-view="purchase">Sales voucher</button><button data-view="customer">Customer</button><button data-view="vendor">Inventory</button>
+      </span>
+      <button id="zoomOut" title="Zoom out (−)" aria-label="Zoom out">−</button>
+      <span id="zoomPct">100%</span>
+      <button id="zoomIn" title="Zoom in (+)" aria-label="Zoom in">+</button>
+      <button id="fit" title="Fit everything (F)">Fit</button>
+      <button id="one" title="Actual size (0)">100%</button>
+      <button id="reset" title="Put the tables back where they started">Reset layout</button>
+      <label><input type="checkbox" id="showTypes" checked> types</label>
+    </div>
+  </header>
+  <main id="canvas">
+    <svg id="svg" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Entity-relationship diagram of our sales engine schema">
+      <g id="world"><g id="bands"></g><g id="rels"></g><g id="tables"></g></g>
+    </svg>
+    <div id="tip"></div>
+    <div class="legend">
+      <h5>Reading the diagram</h5>
+      <div class="row"><svg viewBox="0 0 64 18"><path class="lf" d="M4 9H60M20 9L4 3M20 9L4 15M48 3V15M54 3V15"/><circle class="lf" cx="26" cy="9" r="4"/></svg><span>many (0..n) → exactly one</span></div>
+      <div class="row"><svg viewBox="0 0 64 18"><path class="lf" d="M4 9H60M20 9L4 3M20 9L4 15M50 3V15"/><circle class="lf" cx="26" cy="9" r="4"/><circle class="lf" cx="42" cy="9" r="4"/></svg><span>many → zero or one (nullable FK)</span></div>
+      <div class="row"><svg viewBox="0 0 64 18"><path class="lf" d="M4 9H60"/></svg><span>foreign key inside Finance</span></div>
+      <div class="row"><svg viewBox="0 0 64 18"><path class="lp" d="M4 9H60"/></svg><span>foreign key into Parties &amp; Contacts</span></div>
+      <div class="row"><span class="badge" style="background:var(--fin)">fin</span><span>books setup: the book and its dated settings (ours, S1 part 1); branches, years, numbering (Manoj's)</span></div>
+      <div class="row"><span class="badge" style="background:var(--acct)">fin</span><span>sales voucher (T24)</span></div>
+      <div class="row"><span class="badge" style="background:var(--jrnl)">fin</span><span>the journal: the books both vouchers post into</span></div>
+      <div class="row"><span class="badge" style="background:var(--creditor)">inv</span><span>inventory (stub: stock lots for the cost)</span></div>
+      <div class="row"><span class="badge" style="background:var(--debtor)">fin</span><span>debtor and customer tables</span></div>
+      <div class="row"><span class="badge" style="background:var(--pc)">pc</span><span>shared: Parties &amp; Contacts</span></div>
+      <div class="row"><span class="badge" style="background:var(--shared-fin)">fin</span><span>shared: chart of accounts, GST state codes, bank accounts, event outbox</span></div>
+      <div class="row"><span class="badge" style="color:var(--pk);background:var(--pk-bg)">PK</span><span class="badge" style="color:var(--fk);background:var(--fk-bg)">FK</span><span>primary key · foreign key · <i style="color:var(--null)">null</i> = optional</span></div>
+    </div>
+    <div class="minimap"><svg id="mini" aria-label="Overview map"></svg></div>
+    <div id="selbar"></div>
+  </main>
+  <section class="below"><div class="inner">
+    <div class="chips" id="list"></div>
+    <div class="d" id="details"></div>
+    <div class="ref" id="reference"></div>
+  </div></section>
+</div>
+
+<script>
+const DATA = /*__DATA__*/null;
+const MIG = {};
+// ───────────────────────────── data (read from his database) ─────────────────────────────
+// side keys reuse the template's colours: purchase = sales voucher + books, vendor = inventory
+const SIDE = id => /^fin\.(book|setting_definition|book_setting|branch|fiscal_year|document_sequence)$/.test(id) ? 'setup'
+  : /^fin\.journal_/.test(id) ? 'journal'
+  : /^fin\.sales_invoice/.test(id) ? 'purchase'
+  : /^fin\.(customer_request|debtor_)/.test(id) ? 'customer'
+  : /^inv\./.test(id) ? 'vendor' : 'shared';
+const TABLES = DATA.tables.map(t => ({
+  id: t.id, schema: t.schema, name: t.name, mig: t.mig, side: SIDE(t.id), doc: t.doc, rows: t.rows,
+  kind: `${t.cols.length} columns`,
+  cols: t.cols, keys: t.keys, checks: t.checks, indexes: t.indexes, triggers: t.triggers,
+}));
+const RELS = DATA.tables.flatMap(t => t.rels);
+
+// ───────────────────────────── the build, task by task (in the order we built it) ─────────────────────────────
+const PC_T12 = ['pc.operated_party', 'pc.private_anchor', 'pc.party', 'pc.party_trade_name', 'pc.party_identifier', 'pc.business_location',
+  'pc.party_standing', 'pc.contact', 'pc.contact_party_association', 'pc.contact_point', 'pc.record_history'];
+const STEPS = [
+  { key: 't12', short: '1 · T12 Create a customer', title: 'T12 · Create a customer', when: 'Built first (rev 4, 6-Nov-2026)',
+    why: 'The customer must exist before anything is sold to it. Sales hands over the CA\'s form; the AE types it; three checkers approve; the customer gets its account under Sundry Debtors. A master: nothing posts.',
+    flow: `fin.customer_request          ← Teja (AE) types the CA's onboarding form, submits
+  → fin.customer_request_approval   3 checkers: Rajan (account) · Farid (credit) · Venkat (GST)
+  → on the LAST approval, ONE transaction:
+       pc.party · party_identifier · business_location · party_standing · contact   (P&C registers the customer)
+       fin.debtor_account  + debtor_tax_registration · debtor_location · debtor_credit_limit · party_bank_account
+       fin.outbox          DebtorAccountOpened (the engine logs it as seen; posts nothing)
+  uses: fin.debtor_category (decides the ledger), fin.ledger_account, fin.gst_state_code`,
+    tables: [...PC_T12, 'fin.ledger_account', 'fin.debtor_category', 'fin.gst_state_code', 'fin.customer_request', 'fin.customer_request_approval',
+      'fin.customer_request_history', 'fin.debtor_account', 'fin.debtor_tax_registration', 'fin.debtor_location', 'fin.debtor_credit_limit',
+      'fin.party_bank_account', 'fin.debtor_account_history', 'fin.outbox'],
+    cols: [] },
+  { key: 't24', short: '2 · T24 Sales voucher entry', title: 'T24 · Sales voucher entry', when: 'Rev 14, 18-Nov-2026 (the twin of Manoj\'s purchase voucher)',
+    why: 'Billing raises the invoice; the AE books its accounting entry; Rajan approves; it posts. The first posting: the journal and the customer\'s balance. Manoj\'s books core (branch, year, numbering, journal) is copied as he built it, so the links are drawn and checked.',
+    flow: `fin.sales_invoice           ← the AE books Billing's invoice (number from fin.document_sequence, issued by a fin.branch)
+  + fin.sales_invoice_line   the proposed Dr / Cr lines (customer, sales, output GST)
+  + fin.sales_invoice_history  every step
+  → Rajan approves → ONE journal entry:
+       fin.journal_entry  (in its fin.fiscal_year)  + fin.journal_line  (the customer line names fin.debtor_account)
+  the customer owes = its journal lines (no separate balance table)`,
+    tables: ['fin.branch', 'fin.fiscal_year', 'fin.document_sequence', 'fin.journal_entry', 'fin.journal_line',
+      'fin.sales_invoice', 'fin.sales_invoice_line', 'fin.sales_invoice_history'],
+    cols: [['fin.ledger_account', 'account_type'], ['fin.ledger_account', 'since'], ['fin.ledger_account', 'until'],
+      ['fin.debtor_account', 'ledger_account_code'], ['fin.debtor_account', 'recorded_at'], ['fin.debtor_account', 'updated_at']],
+    colsNote: 'synced with what Manoj built (rev 5): no control ledger, account_type on the chart; debtor_account.control_ledger_code renamed ledger_account_code; his clocks' },
+  { key: 't24c', short: '3 · T24 rev 15 Cost of goods sold', title: 'T24 rev 15 · The cost of goods sold, from inventory', when: 'Rev 15, 20-Nov-2026',
+    why: 'The invoice gives the item and quantity; inventory gives the cost. The sale posts its cost in the SAME entry: Dr 501040 Cost of Goods Sold · Cr 106020 Finished Goods, by FIFO lots or weighted average. Inventory is a rough stub, not accounting.',
+    flow: `inv.stock_lot                 the lots: quantity left, unit cost (a stub)
+  → rule R13 picks the lots (FIFO: oldest first) or the average (WAM)
+  → fin.sales_invoice_line      cost lines: inventory_item_code · quantity · stock_lot_id
+  → fin.sales_invoice.costing_method   the method used, stamped
+  → the same journal entry: Dr 501040 · Cr 106020; the lots go down at approval`,
+    tables: ['inv.stock_lot'],
+    cols: [['fin.sales_invoice', 'costing_method'], ['fin.sales_invoice_line', 'inventory_item_code'], ['fin.sales_invoice_line', 'quantity'],
+      ['fin.sales_invoice_line', 'stock_lot_id']] },
+  { key: 's1', short: '4 · S1 part 1 Books setup', title: 'S1 part 1 · Set up the books (only what T24 needs)', when: 'Rev 16, 23-Nov-2026 (setup: #1 in the build order, built 4th)',
+    why: 'A one-time setup. The company\'s book, and its two choices T24 needs: perpetual or periodic (is the cost posted with the sale?) and FIFO or weighted average (which cost?). Dated, so an old voucher keeps its old rule. Later tasks add their part.',
+    flow: `pc.operated_party (Aikyat)
+  → fin.book                  its PRIMARY book (one per company)
+  → fin.book_setting          inventory_mode = perpetual · costing_method = fifo   (dated from / until)
+       values only from fin.setting_definition   (the menu)
+  → read by fin.sales_invoice on its invoice date → stamped: inventory_mode, costing_method
+     periodic → no cost lines (T11 posts the month's cost)`,
+    tables: ['fin.book', 'fin.setting_definition', 'fin.book_setting'],
+    cols: [['fin.sales_invoice', 'inventory_mode']] },
+];
+const TSTEP = {}, CSTEP = {};
+STEPS.forEach((s, i) => { s.tables.forEach(id => TSTEP[id] = i); s.cols.forEach(([t, n]) => CSTEP[t + '.' + n] = i); });
+const STEP_ERRORS = [
+  ...STEPS.flatMap(s => s.tables.filter(id => !DATA.tables.some(t => t.id === id)).map(id => `${s.key}: no table ${id}`)),
+  ...STEPS.flatMap(s => s.cols.filter(([t, n]) => !DATA.tables.some(x => x.id === t && x.cols.some(cc => cc.n === n))).map(([t, n]) => `${s.key}: no column ${t}.${n}`)),
+  ...DATA.tables.filter(t => TSTEP[t.id] === undefined).map(t => `table ${t.id} is in no step`),
+];
+if (STEP_ERRORS.length) console.error('task steps do not match the database:', STEP_ERRORS);
+let task = null;  // index into STEPS, or null
+const colStep = (t, n) => CSTEP[t.id + '.' + n] ?? TSTEP[t.id];
+function stepCounts(i) {
+  const ids = new Set(DATA.tables.filter(t => TSTEP[t.id] <= i).map(t => t.id));
+  const cols = DATA.tables.filter(t => ids.has(t.id)).reduce((a, t) => a + t.cols.filter(cc => colStep(t, cc.n) <= i).length, 0);
+  const fks = RELS.filter(r => ids.has(r.from) && ids.has(r.to)).length;
+  return { tables: ids.size, cols, fks, newTables: STEPS[i].tables.length, newCols: STEPS[i].cols.length };
+}
+
+// initial layout: columns left → right (purchase | vendor | shared | customer), stacked top → bottom
+const COLUMNS = [
+  ['fin.book', 'fin.book_setting', 'fin.setting_definition'],
+  ['fin.branch', 'fin.fiscal_year', 'fin.document_sequence'],
+  ['fin.journal_entry', 'fin.journal_line'],
+  ['fin.sales_invoice', 'fin.sales_invoice_line', 'fin.sales_invoice_history'],
+  ['inv.stock_lot'],
+  ['fin.ledger_account', 'fin.gst_state_code', 'fin.party_bank_account', 'fin.outbox', 'pc.operated_party', 'pc.party_standing'],
+  ['pc.private_anchor', 'pc.party', 'pc.party_trade_name', 'pc.party_identifier'],
+  ['pc.business_location', 'pc.contact', 'pc.contact_party_association', 'pc.contact_point', 'pc.record_history'],
+  ['fin.debtor_category', 'fin.debtor_location', 'fin.debtor_credit_limit'],
+  ['fin.debtor_account', 'fin.debtor_account_history', 'fin.debtor_tax_registration'],
+  ['fin.customer_request', 'fin.customer_request_approval', 'fin.customer_request_history'],
+];
+{ const placed = new Set(COLUMNS.flat()); const left = TABLES.filter(t => !placed.has(t.id)).map(t => t.id); if (left.length) COLUMNS.push(left); }
+const GAP_X = 300, GAP_Y = 64, TOP = 110, LEFT = 60;
+
+// ───────────────────────────── geometry ─────────────────────────────
+const HH = 40, RH = 22;
+const byId = Object.fromEntries(TABLES.map(t => [t.id, t]));
+const meas = document.createElement('canvas').getContext('2d');
+const tw = (txt, font) => { meas.font = font; return meas.measureText(txt).width; };
+const FN = '13px "Segoe UI", system-ui, sans-serif', FT = '12px Consolas, "Cascadia Mono", ui-monospace, monospace', FH1 = 'bold 14px Consolas, ui-monospace, monospace', FK = '11px "Segoe UI", system-ui, sans-serif';
+let showTypes = true;
+function measure(t) {
+  let w = 250, y = HH + 4;
+  w = Math.max(w, tw(t.schema + '.' + t.name, FH1) + tw(t.kind, FK) + 40);
+  t.cols.forEach(r => { r.y = y; y += RH; w = Math.max(w, 48 + tw(r.n, FN) + 18 + (showTypes ? tw(r.t, FT) : 0) + (r.nul ? 28 : 0) + 14); });
+  t.w = Math.ceil(w); t.h = y + 8;
+}
+function layout() {
+  TABLES.forEach(measure);
+  let x = LEFT;
+  COLUMNS.forEach(col => {
+    const cw = Math.max(...col.map(id => byId[id].w));
+    let y = TOP;
+    col.forEach(id => { const t = byId[id]; t.w = cw; t.x = x; t.y = y; y += t.h + GAP_Y; });
+    x += cw + GAP_X;
+  });
+}
+const rowOf = (t, n) => t.cols.find(r => r.n === n);
+const rowY = (t, n) => { const r = rowOf(t, n); return t.y + (r ? r.y + RH / 2 : HH / 2); };
+const right = t => t.x + t.w;
+
+let view = 'all';
+const inView = sd => view === 'all' || sd === 'shared' || sd === view || (sd === 'journal' && view === 'purchase');
+const isVis = t => inView(t.side);
+const relVis = r => isVis(byId[r.from]) && isVis(byId[r.to]);
+const MARGIN = 36;
+function gapAfter(x, vis) { const n = vis.filter(t => t.x >= x).map(t => t.x); return { start: x, end: n.length ? Math.min(...n) : x + GAP_X }; }
+function gapBefore(x, vis) { const p = vis.filter(t => right(t) <= x).map(right); return { start: p.length ? Math.max(...p) : x - GAP_X, end: x }; }
+function computeRoutes() {
+  const vis = TABLES.filter(isVis), plans = new Map(), gaps = new Map();
+  const ask = (gap, sortY) => { const key = Math.round(gap.start); if (!gaps.has(key)) gaps.set(key, { gap, asks: [] }); const a = { sortY, x: 0 }; gaps.get(key).asks.push(a); return a; };
+  RELS.forEach((r, i) => {
+    if (!relVis(r)) return;
+    const s = byId[r.from], t = byId[r.to], sy = rowY(s, r.fc), ty = rowY(t, r.tc);
+    const overlap = s.x < right(t) && t.x < right(s);
+    if (overlap) {
+      const left = s.side === 'customer';
+      const gap = left ? gapBefore(Math.min(s.x, t.x), vis) : gapAfter(Math.max(right(s), right(t)), vis);
+      plans.set(i, { u: true, left, s, t, sy, ty, lane: ask(gap, Math.min(sy, ty)) });
+    } else {
+      const goRight = right(s) <= t.x, sx = goRight ? right(s) : s.x, tx = goRight ? t.x : right(t);
+      const gapS = goRight ? gapAfter(right(s), vis) : gapBefore(s.x, vis);
+      const gapT = goRight ? gapBefore(t.x, vis) : gapAfter(right(t), vis);
+      const same = Math.round(gapS.start) === Math.round(gapT.start);
+      const laneS = ask(gapS, sy);
+      plans.set(i, { goRight, s, t, sx, tx, sy, ty, laneS, laneT: same ? laneS : ask(gapT, ty), same });
+    }
+  });
+  gaps.forEach(({ gap, asks }) => {
+    asks.sort((a, b) => a.sortY - b.sortY);
+    const w = Math.max(gap.end - gap.start - 2 * MARGIN, 20);
+    asks.forEach((a, n) => a.x = gap.start + MARGIN + (n + .5) * w / asks.length);
+  });
+  const used = [], out = new Map(), yMax = Math.max(...vis.map(t => t.y + t.h)) + 60, yMin = Math.min(...vis.map(t => t.y)) - 50;
+  plans.forEach((p, i) => {
+    if (p.u) {
+      out.set(i, { pts: [[p.left ? p.s.x : right(p.s), p.sy], [p.lane.x, p.sy], [p.lane.x, p.ty], [p.left ? p.t.x : right(p.t), p.ty]], sS: p.left ? 'L' : 'R', tS: p.left ? 'L' : 'R' });
+      return;
+    }
+    const sS = p.goRight ? 'R' : 'L', tS = p.goRight ? 'L' : 'R';
+    if (p.same) { out.set(i, { pts: [[p.sx, p.sy], [p.laneS.x, p.sy], [p.laneS.x, p.ty], [p.tx, p.ty]], sS, tS }); return; }
+    const x1 = Math.min(p.laneS.x, p.laneT.x), x2 = Math.max(p.laneS.x, p.laneT.x);
+    const between = vis.filter(t => t.x < x2 && right(t) > x1);
+    const free = y => between.every(t => y < t.y - 12 || y > t.y + t.h + 12) && used.every(u => Math.abs(u.y - y) > 9 || u.x2 < x1 || u.x1 > x2);
+    let cy = free(p.sy) ? p.sy : free(p.ty) ? p.ty : null;
+    if (cy === null) {
+      const mid = (p.sy + p.ty) / 2;
+      for (let d = 0; d < 6000 && cy === null; d += 10) { if (mid - d > yMin && free(mid - d)) cy = mid - d; else if (mid + d < yMax && free(mid + d)) cy = mid + d; }
+      if (cy === null) cy = yMin - 20;
+    }
+    used.push({ y: cy, x1, x2 });
+    out.set(i, { pts: [[p.sx, p.sy], [p.laneS.x, p.sy], [p.laneS.x, cy], [p.laneT.x, cy], [p.laneT.x, p.ty], [p.tx, p.ty]], sS, tS });
+  });
+  return out;
+}
+function pathOf(pts, rad = 9) {
+  let d = `M${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p = pts[i - 1], q = pts[i], n = pts[i + 1];
+    const d1 = Math.hypot(q[0] - p[0], q[1] - p[1]), d2 = Math.hypot(n[0] - q[0], n[1] - q[1]);
+    if (d1 < 0.5 || d2 < 0.5) { d += ` L${q[0]} ${q[1]}`; continue; }
+    const rr = Math.min(rad, d1 / 2, d2 / 2);
+    const a = [q[0] + (p[0] - q[0]) / d1 * rr, q[1] + (p[1] - q[1]) / d1 * rr];
+    const b = [q[0] + (n[0] - q[0]) / d2 * rr, q[1] + (n[1] - q[1]) / d2 * rr];
+    d += ` L${a[0]} ${a[1]} Q${q[0]} ${q[1]} ${b[0]} ${b[1]}`;
+  }
+  const l = pts[pts.length - 1]; return d + ` L${l[0]} ${l[1]}`;
+}
+const many = (x, y, d) => `<path d="M${x + 16 * d} ${y}L${x} ${y - 6}M${x + 16 * d} ${y}L${x} ${y}M${x + 16 * d} ${y}L${x} ${y + 6}"/><circle cx="${x + 24 * d}" cy="${y}" r="4"/>`;
+const one = (x, y, d, optional) => optional
+  ? `<path d="M${x + 12 * d} ${y - 6}V${y + 6}"/><circle cx="${x + 22 * d}" cy="${y}" r="4"/>`
+  : `<path d="M${x + 11 * d} ${y - 6}V${y + 6}M${x + 17 * d} ${y - 6}V${y + 6}"/>`;
+
+// ───────────────────────────── render ─────────────────────────────
+const svg = document.getElementById('svg'), world = document.getElementById('world');
+const gT = document.getElementById('tables'), gR = document.getElementById('rels');
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+const hue = t => t.side === 'setup' ? 'fin' : t.side === 'journal' ? 'jrnl' : t.side === 'vendor' ? 'creditor' : t.side === 'customer' ? 'debtor' : t.side === 'purchase' ? 'acct' : t.schema === 'pc' ? 'pc' : 'shared-fin';
+function tableSVG(t) {
+  const hc = `var(--${hue(t)})`;
+  let h = `<g class="tbl" data-id="${t.id}" transform="translate(${t.x},${t.y})">
+    <rect class="box" width="${t.w}" height="${t.h}" rx="8"/>
+    <g class="hd"><path d="M0 ${HH}V8a8 8 0 0 1 8-8H${t.w - 8}a8 8 0 0 1 8 8V${HH}Z" style="fill:${hc}"/>
+      <text x="12" y="25" style="font:bold 14px Consolas,ui-monospace,monospace"><tspan opacity=".7">${t.schema}.</tspan>${esc(t.name)}</text>
+      <text x="${t.w - 12}" y="25" text-anchor="end" style="font:11px 'Segoe UI',system-ui,sans-serif" opacity=".85">${esc(t.kind)}</text></g>`;
+  if (task !== null && TSTEP[t.id] === task) h += `<text class="newtag" x="2" y="-8">NEW · step ${task + 1}</text>`;
+  t.cols.forEach((r, i) => {
+    const yb = r.y + RH / 2;
+    if (task !== null) { const cs = colStep(t, r.n); if (cs === task && TSTEP[t.id] < task) h += `<rect class="newcol" x="2" y="${r.y}" width="${t.w - 4}" height="${RH}"/>`; }
+    if (r.pk && r.fk) h += `<rect class="pkr" x="9" y="${yb - 7}" width="30" height="14" rx="3"/><text class="bd pkt" x="24" y="${yb + 3.5}" text-anchor="middle">PK FK</text>`;
+    else if (r.pk) h += `<rect class="pkr" x="12" y="${yb - 7}" width="22" height="14" rx="3"/><text class="bd pkt" x="23" y="${yb + 3.5}" text-anchor="middle">PK</text>`;
+    else if (r.fk) h += `<rect class="fkr" x="12" y="${yb - 7}" width="22" height="14" rx="3"/><text class="bd fkt" x="23" y="${yb + 3.5}" text-anchor="middle">FK</text>`;
+    const fut = task !== null && colStep(t, r.n) > task ? ' futcol' : '';
+    h += `<text class="nm${fut}" x="46" y="${yb + 4.5}" ${r.pk ? 'font-weight="600"' : ''}>${esc(r.n)}</text>`;
+    let rx = t.w - 12;
+    if (r.nul) { h += `<text class="nl" x="${rx}" y="${yb + 4}" text-anchor="end">null</text>`; rx -= 30; }
+    if (showTypes) h += `<text class="ty" x="${rx}" y="${yb + 4.5}" text-anchor="end">${esc(r.t)}</text>`;
+    const nx = t.cols[i + 1];
+    if (r.pk && nx && !nx.pk) h += `<path class="sepl" d="M1 ${r.y + RH}H${t.w - 1}"/>`;
+  });
+  return h + '</g>';
+}
+function renderTables() { gT.innerHTML = TABLES.filter(isVis).map(tableSVG).join(''); }
+const BANDS = [['setup', 'BOOKS SETUP', 'var(--fin)', 'var(--fin-soft)'], ['journal', 'JOURNAL (THE BOOKS)', 'var(--jrnl)', 'var(--jrnl-band)'], ['purchase', 'SALES VOUCHER (T24)', 'var(--acct)', 'var(--acct-band)'], ['vendor', 'INVENTORY (STUB)', 'var(--creditor)', 'var(--creditor-band)'], ['shared', 'SHARED', 'var(--pc)', 'var(--shared-band)'], ['customer', 'CUSTOMER', 'var(--debtor)', 'var(--debtor-band)']];
+function renderBands() {
+  document.getElementById('bands').innerHTML = BANDS.filter(([sd]) => inView(sd)).map(([sd, label, col, bg]) => {
+    const ts = TABLES.filter(t => t.side === sd); if (!ts.length) return '';
+    const x = Math.min(...ts.map(t => t.x)) - 40, y = Math.min(...ts.map(t => t.y)) - 76, xe = Math.max(...ts.map(right)) + 40, ye = Math.max(...ts.map(t => t.y + t.h)) + 40;
+    return `<g class="band"><rect x="${x}" y="${y}" width="${xe - x}" height="${ye - y}" rx="14" style="fill:${bg};stroke:${col}" stroke-opacity=".45"/><text x="${x + 18}" y="${y + 44}" style="fill:${col}">${label}</text></g>`;
+  }).join('');
+}
+function renderRels() {
+  renderBands();
+  const routes = computeRoutes();
+  gR.innerHTML = RELS.map((r, i) => {
+    if (!routes.has(i)) return '';
+    const { pts, sS, tS } = routes.get(i), d = pathOf(pts);
+    const s = pts[0], e = pts[pts.length - 1];
+    const optional = rowOf(byId[r.from], r.fc).nul;
+    return `<g class="rel ${r.kind}" data-i="${i}"><path class="l" d="${d}"/>
+      <g class="sym">${many(s[0], s[1], sS === 'R' ? 1 : -1)}${one(e[0], e[1], tS === 'R' ? 1 : -1, optional)}</g><path class="hit" d="${d}"/></g>`;
+  }).join('');
+}
+function moveTable(t) { gT.querySelector(`[data-id="${t.id}"]`).setAttribute('transform', `translate(${t.x},${t.y})`); }
+
+// ───────────────────────────── pan / zoom ─────────────────────────────
+const canvas = document.getElementById('canvas');
+let k = 1, tx = 0, ty = 0, rafRels = 0, raf = 0;
+function scheduleRels() { if (rafRels) return; rafRels = requestAnimationFrame(() => { rafRels = 0; renderRels(); applyHighlight(); drawMini(); }); }
+const zoomPct = document.getElementById('zoomPct');
+function apply() {
+  if (raf) return;
+  raf = requestAnimationFrame(() => {
+    raf = 0;
+    world.setAttribute('transform', `translate(${tx},${ty}) scale(${k})`);
+    zoomPct.textContent = Math.round(k * 100) + '%';
+    const g = k < 0.5 ? 48 * k : 24 * k;
+    canvas.style.backgroundSize = `${g}px ${g}px`;
+    canvas.style.backgroundPosition = `${tx}px ${ty}px`;
+    miniView();
+  });
+}
+function bounds() {
+  const v = TABLES.filter(isVis), xs = v.map(t => t.x), ys = v.map(t => t.y - 76), xe = v.map(right), ye = v.map(t => t.y + t.h);
+  return { x: Math.min(...xs) - 60, y: Math.min(...ys) - 20, w: Math.max(...xe) - Math.min(...xs) + 120, h: Math.max(...ye) - Math.min(...ys) + 80 };
+}
+function fit() {
+  const b = bounds(), cw = canvas.clientWidth, ch = canvas.clientHeight;
+  k = Math.min(cw / b.w, ch / b.h, 1.4);
+  tx = (cw - b.w * k) / 2 - b.x * k; ty = (ch - b.h * k) / 2 - b.y * k; apply();
+}
+function zoomAt(f, cx, cy) { const nk = Math.max(0.05, Math.min(4, k * f)); f = nk / k; tx = cx - (cx - tx) * f; ty = cy - (cy - ty) * f; k = nk; apply(); }
+function centerOn(t) {
+  const cw = canvas.clientWidth, ch = canvas.clientHeight;
+  k = Math.max(k, 0.8);
+  tx = cw / 2 - (t.x + t.w / 2) * k;
+  ty = t.h * k > ch - 80 ? 40 - t.y * k : ch / 2 - (t.y + t.h / 2) * k;
+  apply();
+}
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  zoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.006 : 0.0011)), e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+let drag = null;
+svg.addEventListener('pointerdown', e => {
+  const g = e.target.closest('.tbl');
+  svg.setPointerCapture(e.pointerId);
+  if (g) { const t = byId[g.dataset.id]; drag = { t, x: e.clientX, y: e.clientY, ox: t.x, oy: t.y, moved: false }; gT.appendChild(g); }
+  else { drag = { pan: true, x: e.clientX, y: e.clientY, otx: tx, oty: ty, moved: false, hitRel: e.target.closest('.rel') }; canvas.classList.add('panning'); }
+});
+svg.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+  if (drag.pan) { tx = drag.otx + dx; ty = drag.oty + dy; apply(); }
+  else { drag.t.x = Math.round(drag.ox + dx / k); drag.t.y = Math.round(drag.oy + dy / k); moveTable(drag.t); scheduleRels(); }
+});
+svg.addEventListener('pointerup', () => {
+  if (!drag) return;
+  if (!drag.moved) { if (drag.pan) { if (drag.hitRel) select(null, +drag.hitRel.dataset.i); else select(null); } else select(drag.t.id); }
+  canvas.classList.remove('panning'); drag = null;
+});
+
+// ───────────────────────────── selection / details ─────────────────────────────
+let selT = null, selR = null;
+function applyHighlight() {
+  const tbls = gT.querySelectorAll('.tbl'), rels = gR.querySelectorAll('.rel');
+  tbls.forEach(g => { g.classList.toggle('new', task !== null && TSTEP[g.dataset.id] === task); g.classList.remove('ghost'); });
+  if (selT === null && selR === null && task !== null) {
+    tbls.forEach(g => { g.classList.remove('dim', 'sel'); g.classList.toggle('ghost', TSTEP[g.dataset.id] > task); });
+    rels.forEach(g => { const r = RELS[+g.dataset.i], a = TSTEP[r.from], b = TSTEP[r.to];
+      g.classList.toggle('dim', a > task || b > task); g.classList.toggle('hl', a <= task && b <= task && (a === task || b === task)); });
+  }
+  else if (selT === null && selR === null) { tbls.forEach(g => g.classList.remove('dim', 'sel')); rels.forEach(g => g.classList.remove('dim', 'hl')); }
+  else {
+    const near = new Set(), hot = new Set();
+    if (selT) { near.add(selT); RELS.forEach((r, i) => { if (r.from === selT || r.to === selT) { hot.add(i); near.add(r.from); near.add(r.to); } }); }
+    else { const r = RELS[selR]; hot.add(selR); near.add(r.from); near.add(r.to); }
+    tbls.forEach(g => { g.classList.toggle('dim', !near.has(g.dataset.id)); g.classList.toggle('sel', g.dataset.id === selT); });
+    rels.forEach(g => { const h = hot.has(+g.dataset.i); g.classList.toggle('hl', h); g.classList.toggle('dim', !h); });
+  }
+  document.querySelectorAll('.tl').forEach(b => b.classList.toggle('on', b.dataset.id === selT));
+}
+const selbar = document.getElementById('selbar');
+function select(id, ri) {
+  selT = id || null; selR = (ri === undefined) ? null : ri;
+  applyHighlight(); renderDetails();
+  if (selT) { selbar.innerHTML = `<code>${esc(selT)}</code> · details below ↓`; selbar.style.display = 'block'; }
+  else if (selR !== null) { selbar.innerHTML = `<code>${esc(RELS[selR].from)}.${esc(RELS[selR].fc)}</code> → <code>${esc(RELS[selR].to)}</code> · details below ↓`; selbar.style.display = 'block'; }
+  else selbar.style.display = 'none';
+}
+const det = document.getElementById('details');
+selbar.onclick = () => det.scrollIntoView({ behavior: 'smooth', block: 'start' });
+const SIDE_LABEL = { setup: 'Books setup', journal: 'Journal (the books)', purchase: 'Sales voucher (T24)', vendor: 'Inventory (stub)', customer: 'Customer side', shared: 'Shared' };
+const kindPill = t => `<span class="kind" style="background:var(--${hue(t)}-soft);color:var(--${hue(t)})">${t.schema === 'fin' ? 'Finance' : t.schema === 'inv' ? 'Inventory' : 'Parties & Contacts'} · ${SIDE_LABEL[t.side]}</span>`;
+function tableHTML(t, withShow) {
+  const fks = RELS.filter(r => r.from === t.id), refs = RELS.filter(r => r.to === t.id);
+  const li = xs => `<ul>${xs.map(x => `<li><code>${esc(x)}</code></li>`).join('')}</ul>`;
+  return `${withShow ? `<button class="show" data-id="${t.id}">show on the diagram ↑</button>` : ''}
+    <h2>${esc(t.schema)}.${esc(t.name)}<small>${esc(t.kind)}${t.rows ? ` · ${t.rows} seed rows` : ''}</small></h2>
+    ${kindPill(t)}<span class="kind" style="background:var(--new-soft);color:var(--new)">added in step ${TSTEP[t.id] + 1}: ${esc(STEPS[TSTEP[t.id]].short.replace(/^\d+ · /, ''))}</span>
+    ${t.doc ? `<p class="tdoc">${esc(t.doc)}</p>` : ''}
+    <div class="cols2"><div>
+    <h3>Keys</h3>${li(t.keys)}
+    ${fks.length ? `<h3>References</h3><ul>${fks.map(r => `<li><code>${esc(r.cols)}</code> → <code>${esc(r.to)}</code></li>`).join('')}</ul>` : ''}
+    ${refs.length ? `<h3>Referenced by</h3><ul>${refs.map(r => `<li><code>${esc(r.from)}</code>.${esc(r.fc)}</li>`).join('')}</ul>` : ''}
+    ${t.checks.length ? `<h3>Checks (${t.checks.length})</h3>${li(t.checks)}` : ''}
+    ${t.indexes.length ? `<h3>Indexes</h3>${li(t.indexes)}` : ''}
+    ${t.triggers.length ? `<h3>Triggers</h3>${li(t.triggers)}` : ''}
+    </div><div>
+    <h3>Columns (${t.cols.length})</h3><div class="tw"><table>${t.cols.map(r => `<tr><td>${r.pk ? '<span class="b pk">PK</span>' : ''}${r.fk ? '<span class="b fk">FK</span>' : ''}${esc(r.n)}${CSTEP[t.id + '.' + r.n] !== undefined ? `<span class="addc">step ${CSTEP[t.id + '.' + r.n] + 1}</span>` : ''}</td><td class="t">${esc(r.t)}${r.nul ? ' <i class="n">null</i>' : ''}</td><td class="dv">${esc(r.d || '')}${r.note ? `<div class="cn">${esc(r.note)}</div>` : ''}</td></tr>`).join('')}</table></div>
+    </div></div>`;
+}
+function renderDetails() {
+  det.classList.toggle('sel', selT !== null || selR !== null);
+  const C = DATA.counts;
+  if (selR !== null) {
+    const r = RELS[selR], s = byId[r.from], t = byId[r.to], opt = rowOf(s, r.fc).nul;
+    det.innerHTML = `<h2>${esc(r.from)}.${esc(r.fc)}<small>→ ${esc(r.to)}.${esc(r.tc)}</small></h2>
+      <span class="kind" style="background:${r.kind === 'pc' ? 'var(--pc-soft)' : 'var(--fin-soft)'};color:${r.kind === 'pc' ? 'var(--pc)' : 'var(--fin)'}">${r.kind === 'pc' ? 'foreign key into Parties & Contacts' : r.to.startsWith('inv.') ? 'foreign key into Inventory' : 'foreign key inside Finance'}</span>
+      <p><code>${esc(r.name)}</code> on <code>(${esc(r.cols)})</code></p>
+      <p>Many <code>${esc(s.name)}</code> rows can point at one <code>${esc(t.name)}</code> row. ${opt ? 'The column is nullable, so a row may point at nothing yet.' : 'The column is NOT NULL: every row points at exactly one.'}</p>
+      ${r.composite ? `<p>Declared on several columns${/workspace_id/.test(r.cols) ? ', including <code>workspace_id</code>, so a row can never reference another workspace' : ''}.</p>` : ''}`;
+    return;
+  }
+  if (!selT && task !== null) {
+    const s = STEPS[task], n = stepCounts(task);
+    const chips = ids => ids.map(id => `<button class="tl" data-id="${id}">${esc(id)}<small>${byId[id].cols.length}</small></button>`).join('');
+    det.innerHTML = `<h2>Step ${task + 1} of ${STEPS.length} · ${esc(s.title)}<small>${esc(s.when)}</small></h2>
+      <div class="steps">${STEPS.map((x, i) => `<button data-step="${i}" class="${i === task ? 'on' : ''}">${esc(x.short)}</button>`).join('')}</div>
+      <div class="kpis"><span><b>+${n.newTables}</b>new tables</span><span><b>+${n.newCols}</b>columns on earlier tables</span><span><b>${n.tables}</b>tables so far</span><span><b>${n.cols}</b>columns so far</span><span><b>${n.fks}</b>foreign keys so far</span></div>
+      <p>${esc(s.why)}</p>
+      <h3>Where it starts, and the flow</h3><div class="flow">${esc(s.flow)}</div>
+      <div class="cols2"><div>
+      <h3>New tables in this step (${s.tables.length})</h3><div class="chips">${chips(s.tables)}</div>
+      ${s.cols.length ? `<h3>Columns added to earlier tables (${s.cols.length})</h3><ul>${s.cols.map(([t, c]) => `<li><code>${esc(t)}.${esc(c)}</code></li>`).join('')}</ul>${s.colsNote ? `<p class="n">${esc(s.colsNote)}</p>` : ''}` : ''}
+      </div><div>
+      <h3>Reading the diagram now</h3>
+      <ul><li><b style="color:var(--new)">Green outline, "NEW"</b>: tables this step added.</li>
+      <li><span style="background:var(--new-soft);padding:0 4px">Green row</span>: a column this step added to an earlier table.</li>
+      <li>Normal: tables from earlier steps, still used.</li>
+      <li>Faded: not built yet at this step (later steps). Faded column names: added later.</li>
+      <li>Click any table for its details; <b>Esc</b> comes back here.</li></ul>
+      ${STEP_ERRORS.length ? `<p style="color:#b91c1c">Steps do not match the database: ${esc(STEP_ERRORS.join('; '))}</p>` : ''}
+      </div></div>`;
+    det.querySelectorAll('.steps button').forEach(b => b.onclick = () => setTask(+b.dataset.step));
+    det.querySelectorAll('.chips .tl').forEach(b => b.onclick = () => { select(b.dataset.id); centerOn(byId[b.dataset.id]); canvas.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    return;
+  }
+  if (!selT) {
+    det.innerHTML = `<h2>Our sales engine (Vijay)<small>what the diagram covers</small></h2>
+      <div class="kpis"><span><b>${C.tables}</b>tables (fin ${C.fin}, pc ${C.pc}, inv ${C.inv})</span><span><b>${C.columns}</b>columns</span><span><b>${C.fks}</b>foreign keys</span><span><b>${C.checks}</b>checks</span><span><b>${C.unique + C.unique_idx}</b>unique keys</span><span><b>${C.exclude}</b>exclude</span><span><b>${C.docs}</b>table notes</span><span><b>${C.notes}</b>column notes</span></div>
+      <p>The whole of <code>customer_onboarding_schema.dbml</code>, rev 16 (23 Nov 2026): S1 part 1 Set up the books + T12 Create a customer + T24 Sales voucher entry, with the cost of goods sold from inventory. Use <b>All · Books setup · Sales voucher · Customer · Inventory</b> at the top to see one side; the shared tables stay visible. Click a table for its note, keys, checks and columns; click a line for the relationship. Every table is written out in full further down.</p>
+      <div class="cols2"><div>
+      <h3>How this page was made</h3>
+      <ul>
+        <li>The <code>.dbml</code> was exported to PostgreSQL (<code>out.sql</code>, with its hand-added GENERATED columns and EXCLUDE) and run on an empty PostgreSQL 18 database.</li>
+        <li>Every table, column, type, default, key, check, index, note and foreign key on this page was then read from that database. Nothing is typed by hand.</li>
+        <li>Built with the same tool and layout as Manoj's whole-engine ER page, so the two can be read side by side.</li>
+      </ul>
+      <h3>The bands</h3>
+      <ul>
+        <li><b>Books setup</b>: what the company sets once, before any entry. Ours (S1 part 1, rev 16): <code>book</code> (one primary book per company, a stub), <code>setting_definition</code> (a new setting is a row, not a column), <code>book_setting</code> (each value dated and approved: perpetual / periodic, FIFO / weighted average). Manoj's, as built: <code>branch</code> (S3), <code>fiscal_year</code> (S1), <code>document_sequence</code> (numbering).</li>
+        <li><b>Journal (the books)</b>: <code>journal_entry</code> / <code>journal_line</code>, Manoj's. Every voucher, sales or purchase, posts here; nothing else is the books.</li>
+        <li><b>Sales voucher (T24)</b>: <code>sales_invoice</code> / <code>_line</code> / <code>_history</code>, the twin of his purchase voucher. It reads the setup and posts one journal entry.</li>
+        <li><b>Customer</b>: the customer request, its approvals and history, and the debtor account with its satellites (T12).</li>
+        <li><b>Inventory (stub)</b>: <code>inv.stock_lot</code>, only so the sale can read its cost (FIFO or weighted average). The inventory module owns it (G3).</li>
+        <li><b>Shared</b>: Parties &amp; Contacts (<code>pc</code>, P&amp;C's, followed never changed), the chart of accounts, GST state codes, bank accounts, and the event outbox.</li>
+      </ul>
+      </div><div>
+      <h3>What this page cannot tell you</h3>
+      <ul>
+        <li>Aikyat's real setting values: the CA decides (G3); the test uses perpetual + FIFO.</li>
+        <li>The posting rules (R1 to R13) and the Submit checks: they live in the app's <code>rules.ts</code> and the T24 doc, not in the schema.</li>
+        <li>Which ledger codes are proposed (e.g. 501040 Cost of Goods Sold): see the notes on the tables and the gap list (<code>task_tracker/03_gaps.md</code>).</li>
+        <li>Seed data: ${C.seeded} tables hold rows (the count is shown on each table).</li>
+      </ul>
+      ${DATA.functions.length ? `<h3>Database functions</h3>` + DATA.functions.map(f => `<details class="fn"><summary>${esc(f.name)}(${esc(f.args)}) · ${esc(f.lang)}</summary><pre>${esc(f.body)}</pre></details>`).join('') : ''}
+      </div></div>`;
+    return;
+  }
+  det.innerHTML = tableHTML(byId[selT], false);
+}
+function renderReference() {
+  const groups = [['setup', 'Books setup', 'var(--fin)'], ['journal', 'Journal (the books)', 'var(--jrnl)'], ['purchase', 'Sales voucher (T24)', 'var(--acct)'], ['customer', 'Customer tables', 'var(--debtor)'], ['vendor', 'Inventory (stub)', 'var(--creditor)'], ['shared', 'Shared tables', 'var(--pc)']];
+  document.getElementById('reference').innerHTML = groups.map(([sc, label, col]) => `<h2 class="sec"><i style="background:${col}"></i>${label}</h2>` +
+    TABLES.filter(t => t.side === sc).map(t => `<div class="d">${tableHTML(t, true)}</div>`).join('')).join('');
+  document.querySelectorAll('.show').forEach(b => b.onclick = () => { reveal(b.dataset.id); select(b.dataset.id); centerOn(byId[b.dataset.id]); canvas.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+}
+const tip = document.getElementById('tip');
+gR.addEventListener('pointerover', e => {
+  const g = e.target.closest('.rel'); if (!g) return;
+  const r = RELS[+g.dataset.i];
+  tip.innerHTML = `<code>${esc(r.from)}.${esc(r.fc)}</code> → <code>${esc(r.to)}.${esc(r.tc)}</code><br>${esc(r.name)}`;
+  tip.style.display = 'block';
+});
+gR.addEventListener('pointermove', e => { const b = canvas.getBoundingClientRect(); tip.style.left = (e.clientX - b.left + 14) + 'px'; tip.style.top = (e.clientY - b.top + 14) + 'px'; });
+gR.addEventListener('pointerout', e => { if (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest('.rel')) tip.style.display = 'none'; });
+function renderList() {
+  const groups = [['setup', 'Books setup', 'var(--fin)'], ['journal', 'Journal', 'var(--jrnl)'], ['purchase', 'Sales voucher', 'var(--acct)'], ['customer', 'Customer', 'var(--debtor)'], ['vendor', 'Inventory', 'var(--creditor)'], ['shared', 'Shared', 'var(--pc)']];
+  document.getElementById('list').innerHTML =
+    `<div class="howto" style="width:100%"><b>Scroll</b> on the diagram to zoom at the pointer · <b>drag</b> the canvas to pan · <b>drag a table</b> to move it, the lines follow · <b>click</b> a table or a line and its details appear here · <b>Esc</b> clears · <b>F</b> fits · <b>0</b> is 100%</div>` +
+    groups.map(([sc, label, col]) => `<h4><i style="background:${col}"></i>${label}</h4>` +
+      TABLES.filter(t => t.side === sc).map(t => `<button class="tl" data-id="${t.id}">${esc(t.schema === 'pc' ? 'pc.' + t.name : t.name)}<small>${t.cols.length}</small></button>`).join('') + '<span class="sep"></span>').join('');
+  document.querySelectorAll('.tl').forEach(b => b.onclick = () => { reveal(b.dataset.id); select(b.dataset.id); centerOn(byId[b.dataset.id]); canvas.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+}
+// ───────────────────────────── minimap ─────────────────────────────
+const mini = document.getElementById('mini');
+let miniRect = null;
+function drawMini() {
+  const b = bounds();
+  mini.setAttribute('viewBox', `${b.x} ${b.y} ${b.w} ${b.h}`);
+  mini.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  mini.innerHTML = TABLES.filter(isVis).map(t => `<rect x="${t.x}" y="${t.y}" width="${t.w}" height="${t.h}" rx="12" style="fill:var(--${hue(t)});opacity:.45"/>`).join('') +
+    `<rect id="miniRect" style="fill:var(--fin-soft);fill-opacity:.4;stroke:var(--fin)"/>`;
+  miniRect = document.getElementById('miniRect');
+  miniView();
+}
+function miniView() {
+  if (!miniRect) return;
+  miniRect.setAttribute('x', -tx / k); miniRect.setAttribute('y', -ty / k);
+  miniRect.setAttribute('width', canvas.clientWidth / k); miniRect.setAttribute('height', canvas.clientHeight / k);
+  miniRect.setAttribute('stroke-width', Math.max(2, 3 / Math.min(1, k)));
+}
+mini.addEventListener('click', e => {
+  const b = bounds(), r = mini.getBoundingClientRect(), sc = Math.min(r.width / b.w, r.height / b.h);
+  const ox = (r.width - b.w * sc) / 2, oy = (r.height - b.h * sc) / 2;
+  const wx = b.x + (e.clientX - r.left - ox) / sc, wy = b.y + (e.clientY - r.top - oy) / sc;
+  tx = canvas.clientWidth / 2 - wx * k; ty = canvas.clientHeight / 2 - wy * k; apply();
+});
+// ───────────────────────────── controls ─────────────────────────────
+const taskSel = document.getElementById('task');
+STEPS.forEach((s, i) => { const o = document.createElement('option'); o.value = i; o.textContent = s.short; taskSel.appendChild(o); });
+function setTask(i) {
+  task = (i === '' || i === null || i === undefined) ? null : +i;
+  taskSel.value = task === null ? '' : String(task);
+  document.getElementById('taskWrap').classList.toggle('on', task !== null);
+  if (task !== null && view !== 'all') { view = 'all'; document.querySelectorAll('.views button').forEach(b => b.classList.toggle('on', b.dataset.view === 'all')); renderRels(); drawMini(); }
+  selT = null; selR = null; selbar.style.display = 'none';
+  renderTables(); applyHighlight(); renderDetails();
+}
+taskSel.onchange = () => setTask(taskSel.value);
+function setView(v) {
+  view = v;
+  document.querySelectorAll('.views button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+  select(null); renderTables(); renderRels(); applyHighlight(); drawMini(); fit();
+}
+function reveal(id) { if (!isVis(byId[id])) setView('all'); }
+document.querySelectorAll('.views button').forEach(b => b.onclick = () => setView(b.dataset.view));
+document.getElementById('zoomIn').onclick = () => zoomAt(1.25, canvas.clientWidth / 2, canvas.clientHeight / 2);
+document.getElementById('zoomOut').onclick = () => zoomAt(0.8, canvas.clientWidth / 2, canvas.clientHeight / 2);
+document.getElementById('fit').onclick = fit;
+document.getElementById('one').onclick = () => zoomAt(1 / k, canvas.clientWidth / 2, canvas.clientHeight / 2);
+document.getElementById('reset').onclick = () => { layout(); renderTables(); renderRels(); applyHighlight(); drawMini(); fit(); };
+document.getElementById('showTypes').onchange = e => {
+  showTypes = e.target.checked;
+  TABLES.forEach(t => { const x = t.x, y = t.y; measure(t); t.x = x; t.y = y; });
+  COLUMNS.forEach(col => { const cw = Math.max(...col.map(id => byId[id].w)); col.forEach(id => byId[id].w = cw); });
+  renderTables(); renderRels(); applyHighlight(); drawMini();
+};
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === '+' || e.key === '=') zoomAt(1.25, canvas.clientWidth / 2, canvas.clientHeight / 2);
+  else if (e.key === '-') zoomAt(0.8, canvas.clientWidth / 2, canvas.clientHeight / 2);
+  else if (e.key === '0') zoomAt(1 / k, canvas.clientWidth / 2, canvas.clientHeight / 2);
+  else if (e.key === 'f' || e.key === 'F') fit();
+  else if (e.key === 'Escape') select(null);
+});
+window.addEventListener('resize', () => { drawMini(); });
+// ───────────────────────────── go ─────────────────────────────
+layout(); renderTables(); renderRels(); renderList(); renderDetails(); renderReference(); drawMini(); fit();
+</script>

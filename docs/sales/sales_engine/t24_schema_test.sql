@@ -1,12 +1,14 @@
--- T24 · the schema proved on PostgreSQL (rev 15, 20-Nov-2026): fin.sales_invoice / _line / _history, the TWIN of Manoj's
+-- T24 · the schema proved on PostgreSQL (rev 16, 23-Nov-2026): fin.sales_invoice / _line / _history, the TWIN of Manoj's
 -- purchase voucher (fin.purchase_invoice / _line / _history), posting into the shared fin.journal_entry / fin.journal_line.
 -- Rev 15: the sale also posts its COST in the same entry (rule R13): Dr 501040 Cost of Goods Sold · Cr 106020 Finished Goods per
 -- lot (FIFO), from inv.stock_lot (a stub of inventory; lot costs illustrative); the lots go down at approval.
+-- Rev 16 (S1 part 1): the book and its dated settings; the voucher reads inventory_mode and costing_method in force on its
+-- invoice date and stamps them.
 -- Billing raises the invoice; the Accounts Executive books its entry; the Accounts Manager approves; it posts.
 -- Run after out.sql on an empty database:  psql -v ON_ERROR_STOP=1 -f out.sql -f t24_schema_test.sql
 -- 1. Seeds the smallest master data (scenario names; ids are fixed test values).
 -- 2. Walks scenario B4-01 (Billing's KA/INV/2627/0143 → Sri Lakshmi Distributors, ₹7,48,125.00): submitted → approved → posted.
--- 3. Tries 33 wrong rows (N1–N33): each must be refused by the named CHECK, key, EXCLUDE or foreign key
+-- 3. Tries 42 wrong rows (N1–N42): each must be refused by the named CHECK, key, EXCLUDE or foreign key
 --    (23503 = a foreign key; 428C9 = a generated column).
 -- 4. Accepted, as his: a correction of a posted voucher (SV-0012-1: the old entry reversed, the new one posted, same invoice
 --    number in one chain); a voucher sent back and sent again; a B2C sale paid by UPI (no customer line).
@@ -106,6 +108,20 @@ INSERT INTO inv.stock_lot (stock_lot_id, workspace_id, branch_id, godown_code, i
   ('5a000000-0000-4000-8000-000000000001', 'aikyat-biscuits', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 'KA-FG', 'FG-101', 'G-2604', '2026-04-14', 300, 300, 540),
   ('5a000000-0000-4000-8000-000000000002', 'aikyat-biscuits', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 'KA-FG', 'FG-101', 'G-2608', '2026-08-12', 2000, 2000, 560),
   ('5a000000-0000-4000-8000-000000000003', 'aikyat-biscuits', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 'KA-FG', 'FG-102', 'C-2607', '2026-07-16', 1500, 1500, 760);
+-- Rev 16 · S1 part 1: Aikyat's primary book, the 2 settings T24 needs, and its values (ILLUSTRATIVE: the CA decides, G3).
+INSERT INTO fin.book (book_id, workspace_id, operated_party_id, book_code, display_name, is_primary) VALUES
+  ('0b000000-0000-4000-8000-000000000001', 'aikyat-biscuits', '0f000000-0000-4000-8000-000000000001', 'PRIMARY', 'Aikyat Biscuits · primary book', true);
+INSERT INTO fin.setting_definition (setting_code, display_name, allowed_values, owner_task, read_by) VALUES
+  ('inventory_mode', 'Inventory accounting', '{perpetual,periodic}', 'S1 part 1 (for T24); S4 owns it', 'T24 rule R13, T11'),
+  ('costing_method', 'Costing method', '{fifo,weighted_average}', 'S1 part 1 (for T24); S4 owns it', 'T24 rule R13, T9');
+INSERT INTO fin.book_setting (workspace_id, book_id, setting_code, setting_value, effective_from, reason, approved_by_contact_id, approved_at) VALUES
+  ('aikyat-biscuits', '0b000000-0000-4000-8000-000000000001', 'inventory_mode', 'perpetual', '2026-04-01', 'First setting (illustrative)', 'c0000000-0000-4000-8000-000000000002', now()),
+  ('aikyat-biscuits', '0b000000-0000-4000-8000-000000000001', 'costing_method', 'fifo', '2026-04-01', 'First setting (illustrative)', 'c0000000-0000-4000-8000-000000000002', now());
+-- What the rule reads: the company's primary book, the setting in force on a date.
+CREATE FUNCTION pg_temp.setting(company uuid, code text, on_date date) RETURNS text LANGUAGE sql AS $$
+  SELECT s.setting_value FROM fin.book_setting s JOIN fin.book b ON b.book_id = s.book_id
+   WHERE b.operated_party_id = company AND b.is_primary AND s.setting_code = code
+     AND s.effective_from <= on_date AND (s.effective_until IS NULL OR on_date < s.effective_until) $$;
 INSERT INTO fin.document_sequence (workspace_id, operated_party_id, document_type, last_number) VALUES
   ('aikyat-biscuits', '0f000000-0000-4000-8000-000000000001', 'sales_invoice', 11);
 
@@ -113,7 +129,9 @@ INSERT INTO fin.document_sequence (workspace_id, operated_party_id, document_typ
 -- Submit (Teja): the voucher is created at Submit (as his), number SV-0012; the lines the rule R1 proposed, kept as they are.
 UPDATE fin.document_sequence SET last_number = last_number + 1 WHERE document_type = 'sales_invoice';
 INSERT INTO fin.sales_invoice (sales_invoice_id, workspace_id, operated_party_id, branch_id, debtor_account_id, internal_ref_no, amends_sales_invoice_id, original_sales_invoice_id, revision_no, posting_date, invoice_no, invoice_date, due_date, narration, stage, submitted_by_contact_id, submitted_at) VALUES ('51000000-0000-4000-8000-000000000012', 'aikyat-biscuits', '0f000000-0000-4000-8000-000000000001', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 'da000000-0000-4000-8000-000000000001', 'SV-0012', NULL, '51000000-0000-4000-8000-000000000012', 0, '2026-10-07', 'KA/INV/2627/0143', '2026-10-07', '2026-11-06', 'Being goods sold', 'submitted', 'c0000000-0000-4000-8000-000000000001', now());
-UPDATE fin.sales_invoice SET costing_method = 'fifo' WHERE sales_invoice_id = '51000000-0000-4000-8000-000000000012';
+-- Rev 16: the settings in force on the invoice date, stamped (perpetual + FIFO: so the cost lines below are FIFO lots).
+UPDATE fin.sales_invoice SET inventory_mode = pg_temp.setting(operated_party_id, 'inventory_mode', invoice_date),
+                             costing_method = pg_temp.setting(operated_party_id, 'costing_method', invoice_date) WHERE sales_invoice_id = '51000000-0000-4000-8000-000000000012';
 INSERT INTO fin.sales_invoice_line (workspace_id, sales_invoice_id, line_no, side, ledger_account_code, debtor_account_id, inventory_item_code, quantity, stock_lot_id, amount) VALUES
   ('aikyat-biscuits', '51000000-0000-4000-8000-000000000012', 1, 'Dr', NULL, 'da000000-0000-4000-8000-000000000001', NULL, NULL, NULL, 748125.00),
   ('aikyat-biscuits', '51000000-0000-4000-8000-000000000012', 2, 'Cr', '401010', NULL, NULL, NULL, NULL, 712500.00),
@@ -144,7 +162,7 @@ INSERT INTO fin.sales_invoice_history (workspace_id, sales_invoice_id, version_n
   SELECT 'aikyat-biscuits', sales_invoice_id, 2, 'decide', to_jsonb(x), 'c0000000-0000-4000-8000-000000000002', NULL FROM fin.sales_invoice x WHERE sales_invoice_id = '51000000-0000-4000-8000-000000000012';
 
 \echo '--- B4-01 posted: the voucher (with its 2 generated columns), what the customer owes (its journal lines), the trial balance'
-SELECT internal_ref_no, invoice_no, invoice_key, invoice_financial_year, stage, due_date FROM fin.sales_invoice;
+SELECT internal_ref_no, invoice_no, invoice_key, invoice_financial_year, stage, due_date, inventory_mode, costing_method FROM fin.sales_invoice;
 SELECT a.account_name, a.ledger_account_code, sum(l.debit - l.credit) AS owes
   FROM fin.journal_line l JOIN fin.debtor_account a ON a.debtor_account_id = l.debtor_account_id GROUP BY 1, 2;
 SELECT ledger_account_code, sum(debit) AS dr, sum(credit) AS cr FROM fin.journal_line GROUP BY 1 ORDER BY 1;
@@ -237,13 +255,32 @@ SELECT r FROM (VALUES
   (pg_temp.expect('N32 the same lot twice',
     $q$INSERT INTO inv.stock_lot (workspace_id, branch_id, godown_code, item_code, lot_no, received_on, quantity_received, quantity_left, unit_cost) VALUES ('aikyat-biscuits', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 'KA-FG', 'FG-101', 'G-2604', '2026-04-14', 1, 1, 1)$q$, 'stock_lot_lot_key')),
   (pg_temp.expect('N33 a negative cost',
-    $q$UPDATE inv.stock_lot SET unit_cost = -1$q$, 'stock_lot_unit_cost_not_negative'))
+    $q$UPDATE inv.stock_lot SET unit_cost = -1$q$, 'stock_lot_unit_cost_not_negative')),
+  (pg_temp.expect('N34 a second primary book for the company',
+    $q$INSERT INTO fin.book (workspace_id, operated_party_id, book_code, display_name, is_primary) VALUES ('aikyat-biscuits', '0f000000-0000-4000-8000-000000000001', 'IFRS', 'IFRS book', true)$q$, 'book_one_primary_per_company')),
+  (pg_temp.expect('N35 a book for a company we do not run',
+    $q$INSERT INTO fin.book (workspace_id, operated_party_id, book_code, display_name, is_primary) VALUES ('aikyat-biscuits', gen_random_uuid(), 'PRIMARY', 'x', true)$q$, '23503')),
+  (pg_temp.expect('N36 a setting value not allowed (LIFO)',
+    $q$INSERT INTO fin.book_setting (workspace_id, book_id, setting_code, setting_value, effective_from, approved_by_contact_id, approved_at) VALUES ('aikyat-biscuits', '0b000000-0000-4000-8000-000000000001', 'costing_method', 'lifo', '2027-04-01', 'c0000000-0000-4000-8000-000000000002', now())$q$, 'book_setting_value_allowed')),
+  (pg_temp.expect('N37 a setting nobody defined',
+    $q$INSERT INTO fin.book_setting (workspace_id, book_id, setting_code, setting_value, effective_from, approved_by_contact_id, approved_at) VALUES ('aikyat-biscuits', '0b000000-0000-4000-8000-000000000001', 'tax_mode', 'x', '2027-04-01', 'c0000000-0000-4000-8000-000000000002', now())$q$, 'book_setting_value_allowed')),
+  (pg_temp.expect('N38 two methods in force on the same day',
+    $q$INSERT INTO fin.book_setting (workspace_id, book_id, setting_code, setting_value, effective_from, approved_by_contact_id, approved_at) VALUES ('aikyat-biscuits', '0b000000-0000-4000-8000-000000000001', 'costing_method', 'weighted_average', '2026-10-01', 'c0000000-0000-4000-8000-000000000002', now())$q$, 'book_setting_no_overlap')),
+  (pg_temp.expect('N39 a setting that ends before it starts',
+    $q$UPDATE fin.book_setting SET effective_until = '2026-03-01'$q$, 'book_setting_period_is_ordered')),
+  (pg_temp.expect('N40 a periodic voucher that still names a costing method',
+    $q$UPDATE fin.sales_invoice SET inventory_mode = 'periodic'$q$, 'sales_invoice_method_only_when_perpetual')),
+  (pg_temp.expect('N41 a perpetual voucher with no costing method',
+    $q$UPDATE fin.sales_invoice SET costing_method = NULL$q$, 'sales_invoice_method_only_when_perpetual')),
+  (pg_temp.expect('N42 an unknown inventory mode',
+    $q$UPDATE fin.sales_invoice SET inventory_mode = 'hybrid', costing_method = NULL$q$, 'sales_invoice_inventory_mode_valid'))
 ) AS t(r);
 
 -- ---------------------------------------------------------------- 4 · accepted, as his
 \echo '--- a correction of the posted SV-0012 (Sale of Services instead of Sale of Products): SV-0012-1, same invoice, one chain'
 INSERT INTO fin.sales_invoice (sales_invoice_id, workspace_id, operated_party_id, branch_id, debtor_account_id, internal_ref_no, amends_sales_invoice_id, original_sales_invoice_id, revision_no, posting_date, invoice_no, invoice_date, due_date, narration, stage, submitted_by_contact_id, submitted_at) VALUES ('51000000-0000-4000-8000-000000000112', 'aikyat-biscuits', '0f000000-0000-4000-8000-000000000001', '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', 'da000000-0000-4000-8000-000000000001', 'SV-0012-1', '51000000-0000-4000-8000-000000000012', '51000000-0000-4000-8000-000000000012', 1, '2026-10-07', 'KA/INV/2627/0143', '2026-10-07', '2026-11-06', 'Being goods sold', 'submitted', 'c0000000-0000-4000-8000-000000000001', now());
-UPDATE fin.sales_invoice SET costing_method = 'fifo' WHERE sales_invoice_id = '51000000-0000-4000-8000-000000000112';
+UPDATE fin.sales_invoice SET inventory_mode = pg_temp.setting(operated_party_id, 'inventory_mode', invoice_date),
+                             costing_method = pg_temp.setting(operated_party_id, 'costing_method', invoice_date) WHERE sales_invoice_id = '51000000-0000-4000-8000-000000000112';
 INSERT INTO fin.sales_invoice_line (workspace_id, sales_invoice_id, line_no, side, ledger_account_code, debtor_account_id, inventory_item_code, quantity, stock_lot_id, amount) VALUES
   ('aikyat-biscuits', '51000000-0000-4000-8000-000000000112', 1, 'Dr', NULL, 'da000000-0000-4000-8000-000000000001', NULL, NULL, NULL, 748125.00),
   ('aikyat-biscuits', '51000000-0000-4000-8000-000000000112', 2, 'Cr', '401020', NULL, NULL, NULL, NULL, 712500.00),
@@ -302,5 +339,18 @@ INSERT INTO fin.sales_invoice_line (workspace_id, sales_invoice_id, line_no, sid
   ('aikyat-biscuits', '51000000-0000-4000-8000-000000000013', 3, 'Cr', '206011', NULL, NULL, NULL, NULL, 900.00),
   ('aikyat-biscuits', '51000000-0000-4000-8000-000000000013', 4, 'Cr', '206012', NULL, NULL, NULL, NULL, 900.00);
 SELECT internal_ref_no, debtor_account_id IS NULL AS no_customer, stage FROM fin.sales_invoice WHERE internal_ref_no = 'SV-0013';
+
+\echo '--- rev 16 · a change of method (Ind AS 8): FIFO closed on 31-Mar-2027, weighted average from 01-Apr-2027: accepted'
+UPDATE fin.book_setting SET effective_until = '2027-04-01' WHERE setting_code = 'costing_method' AND effective_until IS NULL;
+INSERT INTO fin.book_setting (workspace_id, book_id, setting_code, setting_value, effective_from, reason, approved_by_contact_id, approved_at) VALUES
+  ('aikyat-biscuits', '0b000000-0000-4000-8000-000000000001', 'costing_method', 'weighted_average', '2027-04-01', 'Policy change approved (illustrative)', 'c0000000-0000-4000-8000-000000000002', now());
+SELECT d AS on_date, pg_temp.setting('0f000000-0000-4000-8000-000000000001', 'inventory_mode', d) AS inventory_mode,
+       pg_temp.setting('0f000000-0000-4000-8000-000000000001', 'costing_method', d) AS costing_method
+  FROM (VALUES ('2026-10-07'::date), ('2027-03-31'::date), ('2027-05-01'::date)) AS t(d);
+
+\echo '--- rev 16 · a periodic sale: no costing method on the voucher, no cost lines (T11 posts the month''s cost): accepted'
+UPDATE fin.sales_invoice SET inventory_mode = 'periodic', costing_method = NULL WHERE internal_ref_no = 'SV-0014';
+SELECT internal_ref_no, inventory_mode, costing_method, (SELECT count(*) FROM fin.sales_invoice_line l WHERE l.sales_invoice_id = v.sales_invoice_id AND l.ledger_account_code IN ('501040', '106020')) AS cost_lines
+  FROM fin.sales_invoice v WHERE internal_ref_no = 'SV-0014';
 
 ROLLBACK;

@@ -13,9 +13,9 @@ Everything found that the current task does not cover. Each gap gets a **kind** 
 
 | ID | Gap | Kind | Home | Raised | Touches done work? | Status |
 |---|---|---|---|---|---|---|
-| G1 | More than one book per company | New task | S1 Set up the books | Team, 3-Nov | No (`fin.book` was removed in T12 rev 3) | open |
+| G1 | More than one book per company | New task | S1 Set up the books | Team, 3-Nov | No (`fin.book` was removed in T12 rev 3) | open · **part covered (rev 16, S1 part 1):** `fin.book` exists, one primary book per company; a secondary book is still open |
 | G2 | Books-from date vs go-live date | New task | S1 (+ opening-balance migration) | Team, 3-Nov | No (`fin.book` was removed in T12 rev 3) | open |
-| G3 | Inventory settings · rev 15 (20-Nov): **for the CA:** (1) the default costing method, FIFO or weighted average (LIFO is not allowed, Ind AS 2); (2) the real lot costs (the demo's are illustrative); (3) the Cost of Goods Sold ledger (the CA's key says "COGS"; 501040 proposed, the chart has 501030 Change in Inventory); (4) perpetual for a normal sale (the CA's A1 posts no cost line) | New task | S4 Inventory setup; used by T8, T9, T11, T20, T24 (R13) | Team, 3-Nov · Vijay, 20-Nov | No | open · T24 offers FIFO / weighted average as a demo setting meanwhile |
+| G3 | Inventory settings · rev 15 (20-Nov): **for the CA:** (1) the default costing method, FIFO or weighted average (LIFO is not allowed, Ind AS 2); (2) the real lot costs (the demo's are illustrative); (3) the Cost of Goods Sold ledger (the CA's key says "COGS"; 501040 proposed, the chart has 501030 Change in Inventory); (4) perpetual for a normal sale (the CA's A1 posts no cost line) | New task | S4 Inventory setup; used by T8, T9, T11, T20, T24 (R13) | Team, 3-Nov · Vijay, 20-Nov | No | open · T24 offers FIFO / weighted average as a demo setting meanwhile · **home built (rev 16):** `fin.book_setting` holds `inventory_mode` and `costing_method`, dated; the VALUES are still the CA's |
 | G4 | Accounting framework (Ind AS / AS) | New task | S1; policies: the accounting lead | Team, 3-Nov | No | open |
 | G5 | Customer groups (e.g. Tata Group) | Other owner | Business Core | Team, 4-Nov | No | open |
 | G6 | A control account per debtor category | In a task | **T12** (+ S2 for the accounts) | Team, 4-Nov | **Yes:** T12 | open |
@@ -188,3 +188,10 @@ G31 ("sent to the customer") is now Billing's: the AE never sends the invoice.
 | Gap | What | Kind | Home | Found | Blocks | Status |
 |---|---|---|---|---|---|---|
 | G38 | **One voucher design for every type** (Vijay, 18-Nov): `fin.voucher` / `voucher_line` / `voucher_history` (+ `voucher_gst`). Manoj's built `fin.purchase_invoice` / `_line` / `_history` would become voucher_type `purchase` (+ `voucher_gst`); `journal_entry.source_document_id` then gets a real foreign key to `fin.voucher`. Until agreed both stand; nothing of his is changed | Other owner (to agree) | Manoj · the team lead | T24 rev 13, 18-Nov | No | **closed 18-Nov (rev 14):** Vijay chose Manoj's model; T24 is `fin.sales_invoice` / `_line` / `_history`, his tables on the customer side |
+
+### Rev 16 (23-Nov): S1 part 1, the book and its dated settings
+
+| Gap | What | Kind | Home | Found | Blocks | Status |
+|---|---|---|---|---|---|---|
+| G39 | `fin.journal_entry.book_id`: Manoj's journal keys an entry to the company only; a second book (Ind AS + IFRS) needs the book on the entry. Proposal: nullable, default the company's primary book | Other owner | Manoj (books core) | S1 part 1, 23-Nov | Yes: his journal (not changed until agreed) | open · to agree |
+| G40 | Periodic inventory: the voucher posts no cost (rev 16), so the month's cost of goods sold must be posted by T11; and the app has a FIFO / WAM switch but no perpetual / periodic switch (a UI change: only on Vijay's ask) | In a task (T11) + app | T11 · T24 app | S1 part 1, 23-Nov | No | open |
