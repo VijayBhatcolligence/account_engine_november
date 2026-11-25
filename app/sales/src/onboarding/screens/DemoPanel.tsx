@@ -2,6 +2,7 @@
 // system (decided 27-Oct): the paper forms are picked in "New from a paper form". This panel only lists things
 // to try and resets the demo. Checker decisions are played from the request itself ("Rajan approves" buttons).
 
+import { resetDatabase } from '../../backend/sync';
 import { useState } from 'react';
 import { FlaskConical, RotateCcw } from 'lucide-react';
 import { Button, Sheet } from '../../ui';
@@ -68,6 +69,7 @@ export function DemoPanel() {
                 s.reset();
                 useSales.getState().reset();
                 useCnc.getState().reset();
+                void resetDatabase();
                 setOpen(false);
               }}
             >

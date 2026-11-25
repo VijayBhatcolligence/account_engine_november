@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { fmtDateTime } from '../../domain/dates';
 import { inr } from '../../domain/money';
 import { DataTable, PageHeader, SegmentedControl, type Column } from '../../ui';
+import { DatabasePanel } from '../../backend/DatabasePanel';
 import { ACTORS } from '../catalogue';
 import { mask } from '../rules';
 import { useOnboarding } from '../store';
@@ -120,7 +121,8 @@ export function BackendScreen() {
 
   return (
     <div className="ob-page">
-      <PageHeader title="Backend view" subtitle="Mock only. What each click in the walkthrough would call, publish and write. Nothing here is sent anywhere: it is the backend design (case_engine/02, rev 12) played against the UX." />
+      <PageHeader title="Backend view" subtitle="Top: what is really stored in PostgreSQL now (read back from the database). Below: the walkthrough log of what each click calls, publishes and writes, and the backend design's tables as the app holds them (case_engine/02, rev 12)." />
+      <DatabasePanel />
       <div className="ob-backend">
         <section className="ob-backend__log">
           <div className="ob-backend__bar">

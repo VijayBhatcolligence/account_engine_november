@@ -51,6 +51,8 @@ interface AppShellProps {
   /** Opens the full inbox on the role's home page. */
   onSeeAllNotifications?: () => void;
   profile: ReactNode;
+  /** Where the data is saved (the database pill). */
+  status?: ReactNode;
   tabs: Record<ShellTab, ReactNode>;
   children?: ReactNode; // global overlays (toasts, dev panels)
 }
@@ -93,6 +95,7 @@ export function AppShell({
   onSeeAllNotifications,
   profile,
   tabs,
+  status,
   children,
 }: AppShellProps) {
   const [profileOpen, setProfileOpen] = useState(false);
@@ -132,6 +135,7 @@ export function AppShell({
               {clockLabel}
             </span>
           )}
+          {status}
           <ThemeToggle />
           <NotificationMenu notifications={notifications} unread={unread} onOpen={onOpenNotification} onMarkAllRead={onMarkAllRead} onSeeAll={onSeeAllNotifications} />
           <ProfileMenu user={user} onOpenProfile={() => setProfileOpen(true)} />

@@ -3,6 +3,7 @@
 //   · Rules (onboarding checks, posting rules, backend view) · Forms (forms received, vendors & customers, books)
 //   · C&C (communication and collaboration)
 
+import { DbPill } from '../backend/DatabasePanel';
 import { useEffect, useRef } from 'react';
 import { BookOpenCheck, FileStack, LayoutDashboard, ListChecks, MessagesSquare } from 'lucide-react';
 import { CncScreen } from '../cnc/CncScreen';
@@ -78,6 +79,7 @@ export function App() {
       onMarkAllRead={s.markAllRead}
       onSeeAllNotifications={() => s.navigate('dashboard')}
       profile={<Profile />}
+      status={<DbPill />}
       tabs={{
         dashboard: <DashboardScreen />,
         tasks: s.nav.tab === 'sales' ? <SalesScreen /> : s.nav.tab === 'onboarding' ? <OnboardingScreen /> : <TasksHome />,

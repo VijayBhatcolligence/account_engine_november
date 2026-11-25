@@ -1,0 +1,14 @@
+# Option for later: the same database in Docker instead of the local cluster.
+#   docker compose up -d   → then in .env.local: DATABASE_URL=postgresql://aikyat:aikyat@localhost:5432/aikyat_ae
+#   npm run db:setup       → the schema (docs/sales/sales_engine/out.sql) and the setup rows
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: aikyat
+      POSTGRES_PASSWORD: aikyat
+      POSTGRES_DB: aikyat_ae
+    ports: ["5432:5432"]
+    volumes: ["aikyat_pg:/var/lib/postgresql"]
+volumes:
+  aikyat_pg:
