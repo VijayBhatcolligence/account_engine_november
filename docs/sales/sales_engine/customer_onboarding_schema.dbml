@@ -1,5 +1,24 @@
 // Task T12 · Create a customer (Sales hands the form) + Task T24 · Sales voucher entry + Task S1 part 1 · Set up the books
-// — the database · rev 16 (23-Nov-2026)
+// + S1 part 2 · Posting rules and the ledger mapping — the database · rev 17 (24-Nov-2026)
+//
+// REV 17 (24-Nov, Vijay + the reviewer's note: "code decides what accounting entries are required; configuration decides which
+//   ledgers receive them; the journal stores the result and its traceability"): S1 PART 2, before T25 / T26.
+//   Until now the ledgers were in the app's code (catalogue.ts LEDGERS, engine.ts caseOf) and the journal could not say which
+//   rule made a line. As SAP (account keys + VKOA / OBYC), Odoo, ERPNext and D365 (posting profiles) do:
+//   CODE: one posting function per document type writes Dr / Cr lines by ROLE (revenue, output_cgst, cogs …), never a ledger code;
+//     versioned; the CA's answer keys are its tests. Registered here so the lines can name it:
+//     +3 tables: fin.posting_rule (code + version + dates), fin.posting_rule_case (R1 … R13), fin.posting_rule_role (its roles).
+//   CONFIGURATION: +1 catalogue fin.line_role (the fixed list of roles shared by code and mapping: each says which kind and type
+//     of ledger it may take) and +2 tables fin.account_determination (book + document type + role + conditions → ledger, dated,
+//     maker + checker; the most specific row wins, none or a tie → the exception queue) and its history.
+//   JOURNAL: +7 columns on fin.journal_line (Manoj's: nullable, to agree, G41) and the same 7 on fin.sales_invoice_line (the
+//     proposal): rule_code, rule_version, rule_case, line_role_code, account_determination_id, determined_ledger_code,
+//     override_reason. The FKs prove the role is one its rule writes, the case is one its rule has, and the determined ledger
+//     is the mapping row's own; a different posted ledger needs a reason.
+//   The customer's ledger stays on debtor_account (from its category), as SAP takes it from the customer master.
+//   By hand (out.sql): specificity GENERATED; 2 EXCLUDE (one rule version in force per day; no overlapping approved mapping rows);
+//   trigger account_determination_guard; functions fin.determine_ledger (the look-up) and fin.account_determination_gaps (the
+//   completeness check). Not changed: the app (its ledgers move into the seed rows only when Vijay asks: G43), every T12 table.
 //
 // REV 16 (23-Nov, Vijay: "setup is big: build only what the next task needs, add parts later"): S1 PART 1, the part T24 needs.
 //   T24's cost rule asks two company choices: perpetual or periodic (is the cost posted with the sale?) and FIFO or weighted
@@ -894,10 +913,23 @@ Table fin.journal_line [headercolor: #B45309] {
   branch_id uuid [not null]
   debit "numeric(18,2)" [not null, default: 0]
   credit "numeric(18,2)" [not null, default: 0]
+  rule_code text [note: 'rev 17 (S1 part 2): the rule that wrote the line: SALES_INVOICE. NULL: a line typed by hand, or his purchase line until his rules register (G41)']
+  rule_version integer [note: 'rev 17: 1. With the rule, never without']
+  rule_case text [note: 'rev 17: the case of the rule: R1 · R13. NULL: a line common to every case (the customer, GST, round-off)']
+  line_role_code text [note: 'rev 17: what the line is for: revenue · output_cgst · cogs · customer. Must be one its rule writes (FK)']
+  account_determination_id uuid [note: 'rev 17: the mapping row that gave the ledger (fin.account_determination). NULL: the customer line (its account\'s own ledger) or no rule']
+  determined_ledger_code text [note: 'rev 17: the ledger the mapping gave (401010); the FK proves it is that row\'s ledger. = the posted ledger unless overridden']
+  override_reason text [note: 'rev 17: why another ledger than the mapping gave (the AE\'s edit, §8.4): required then, refused otherwise']
   checks {
     `(debit > 0) <> (credit > 0)` [name: 'journal_line_debit_or_credit']
     `debit >= 0 AND credit >= 0` [name: 'journal_line_not_negative']
     `creditor_account_id IS NULL OR debtor_account_id IS NULL` [name: 'journal_line_vendor_or_customer']
+    `(rule_code IS NULL) = (rule_version IS NULL)` [name: 'journal_line_rule_has_version']
+    `(rule_code IS NULL) = (line_role_code IS NULL)` [name: 'journal_line_rule_has_role']
+    `rule_case IS NULL OR rule_code IS NOT NULL` [name: 'journal_line_case_needs_rule']
+    `(account_determination_id IS NULL) = (determined_ledger_code IS NULL)` [name: 'journal_line_determined_has_row']
+    `determined_ledger_code IS NULL OR determined_ledger_code = ledger_account_code OR coalesce(btrim(override_reason), '') <> ''` [name: 'journal_line_override_has_reason']
+    `override_reason IS NULL OR (determined_ledger_code IS NOT NULL AND determined_ledger_code IS DISTINCT FROM ledger_account_code)` [name: 'journal_line_reason_only_on_override']
   }
   Indexes {
     (workspace_id, journal_entry_id, line_no) [unique, name: 'journal_line_no_key']
@@ -905,8 +937,11 @@ Table fin.journal_line [headercolor: #B45309] {
     (workspace_id, creditor_account_id) [name: 'journal_line_creditor_idx']
     (workspace_id, ledger_account_code) [name: 'journal_line_ledger_idx']
     (workspace_id, branch_id, ledger_account_code) [name: 'journal_line_branch_ledger_idx']
+    (workspace_id, account_determination_id) [name: 'journal_line_determination_idx', note: 'rev 17: the lines a mapping row gave (may it be closed on a date?)']
   }
-  Note: '''Manoj's (0005), unchanged. One line per fin.sales_invoice_line at Post. What a customer owes =
+  Note: '''Manoj's (0005). Rev 17 adds 7 trace columns, all nullable so his purchase lines stay valid (to agree with him: G41):
+the rule, its version and case, the line's role, the mapping row and the ledger it gave, and the reason for an override.
+"Why was this posted?" = this line → its rule version (the code) → its mapping row (the configuration). One line per fin.sales_invoice_line at Post, the 7 copied as they are. What a customer owes =
 Σ(debit − credit) of its lines (journal.debtor_balance, the twin of creditor_balance); it always adds up to the receivable ledgers.'''
 }
 
@@ -1001,7 +1036,9 @@ AMOUNT_NOT_VALID · LEDGER_NOT_POSTABLE · CUSTOMER_NOT_FOUND · DEBTOR_ACCOUNT_
 DEBITS_CREDITS_DIFFER · NOT_AS_INVOICED (the customer, GST and total lines must equal Billing\'s invoice) · rev 15: NO_STOCK_RECORD ·
 STOCK_SHORT · COST_NOT_AS_INVENTORY (the cost lines = the lots by costing_method; FIFO names its lot, weighted average none) ·
 STOCK_LINE_NEEDS_ITEM (a stock ledger line names its item) · rev 16: SETTING_MISSING (no inventory_mode / costing_method in force
-on the invoice date: the exception queue, never a guess) · COST_LINES_WHEN_PERIODIC · AMEND_NOT_POSTED ·
+on the invoice date: the exception queue, never a guess) · COST_LINES_WHEN_PERIODIC · rev 17: RULE_NOT_IN_FORCE (no version of
+SALES_INVOICE on the posting date) · ACCOUNT_NOT_DETERMINED · ACCOUNT_AMBIGUOUS (no mapping row, or a tie: the exception queue) ·
+OVERRIDE_NEEDS_REASON · MAPPING_CHANGED (approval looks up again; another row than at Submit → sent back) · AMEND_NOT_POSTED ·
 AMENDMENT_PENDING · FINANCIAL_YEAR_CLOSED · MAKER_MAY_NOT_DECIDE · NO_REASON_GIVEN.
 DIFFERENCES FROM HIS (deliberate): no source_extraction_id (no PDF: Billing hands the invoice over, G37); debtor_account_id may
 be NULL (a B2C sale paid at once, his vendor is always there); the never-twice key is per branch, not per party (the number is
@@ -1014,12 +1051,19 @@ Table fin.sales_invoice_line [headercolor: #15803D] {
   sales_invoice_id uuid [not null]
   line_no integer [not null, note: '1, 2, 3 … (Screen: #)']
   side text [not null, note: 'Dr | Cr']
-  ledger_account_code text [note: 'a ledger line: 401010 Sale of Products · 206011 Output CGST … (suggested by the rule, the AE may pick another)']
+  ledger_account_code text [note: 'a ledger line: 401010 Sale of Products · 206011 Output CGST … (rev 17: given by the mapping for the line\'s role; the AE may pick another, with a reason)']
   debtor_account_id uuid [note: 'the customer line (instead of a ledger): posts to the customer account\'s own receivable ledger']
   inventory_item_code text [note: 'rev 15 (his purchase line has it): the item whose cost leaves stock on this line: FG-101. Set only on a Cr stock line (106020)']
   quantity "numeric(18,3)" [note: 'rev 15: the quantity that leaves stock: 300 (cartons). With the item, never without']
   stock_lot_id uuid [note: 'rev 15: FIFO: the lot it came from (G-2604). NULL under weighted average (all lots, at the average)']
   amount "numeric(18,2)" [not null, note: '7,48,125.00']
+  rule_code text [note: 'rev 17 (S1 part 2): the rule that wrote the line: SALES_INVOICE. NULL: a line typed by hand, or a line the AE added']
+  rule_version integer [note: 'rev 17: 1. With the rule, never without']
+  rule_case text [note: 'rev 17: the case of the rule: R1 · R13. NULL: a line common to every case (the customer, GST, round-off)']
+  line_role_code text [note: 'rev 17: what the line is for: revenue · output_cgst · cogs · customer. Must be one its rule writes (FK)']
+  account_determination_id uuid [note: 'rev 17: the mapping row that gave the ledger (fin.account_determination). NULL: the customer line (its account\'s own ledger) or no rule']
+  determined_ledger_code text [note: 'rev 17: the ledger the mapping gave (401010); the FK proves it is that row\'s ledger. = the posted ledger unless overridden']
+  override_reason text [note: 'rev 17: why another ledger than the mapping gave (the AE\'s edit, §8.4): required then, refused otherwise']
   checks {
     `side IN ('Dr', 'Cr')` [name: 'sales_invoice_line_side_valid']
     `(ledger_account_code IS NULL) <> (debtor_account_id IS NULL)` [name: 'sales_invoice_line_ledger_or_customer']
@@ -1029,11 +1073,20 @@ Table fin.sales_invoice_line [headercolor: #15803D] {
     `quantity IS NULL OR quantity > 0` [name: 'sales_invoice_line_quantity_positive']
     `stock_lot_id IS NULL OR inventory_item_code IS NOT NULL` [name: 'sales_invoice_line_lot_needs_item']
     `inventory_item_code IS NULL OR (side = 'Cr' AND ledger_account_code IS NOT NULL)` [name: 'sales_invoice_line_item_on_a_stock_credit']
+    `(rule_code IS NULL) = (rule_version IS NULL)` [name: 'sales_invoice_line_rule_has_version']
+    `(rule_code IS NULL) = (line_role_code IS NULL)` [name: 'sales_invoice_line_rule_has_role']
+    `rule_case IS NULL OR rule_code IS NOT NULL` [name: 'sales_invoice_line_case_needs_rule']
+    `(account_determination_id IS NULL) = (determined_ledger_code IS NULL)` [name: 'sales_invoice_line_determined_has_row']
+    `determined_ledger_code IS NULL OR determined_ledger_code = ledger_account_code OR coalesce(btrim(override_reason), '') <> ''` [name: 'sales_invoice_line_override_has_reason']
+    `override_reason IS NULL OR (determined_ledger_code IS NOT NULL AND determined_ledger_code IS DISTINCT FROM ledger_account_code)` [name: 'sales_invoice_line_reason_only_on_override']
+    `line_role_code IS NULL OR (line_role_code = 'customer') = (debtor_account_id IS NOT NULL)` [name: 'sales_invoice_line_customer_role_is_the_customer']
   }
   Indexes {
     (workspace_id, sales_invoice_id, line_no) [unique, name: 'sales_invoice_line_no_key']
   }
   Note: '''T24: the twin of fin.purchase_invoice_line: side, a ledger OR the customer, amount. Replaced whole on each Submit.
+Rev 17: the code writes each line's ROLE (and case); the mapping (fin.determine_ledger, on the posting date) gives its ledger; the
+line keeps both, and the 7 trace columns go to the journal line unchanged at Post.
 At Post: one journal_line per row, same order; the customer line goes to its account\'s ledger (107100) naming the account.
 His vendor line must be Cr; our customer line must be Dr (a sale debits the customer).
 Rev 15 (R13): the cost lines: Dr 501040 Cost of Goods Sold (the total) · Cr 106020 Finished Goods per lot (FIFO) or per item
@@ -1224,6 +1277,180 @@ Ref: fin.book_setting.setting_code > fin.setting_definition.setting_code
 Ref: fin.book_setting.(workspace_id, approved_by_contact_id) > pc.contact.(workspace_id, contact_id) [color: #9ca3af]
 
 // =====================================================================
+// S1 part 2 · Posting rules and the ledger mapping (rev 17, 24-Nov-2026)
+// CODE decides which Dr / Cr lines an entry needs, by role; the MAPPING decides which ledger each role goes to; the JOURNAL keeps
+// the result and why. The industry split: SAP (account keys → VKOA / OBYC), Odoo, ERPNext, D365 (posting profiles). Oracle SLA
+// also keeps the line rules as data: not needed while each book has one framework.
+// =====================================================================
+
+Table fin.line_role [headercolor: #4D7C0F] {
+  line_role_code text [pk, note: 'customer · revenue · output_cgst · cogs · stock …']
+  display_name text [not null, note: 'Revenue from the line · Output CGST · Cost of goods sold (R13)']
+  ledger_source text [not null, note: 'determination: fin.account_determination gives the ledger · party_account: the customer\'s own ledger (debtor_account.ledger_account_code, from its category), as SAP takes it from the customer master']
+  required_kind text [not null, note: 'the ledger must be of this kind: income (revenue) · liability (output GST) · asset · expense']
+  required_account_type text [note: 'and of exactly this account_type (NULL: a ledger with none): output_cgst → only a ledger typed output_cgst']
+  checks {
+    `ledger_source IN ('determination', 'party_account')` [name: 'line_role_ledger_source_valid']
+    `required_kind IN ('asset', 'liability', 'equity', 'income', 'expense')` [name: 'line_role_required_kind_valid']
+    `required_account_type IN ('payable', 'receivable', 'stock', 'input_cgst', 'input_sgst', 'input_igst', 'tds_payable', 'output_cgst', 'output_sgst', 'output_igst', 'tcs_payable', 'round_off')` [name: 'line_role_required_account_type_valid']
+  }
+  Note: '''S1 part 2 (rev 17): the FIXED list of line roles, shared by the code and the mapping. The posting code writes a role on
+each line, never a ledger code; the mapping turns the role into a ledger, and may only pick a ledger of the role's kind and type
+(trigger account_determination_guard). A new role comes only with new code (a new rule version).
+Seeded with the 12 roles SALES_INVOICE v1 writes (t24_schema_test.sql). TCS (R7) has no role yet: the app does not compute it.'''
+}
+
+Table fin.posting_rule [headercolor: #4D7C0F] {
+  rule_code text [not null, note: 'SALES_INVOICE (T25 adds SALES_CREDIT_NOTE, T26 SALES_DEBIT_NOTE)']
+  version integer [not null, note: '1. Any change to the logic is a new version; the old one stays for the entries it made']
+  document_type text [not null, note: 'the document it posts: sales_invoice']
+  display_name text [not null, note: 'Sales invoice: the customer, revenue, GST and the cost of goods sold']
+  effective_from date [not null, note: '01-Apr-2026. The version in force on the posting date is used: an old event replays under its old rule']
+  effective_until date [note: 'NULL = in force']
+  code_ref text [not null, note: 'where the logic is: app/sales/src/sales/engine.ts postingFor() (later: the engine\'s posting code)']
+  casebook_ref text [not null, note: 'the tests it passed before release: casebook.test.ts · expected_postings.json (the CA\'s answer keys)']
+  change_note text [note: 'what changed from the previous version']
+  released_at timestamptz [not null, default: `now()`]
+  checks {
+    `version > 0` [name: 'posting_rule_version_positive']
+    `document_type IN ('sales_invoice')` [name: 'posting_rule_document_type_valid']
+    `effective_until IS NULL OR effective_from < effective_until` [name: 'posting_rule_period_is_ordered']
+  }
+  Indexes {
+    (rule_code, version) [pk]
+  }
+  Note: '''S1 part 2 (rev 17): the REGISTER of the posting code: one row per released version of the one function per document type.
+The logic is CODE, tested against the CA's answer keys; it is not data. This row lets every line name the version that wrote it
+(the FK from journal_line) and tells the completeness check which roles a version can write.
+BY HAND (out.sql): posting_rule_no_overlap EXCLUDE (one version of a rule in force on any day).
+Not per workspace: the code is the same for every company. What differs per book (the ledgers) is in fin.account_determination.'''
+}
+
+Table fin.posting_rule_case [headercolor: #4D7C0F] {
+  rule_code text [not null]
+  version integer [not null]
+  case_code text [not null, note: 'R1 … R13: the CA\'s cases, as the app\'s Posting rules screen lists them']
+  display_name text [not null, note: 'Goods, domestic, local (place of supply = our branch\'s state)']
+  checks {
+    `case_code ~ '^R[0-9]+$'` [name: 'posting_rule_case_code_format']
+  }
+  Indexes {
+    (rule_code, version, case_code) [pk]
+  }
+  Note: '''S1 part 2 (rev 17): the cases inside a rule version: which branch of the code wrote a line (R1 local goods, R13 the cost …).
+A line common to every case (the customer, GST, round-off) names none. 13 rows for SALES_INVOICE v1.'''
+}
+
+Table fin.posting_rule_role [headercolor: #4D7C0F] {
+  rule_code text [not null]
+  version integer [not null]
+  line_role_code text [not null]
+  Indexes {
+    (rule_code, version, line_role_code) [pk]
+  }
+  Note: '''S1 part 2 (rev 17): the roles a rule version can write (SALES_INVOICE v1: 12). A line's role must be one of its rule's (FK);
+the completeness check (fin.account_determination_gaps) asks whether a book maps every one of them before it goes live.'''
+}
+
+Table fin.account_determination [headercolor: #4D7C0F] {
+  account_determination_id uuid [pk, default: `gen_random_uuid()`]
+  workspace_id text [not null]
+  book_id uuid [not null, note: 'the BOOK, not only the company: an Ind AS book and an Indian GAAP book may map a role to different ledgers']
+  document_type text [note: 'sales_invoice · NULL = every document (Output CGST is the same ledger for an invoice and its notes)']
+  line_role_code text [not null, note: 'revenue']
+  party_kind text [note: 'condition: domestic | export | sez · NULL = any']
+  supply_scope text [note: 'condition: intra_state | inter_state (place of supply vs our branch\'s state) · NULL = any']
+  line_kind text [note: 'condition: goods | service | charge | reimbursement · NULL = any']
+  taxability text [note: 'condition: taxable | nil_rated | exempt | non_gst · NULL = any']
+  settlement_mode text [note: 'condition: credit | cash | upi_card · NULL = any']
+  specificity integer [not null, note: 'GENERATED (by hand): how many of the 6 conditions are set. The most specific matching row wins; a tie stops (ACCOUNT_AMBIGUOUS)']
+  ledger_account_code text [not null, note: '401010 Sale of Products: postable, of the role\'s kind and type (trigger)']
+  effective_from date [not null, note: '01-Apr-2026. The look-up uses the POSTING DATE']
+  effective_until date [note: 'NULL = in force. A change closes this row and adds a new one (replaces_…): nothing is edited']
+  status text [not null, note: 'proposed (the maker) → approved | rejected (the checker). Only approved rows are used']
+  reason text [not null, note: 'why: "R1, R2: goods sold in India". A change is a change of accounting policy (Ind AS 8)']
+  replaces_account_determination_id uuid [note: 'the row this one replaces (closed on this one\'s start date)']
+  made_by_contact_id uuid [not null, note: 'the maker: the Accounts Executive (Teja)']
+  made_at timestamptz [not null]
+  checked_by_contact_id uuid [note: 'the checker: the Accounts Manager (Rajan); never the maker']
+  checked_at timestamptz
+  recorded_at timestamptz [not null, default: `now()`]
+  checks {
+    `document_type IN ('sales_invoice')` [name: 'account_determination_document_type_valid']
+    `party_kind IN ('domestic', 'export', 'sez')` [name: 'account_determination_party_kind_valid']
+    `supply_scope IN ('intra_state', 'inter_state')` [name: 'account_determination_supply_scope_valid']
+    `line_kind IN ('goods', 'service', 'charge', 'reimbursement')` [name: 'account_determination_line_kind_valid']
+    `taxability IN ('taxable', 'nil_rated', 'exempt', 'non_gst')` [name: 'account_determination_taxability_valid']
+    `settlement_mode IN ('credit', 'cash', 'upi_card')` [name: 'account_determination_settlement_mode_valid']
+    `status IN ('proposed', 'approved', 'rejected')` [name: 'account_determination_status_valid']
+    `effective_until IS NULL OR effective_from < effective_until` [name: 'account_determination_period_is_ordered']
+    `(status = 'proposed') = (checked_by_contact_id IS NULL)` [name: 'account_determination_decided_has_checker']
+    `(checked_by_contact_id IS NULL) = (checked_at IS NULL)` [name: 'account_determination_checker_has_a_time']
+    `checked_by_contact_id IS NULL OR checked_by_contact_id <> made_by_contact_id` [name: 'account_determination_checker_not_maker']
+    `btrim(reason) <> ''` [name: 'account_determination_reason_not_blank']
+    `replaces_account_determination_id <> account_determination_id` [name: 'account_determination_not_its_own_replacement']
+  }
+  Indexes {
+    (workspace_id, account_determination_id) [unique, name: 'account_determination_workspace_identity_key']
+    (workspace_id, account_determination_id, line_role_code, ledger_account_code) [unique, name: 'account_determination_trace_key', note: 'what a line names: the row, its role and its ledger (so the FK proves the line got that row\'s own ledger)']
+    (workspace_id, replaces_account_determination_id) [unique, name: 'account_determination_replaced_once', note: 'WHERE status <> \'rejected\': a row is replaced once']
+    (workspace_id, book_id, line_role_code, effective_from) [name: 'account_determination_lookup_idx', note: 'the rows in force for a role on a date']
+  }
+  Note: '''S1 part 2 (rev 17): THE LEDGER MAPPING: configuration, owned by the accounting administrators (a maker and a checker).
+Book + document type + line role + conditions → ledger, dated. The look-up (fin.determine_ledger, by hand) takes the approved rows
+in force on the posting date whose conditions are NULL or equal to the line's facts; the most specific wins; none →
+ACCOUNT_NOT_DETERMINED, a tie → ACCOUNT_AMBIGUOUS: the exception queue, never a guess.
+The customer line is not mapped here: its ledger is the customer account's own (debtor_account, from its category).
+BY HAND (out.sql): specificity GENERATED · account_determination_no_overlap EXCLUDE (two approved rows with the same book, role and
+conditions never overlap in time) · trigger account_determination_guard: the role is mapped here (ROLE_NOT_MAPPABLE); the ledger is
+postable (LEDGER_NOT_POSTABLE) and of the role's kind and type (ROLE_LEDGER_TYPE_MISMATCH); a decided row is final, only its end
+date may be set, once (DETERMINATION_IS_FINAL); no start or end in a closed year (DETERMINATION_BACKDATED); never ended before a
+posted line that used it (DETERMINATION_IN_USE).
+Corrections never look up again: a reversal copies its lines' ledgers (REVERSAL_NOT_A_MIRROR); a note against an invoice mirrors
+the invoice's lines (T25 / T26). Only a brand-new line is looked up.
+Seeded (t24_schema_test.sql): 19 rows for Aikyat's primary book = the app's ledgers today (catalogue.ts LEDGERS + engine.ts
+caseOf); illustrative until the CA confirms the chart (G18).'''
+}
+
+Table fin.account_determination_history [headercolor: #4D7C0F] {
+  history_id uuid [pk, default: `gen_random_uuid()`]
+  workspace_id text [not null]
+  account_determination_id uuid [not null]
+  operation text [not null, note: 'propose | approve | reject | close']
+  row_snapshot jsonb [not null, note: 'the row as it then stood']
+  performer_contact_id uuid [not null, note: 'Teja (propose) · Rajan (approve, reject, close)']
+  reason text
+  recorded_at timestamptz [not null, default: `now()`]
+  checks {
+    `operation IN ('propose', 'approve', 'reject', 'close')` [name: 'account_determination_history_operation_valid']
+  }
+  Indexes {
+    (workspace_id, account_determination_id, recorded_at) [name: 'account_determination_history_idx']
+  }
+  Note: '''S1 part 2 (rev 17): every step of a mapping row, append-only (as sales_invoice_history): who proposed it, who approved,
+rejected or closed it, and why. A mapping change is a change of accounting policy: this is its audit trail.'''
+}
+
+Ref: fin.posting_rule_case.(rule_code, version) > fin.posting_rule.(rule_code, version)
+Ref: fin.posting_rule_role.(rule_code, version) > fin.posting_rule.(rule_code, version)
+Ref: fin.posting_rule_role.line_role_code > fin.line_role.line_role_code
+Ref: fin.account_determination.(workspace_id, book_id) > fin.book.(workspace_id, book_id)
+Ref: fin.account_determination.line_role_code > fin.line_role.line_role_code
+Ref: fin.account_determination.ledger_account_code > fin.ledger_account.account_code
+Ref: fin.account_determination.(workspace_id, replaces_account_determination_id) > fin.account_determination.(workspace_id, account_determination_id)
+Ref: fin.account_determination.(workspace_id, made_by_contact_id) > pc.contact.(workspace_id, contact_id) [color: #9ca3af]
+Ref: fin.account_determination.(workspace_id, checked_by_contact_id) > pc.contact.(workspace_id, contact_id) [color: #9ca3af]
+Ref: fin.account_determination_history.(workspace_id, account_determination_id) > fin.account_determination.(workspace_id, account_determination_id)
+Ref: fin.account_determination_history.(workspace_id, performer_contact_id) > pc.contact.(workspace_id, contact_id) [color: #9ca3af]
+// the trace on the lines: the proposal (ours) and the journal (Manoj's, to agree: G41)
+Ref: fin.sales_invoice_line.(rule_code, rule_version, line_role_code) > fin.posting_rule_role.(rule_code, version, line_role_code)
+Ref: fin.sales_invoice_line.(rule_code, rule_version, rule_case) > fin.posting_rule_case.(rule_code, version, case_code)
+Ref: fin.sales_invoice_line.(workspace_id, account_determination_id, line_role_code, determined_ledger_code) > fin.account_determination.(workspace_id, account_determination_id, line_role_code, ledger_account_code)
+Ref: fin.journal_line.(rule_code, rule_version, line_role_code) > fin.posting_rule_role.(rule_code, version, line_role_code)
+Ref: fin.journal_line.(rule_code, rule_version, rule_case) > fin.posting_rule_case.(rule_code, version, case_code)
+Ref: fin.journal_line.(workspace_id, account_determination_id, line_role_code, determined_ledger_code) > fin.account_determination.(workspace_id, account_determination_id, line_role_code, ledger_account_code)
+
+// =====================================================================
 // The diagram's groups
 // =====================================================================
 
@@ -1279,4 +1506,13 @@ TableGroup "0 · S1 part 1 Set up the books (rev 16): the book and its dated set
   fin.book
   fin.setting_definition
   fin.book_setting
+}
+
+TableGroup "0b · S1 part 2 Posting rules and the ledger mapping (rev 17): code decides the lines, the mapping the ledgers" [color: #4D7C0F] {
+  fin.line_role
+  fin.posting_rule
+  fin.posting_rule_case
+  fin.posting_rule_role
+  fin.account_determination
+  fin.account_determination_history
 }

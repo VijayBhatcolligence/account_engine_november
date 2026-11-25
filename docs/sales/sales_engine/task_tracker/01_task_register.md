@@ -76,7 +76,7 @@ Every task on the Accounts Executive's task card, and whether the engine support
 
 | ID | Candidate | Gaps it would cover | Owner |
 |---|---|---|---|
-| S1 | Set up the company's books (book, framework, books-from and go-live dates) · 🟡 **part 1 built (rev 16, 23-Nov): only what T24 needs:** `fin.book` (a stub, one primary book per company), `fin.setting_definition`, `fin.book_setting` (dated); settings `inventory_mode`, `costing_method`. Each later task adds its part (Vijay: "build only what the next task needs") | G1 (part), G2, G3 (part), G4 | To ask (not this role's card) |
+| S1 | Set up the company's books (book, framework, books-from and go-live dates) · 🟡 **part 1 built (rev 16, 23-Nov): only what T24 needs:** `fin.book` (a stub, one primary book per company), `fin.setting_definition`, `fin.book_setting` (dated); settings `inventory_mode`, `costing_method`. Each later task adds its part (Vijay: "build only what the next task needs") · 🟡 **part 2 built (rev 17, 24-Nov): posting rules and the ledger mapping** (before T25 / T26): `fin.line_role`, `fin.posting_rule` / `_case` / `_role` (the register of the posting code), `fin.account_determination` (book + document + role + conditions → ledger, dated, maker + checker) + `_history`; 7 trace columns on `sales_invoice_line` and `journal_line`. Code decides the lines, the mapping the ledgers | G1 (part), G2, G3 (part), G4 | To ask (not this role's card) |
 | S2 | Chart of accounts and Schedule III layout | G4 (presentation), G6 (the control accounts themselves) | To ask |
 | S3 | Our company's branches and GST registrations | G7 | To ask (the Branch Design, Swasthik) |
 | S4 | Inventory setup (maintain / integrate, valuation, godowns) | G3 | To ask |

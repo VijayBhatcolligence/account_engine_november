@@ -9,6 +9,8 @@
     --acct:#7c3aed; --acct-soft:#f3e8ff; --acct-band:#f6f0fe;
     --jrnl:#b45309; --jrnl-soft:#fef3c7; --jrnl-band:#fffbeb;
     --new:#15803d; --new-soft:#dcfce7;
+    --rule:#4d7c0f; --rule-soft:#ecfccb; --rule-band:#f7fee7;
+    --rep:#0e7490; --rep-soft:#cffafe; --rep-band:#ecfeff; --bank:#be185d; --bank-soft:#fce7f3; --bank-band:#fdf2f8; --slate-band:#eef1f5;
     --creditor:#2563eb; --creditor-soft:#dbeafe; --creditor-band:#e8f0fe;
     --debtor:#c2410c; --debtor-soft:#ffedd5; --debtor-band:#fff0e3;
     --shared-fin:#475569; --shared-fin-soft:#e2e8f0; --shared-band:#e2f5ef;
@@ -23,6 +25,8 @@
     --acct:#b69cff; --acct-soft:#2a2140; --acct-band:#1a1528;
     --jrnl:#f0b45a; --jrnl-soft:#3a2a10; --jrnl-band:#1f1709;
     --new:#4ade80; --new-soft:#123220;
+    --rule:#bef264; --rule-soft:#26330f; --rule-band:#141b08;
+    --rep:#5fd4e8; --rep-soft:#10313a; --rep-band:#0c1d22; --bank:#f472b6; --bank-soft:#3a1428; --bank-band:#1f0c17; --slate-band:#161b21;
     --creditor:#6ea0ff; --creditor-soft:#1b2a48; --creditor-band:#121b2c;
     --debtor:#f08a55; --debtor-soft:#3d2414; --debtor-band:#22160e;
     --shared-fin:#9aa6b8; --shared-fin-soft:#262d36; --shared-band:#0f211d;
@@ -37,6 +41,8 @@
     --acct:#b69cff; --acct-soft:#2a2140; --acct-band:#1a1528;
     --jrnl:#f0b45a; --jrnl-soft:#3a2a10; --jrnl-band:#1f1709;
     --new:#4ade80; --new-soft:#123220;
+    --rule:#bef264; --rule-soft:#26330f; --rule-band:#141b08;
+    --rep:#5fd4e8; --rep-soft:#10313a; --rep-band:#0c1d22; --bank:#f472b6; --bank-soft:#3a1428; --bank-band:#1f0c17; --slate-band:#161b21;
     --creditor:#6ea0ff; --creditor-soft:#1b2a48; --creditor-band:#121b2c;
     --debtor:#f08a55; --debtor-soft:#3d2414; --debtor-band:#22160e;
     --shared-fin:#9aa6b8; --shared-fin-soft:#262d36; --shared-band:#0f211d;
@@ -158,27 +164,51 @@
   .rel.hl .sym{stroke-width:2.4}
   .rel.dim{opacity:.18}
   .tdoc{color:var(--soft-ink);max-width:90ch}
+  .band text.sub{font:400 17px "Segoe UI",system-ui,sans-serif;letter-spacing:0}
+  .owntag{font:600 11px "Segoe UI",system-ui,sans-serif;fill:var(--muted)}
+  .tbl.borrowed .box{stroke:var(--pc);stroke-width:2.4;stroke-dasharray:8 5}
+  .tbl.borrowed.stub .box{stroke:var(--shared-fin)}
+  .vcard .box{fill:var(--panel);stroke-width:1.8;stroke-dasharray:6 5}
+  .vcard.code .box{stroke-width:2.2;stroke-dasharray:2 4;stroke-linecap:round}
+  .vcard.code .vs{font-style:normal;font-family:Consolas,"Cascadia Mono",monospace;font-size:11.5px}
+  .vcard.prop .box{fill:var(--new-soft);stroke:var(--new)!important;stroke-width:2.4;stroke-dasharray:2 5;stroke-linecap:round}
+  .vcard.prop .vt{fill:var(--new)!important}
+  .flow-arrow path{fill:none;stroke:var(--new);stroke-width:5}
+  .flow-arrow polygon{fill:var(--new)}
+  .flow-arrow text{font:700 19px "Segoe UI",system-ui,sans-serif;fill:var(--new)}
+  #apprWrap{display:none}
+  .vcard .vt{font:700 14px "Segoe UI",system-ui,sans-serif}
+  .vcard .vs{font:italic 12px "Segoe UI",system-ui,sans-serif;fill:var(--muted)}
+  .vcard .vl{font:12.5px "Segoe UI",system-ui,sans-serif;fill:var(--soft-ink)}
+  .legend .own{display:inline-block;width:26px;height:14px;border-radius:3px;border:2px solid var(--tbl-stroke)}
+  .blocks td,.blocks th{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  .blocks{border-collapse:collapse;width:100%;font-size:12.5px}
+  .blocks i.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px}
   .cn{color:var(--soft-ink);font-family:"Segoe UI",system-ui,sans-serif;white-space:normal;margin-top:2px}
   @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 </style>
 
 <div class="app">
   <header>
-    <div class="brand"><strong>Sales engine schema</strong><span>Ours (S1 part 1 books setup + T12 customer + T24 sales voucher) · schemas <code>fin</code>, <code>pc</code>, <code>inv</code> · {{tables}} tables · rev 16</span></div>
+    <div class="brand"><strong>Sales engine schema</strong><span>Ours (S1 books setup, rules &amp; ledger mapping + T12 customer + T24 sales voucher) · schemas <code>fin</code>, <code>pc</code>, <code>inv</code> · {{tables}} tables · rev 17</span></div>
     <div class="tools">
+      <label class="task" id="lensWrap" title="Group the tables by side, or by accounting block">View
+        <select id="lens" aria-label="How to group the tables">
+          <option value="side">By side</option>
+          <option value="block">By accounting block</option>
+        </select></label>
       <label class="task" id="taskWrap" title="Show the schema as it grew, task by task">Task
         <select id="task" aria-label="Show the schema at a task">
           <option value="">All tables (no task)</option>
         </select></label>
-      <span class="views" role="group" aria-label="Which side to show">
-        <button data-view="all" class="on">All</button><button data-view="setup">Books setup</button><button data-view="purchase">Sales voucher</button><button data-view="customer">Customer</button><button data-view="vendor">Inventory</button>
-      </span>
+      <span class="views" id="views" role="group" aria-label="Which part to show"></span>
       <button id="zoomOut" title="Zoom out (−)" aria-label="Zoom out">−</button>
       <span id="zoomPct">100%</span>
       <button id="zoomIn" title="Zoom in (+)" aria-label="Zoom in">+</button>
       <button id="fit" title="Fit everything (F)">Fit</button>
       <button id="one" title="Actual size (0)">100%</button>
       <button id="reset" title="Put the tables back where they started">Reset layout</button>
+      <label id="apprWrap" title="Show the proposed approach (not built): dotted green cards"><input type="checkbox" id="appr" checked> proposed approach</label>
       <label><input type="checkbox" id="showTypes" checked> types</label>
     </div>
   </header>
@@ -193,13 +223,7 @@
       <div class="row"><svg viewBox="0 0 64 18"><path class="lf" d="M4 9H60M20 9L4 3M20 9L4 15M50 3V15"/><circle class="lf" cx="26" cy="9" r="4"/><circle class="lf" cx="42" cy="9" r="4"/></svg><span>many → zero or one (nullable FK)</span></div>
       <div class="row"><svg viewBox="0 0 64 18"><path class="lf" d="M4 9H60"/></svg><span>foreign key inside Finance</span></div>
       <div class="row"><svg viewBox="0 0 64 18"><path class="lp" d="M4 9H60"/></svg><span>foreign key into Parties &amp; Contacts</span></div>
-      <div class="row"><span class="badge" style="background:var(--fin)">fin</span><span>books setup: the book and its dated settings (ours, S1 part 1); branches, years, numbering (Manoj's)</span></div>
-      <div class="row"><span class="badge" style="background:var(--acct)">fin</span><span>sales voucher (T24)</span></div>
-      <div class="row"><span class="badge" style="background:var(--jrnl)">fin</span><span>the journal: the books both vouchers post into</span></div>
-      <div class="row"><span class="badge" style="background:var(--creditor)">inv</span><span>inventory (stub: stock lots for the cost)</span></div>
-      <div class="row"><span class="badge" style="background:var(--debtor)">fin</span><span>debtor and customer tables</span></div>
-      <div class="row"><span class="badge" style="background:var(--pc)">pc</span><span>shared: Parties &amp; Contacts</span></div>
-      <div class="row"><span class="badge" style="background:var(--shared-fin)">fin</span><span>shared: chart of accounts, GST state codes, bank accounts, event outbox</span></div>
+      <div id="legendBands" style="display:contents"></div>
       <div class="row"><span class="badge" style="color:var(--pk);background:var(--pk-bg)">PK</span><span class="badge" style="color:var(--fk);background:var(--fk-bg)">FK</span><span>primary key · foreign key · <i style="color:var(--null)">null</i> = optional</span></div>
     </div>
     <div class="minimap"><svg id="mini" aria-label="Overview map"></svg></div>
@@ -217,7 +241,9 @@ const DATA = /*__DATA__*/null;
 const MIG = {};
 // ───────────────────────────── data (read from his database) ─────────────────────────────
 // side keys reuse the template's colours: purchase = sales voucher + books, vendor = inventory
-const SIDE = id => /^fin\.(book|setting_definition|book_setting|branch|fiscal_year|document_sequence)$/.test(id) ? 'setup'
+const RULES_T = ['fin.line_role', 'fin.posting_rule', 'fin.posting_rule_case', 'fin.posting_rule_role', 'fin.account_determination', 'fin.account_determination_history'];
+const SIDE = id => RULES_T.includes(id) ? 'rules'
+  : /^fin\.(book|setting_definition|book_setting|branch|fiscal_year|document_sequence)$/.test(id) ? 'setup'
   : /^fin\.journal_/.test(id) ? 'journal'
   : /^fin\.sales_invoice/.test(id) ? 'purchase'
   : /^fin\.(customer_request|debtor_)/.test(id) ? 'customer'
@@ -279,6 +305,16 @@ const STEPS = [
      periodic → no cost lines (T11 posts the month's cost)`,
     tables: ['fin.book', 'fin.setting_definition', 'fin.book_setting'],
     cols: [['fin.sales_invoice', 'inventory_mode']] },
+  { key: 's1b', short: '5 · S1 part 2 Rules & ledger mapping', title: 'S1 part 2 · Posting rules and the ledger mapping (before T25 / T26)', when: 'Rev 17, 24-Nov-2026',
+    why: 'Code decides which Dr / Cr lines an entry needs; configuration decides which ledger each line goes to; the journal stores the result and why. Until now the ledgers were in the app\'s code and the journal could not say which rule made a line.',
+    flow: `code: postingFor(facts) → lines by ROLE + case        (SALES_INVOICE v1, registered in fin.posting_rule)
+  → fin.determine_ledger(book, document, role, facts, posting date)
+       → fin.account_determination: the most specific approved row in force
+  → fin.sales_invoice_line: ledger + rule · case · role · mapping row (+ a reason if the AE overrides)
+  → approved → fin.journal_line: the same 7 columns ("why was this posted?")`,
+    tables: RULES_T,
+    cols: ['rule_code', 'rule_version', 'rule_case', 'line_role_code', 'account_determination_id', 'determined_ledger_code', 'override_reason']
+      .flatMap(n => [['fin.sales_invoice_line', n], ['fin.journal_line', n]]) },
 ];
 const TSTEP = {}, CSTEP = {};
 STEPS.forEach((s, i) => { s.tables.forEach(id => TSTEP[id] = i); s.cols.forEach(([t, n]) => CSTEP[t + '.' + n] = i); });
@@ -297,10 +333,137 @@ function stepCounts(i) {
   return { tables: ids.size, cols, fks, newTables: STEPS[i].tables.length, newCols: STEPS[i].cols.length };
 }
 
+// ───────────────────────────── two ways to group the tables ─────────────────────────────
+// Ownership: who the table belongs to (the same in both layouts).
+const MANOJ = new Set(['fin.ledger_account', 'fin.gst_state_code', 'fin.party_bank_account', 'fin.branch', 'fin.fiscal_year', 'fin.document_sequence', 'fin.journal_entry', 'fin.journal_line']);
+const OWNER = id => id.startsWith('v:') ? 'none' : id.startsWith('pc.') ? 'pc' : id.startsWith('inv.') ? 'stub' : MANOJ.has(id) ? 'manoj' : 'ours';
+const OWN_LABEL = { ours: 'OURS', manoj: "MANOJ'S · as built", pc: 'BORROWED · P&C', stub: 'BORROWED · stub' };
+const OWN_TEXT = {
+  ours: 'Ours: designed for our tasks (T12, T24, S1 parts 1 and 2).',
+  manoj: "Manoj's, copied as he built it. We only add to it (each addition is in the engine history), never change it.",
+  pc: "Business Core's (Parties & Contacts). We read it; we write only through their command at T12's last approval. Never ours to change.",
+  stub: 'A placeholder for the inventory module, which will own it (G3). Rough on purpose: only what the sale\'s cost needs.' };
+// Cards that are NOT tables: the posting rules (code) and the reports (queries over the journal).
+const VIRT = [
+  { id: 'v:facts', block: 'b2', code: true, title: 'Facts builder', sub: 'CODE · rules.ts calcOf, factsOf',
+    lines: ['reads the voucher, the customer,', 'the branch, the setup', '→ party kind · supply scope ·', 'line kind · taxability · settlement'],
+    text: 'Stays in code. Turns the voucher into the facts the rule and the mapping need: who the buyer is (domestic, export, SEZ: from the T12 account), local or inter-state (place of supply vs our branch\'s state), each line\'s kind (goods, service, freight, pure-agent expense) and taxability, how it is settled (credit, cash, UPI / card), the amounts and the tax by head, and the cost lots (FIFO / weighted average, from the book\'s settings). The slice sends data, never accounts (CLAUDE.md §3).' },
+  { id: 'v:post', block: 'b2', code: true, title: 'SALES_INVOICE v1', sub: 'CODE · engine.ts postingFor()',
+    lines: ['facts in → lines out, by ROLE', '(revenue, output_cgst, cogs …)', 'with the case R1–R13', 'never a ledger code · Dr = Cr'],
+    text: 'Stays in code: the Dr / Cr structure. One function per document type (T25 adds SALES_CREDIT_NOTE, T26 SALES_DEBIT_NOTE). It decides WHICH lines an entry needs, on which side, with which amount, and writes each line\'s role and case; it never names a ledger. Registered in fin.posting_rule (code + version + dates) with its cases (fin.posting_rule_case) and roles (fin.posting_rule_role), so every journal line can name it. Any change to the logic = a new version. Today the app still maps roles to ledgers itself (catalogue.ts LEDGERS): moving that into the seed rows of fin.account_determination is G43, when Vijay asks.' },
+  { id: 'v:tests', block: 'b2', code: true, title: 'Casebook tests', sub: 'CODE · the release gate',
+    lines: ['the CA\'s answer keys', '(expected_postings.json)', 'a version ships only when they pass', 'on the seeded mapping (G43)'],
+    text: 'Stays in code. The CA\'s expected postings are the tests of the posting function. A new version ships only when they pass, run against the seeded mapping (not hard-coded ledgers). Proved on PostgreSQL today: the 19 seeded rows give every case R1–R13 the ledger the app gives (t24_schema_test.sql, rev 17).' },
+  { id: 'v:gates', block: 'b2', code: true, title: 'Submit / Approve gates', sub: 'CODE · the exception queue',
+    lines: ['RULE_NOT_IN_FORCE', 'ACCOUNT_NOT_DETERMINED · _AMBIGUOUS', 'OVERRIDE_NEEDS_REASON', 'MAPPING_CHANGED → sent back'],
+    text: 'Stays in code: the checks at Submit and again at Approve. No version of the rule on the posting date, no mapping row or a tie (from fin.determine_ledger), a ledger changed without a reason, or a mapping row different at approval than at Submit: the voucher stops and goes to the AE\'s queue. Never a guess.' },
+  { id: 'v:lookup', block: 'bR', code: true, title: 'fin.determine_ledger()', sub: 'DATABASE FUNCTION · the look-up',
+    lines: ['approved rows in force', 'on the POSTING date', 'conditions NULL or equal', 'most specific wins · none / tie: stop'],
+    text: 'In the database (out.sql, by hand), so the app and the engine ask the same question the same way. Input: book, document type, role, posting date and the line\'s facts. Output: the mapping row (its id and ledger) the line keeps. None → ACCOUNT_NOT_DETERMINED, a tie → ACCOUNT_AMBIGUOUS (tests N60, N61). A reversal or a note against an invoice copies the original lines and never looks up again.' },
+  { id: 'v:gaps', block: 'bR', code: true, title: 'fin.account_determination_gaps()', sub: 'DATABASE FUNCTION · completeness',
+    lines: ['every role a rule in force writes', 'has a row in the book?', 'run before go-live', '0 missing = ready'],
+    text: 'In the database. Lists each role the rule versions in force can write (except the customer\'s) that has no approved row in a book on a date. The primary book: 0 missing. A new Ind AS book: 11 missing, so it cannot go live (proved in the test). It checks a row per role, not every combination of facts: a missing combination still stops at ACCOUNT_NOT_DETERMINED.' },
+  { id: 'v:tb', block: 'b4', title: 'Trial balance', sub: 'a query, not a table',
+    lines: ['journal_line grouped by ledger', 'Σ Dr = Σ Cr'],
+    text: 'journal_line summed by ledger_account_code. Proved in t24_schema_test.sql (the B4-01 trial balance).' },
+  { id: 'v:cust', block: 'b4', title: 'Customer balance / ageing', sub: 'a query, not a table',
+    lines: ['journal_line by debtor_account', 'due date from the voucher'],
+    text: 'What a customer owes = its journal lines (debtor_account_id); ageing uses the voucher\'s due_date. No balance table, by design (Manoj\'s subledger view). Proved in t24_schema_test.sql.' },
+  { id: 'v:stock', block: 'b4', title: 'Stock vs books (T9)', sub: 'a query, not a table',
+    lines: ['Σ lots left × unit cost', '= 106020 Finished Goods'],
+    text: 'The stub\'s value Σ(quantity_left × unit_cost) agrees with the 106020 Finished Goods balance: the T9 reconciliation. Proved in t24_schema_test.sql.' },
+  { id: 'v:gst', block: 'b4', title: 'GST sales register / GSTR-1', sub: 'later: a hand-off from T24',
+    lines: ['output GST lines + the voucher', 'not built yet'],
+    text: 'Promised by T24 to the GST return: lines on the output GST ledgers with the voucher\'s invoice number and customer. Not built yet.' },
+  { id: 'p:event', block: 'b1', prop: true, title: 'fin.accounting_event', sub: 'PROPOSED · one table for every event',
+    lines: ['event_id · event_type · type_version', 'source slice · stream (which document)', 'occurred_at · posting_date · payload', 'outcome: posted · ignored · exception'],
+    text: 'The engine\'s inbox. Every event from every slice (Billing, Stores, the customer module, Sales …) lands here once: event_id means never twice. The engine recognises it or not and records the outcome: posted (with its journal entry), ignored (logged as seen: audit, cut-off), or exception (the AE\'s queue). One general table, never one per event type. Industry: Oracle XLA_EVENTS; the CloudEvents envelope. fin.outbox stays the slice\'s sending side. NOT BUILT: to agree with Manoj and the team lead (G41).' },
+  { id: 'p:etype', block: 'b1', prop: true, title: 'fin.event_type', sub: 'PROPOSED · the event catalogue',
+    lines: ['one row per event type + version', 'InvoiceHandedOver v1 · CreditNoteHandedOver v1', 'ReturnReceived v1 · DebtorAccountOpened v1', 'a new event = a row, never a table'],
+    text: 'The schema catalogue: which event types exist, the fields each payload must carry (checked in code), and whether the engine posts it. A new task adds rows here, not tables (like fin.setting_definition does for settings). NOT BUILT: G41.' },
+  { id: 'p:family', block: 'b1', prop: true, title: 'Sales document family', sub: 'PROPOSED · on fin.sales_invoice',
+    lines: ['+ document_type: invoice · credit_note · debit_note', '+ original_document_id (a note → its invoice)', 'T25 / T26 add no tables', 'as Oracle AR and SAP billing do'],
+    text: 'One table family for every sales document, with a type column: an invoice, a credit note (T25) and a debit note (T26) share fin.sales_invoice / _line / _history. A note names its original invoice; type rules (a credit note never above its invoice, the time limit) are CHECKs and gates per type. Oracle AR (RA_CUSTOMER_TRX) and SAP billing (VBRK) do the same. The name sales_invoice would then mean "sales document". NOT BUILT: to agree with Manoj (G42); his purchase side follows his own choice.' },
+  { id: 'p:jtrace', block: 'b3', prop: true, title: 'The event link', sub: 'PROPOSED · event_id on journal_entry',
+    lines: ['+ event_id (the event that caused it)', 'rule · case · role · mapping row:', 'BUILT on journal_line (rev 17)', '(book_id waits for a 2nd book: G39)'],
+    text: 'CLAUDE.md §3: every journal entry links to its event and its rule version. Rev 17 built the rule half on journal_line (7 columns: rule, version, case, role, mapping row, determined ledger, override reason). The event half (event_id, with fin.accounting_event) is still proposed: G41, to agree with Manoj.' },
+  { id: 'v:bank', block: 'm_bank', title: 'Not built yet', sub: 'comes with its tasks',
+    lines: ['our own bank accounts', 'receipts, payments', 'bank reconciliation'],
+    text: 'Only the party\'s bank details exist today (Manoj\'s fin.party_bank_account: a customer\'s refund account, a vendor\'s payment account). Our own bank ledgers, receipts (T13), payments and the bank reconciliation come with their tasks.' },
+];
+const BLOCK_OF = {
+  'fin.book': 'b0', 'fin.book_setting': 'b0', 'fin.setting_definition': 'b0', 'fin.branch': 'b0', 'fin.fiscal_year': 'b0', 'fin.document_sequence': 'b0',
+  'fin.sales_invoice': 'b1', 'fin.sales_invoice_history': 'b1', 'fin.outbox': 'b1',
+  'fin.sales_invoice_line': 'b2', 'fin.gst_state_code': 'b2',
+  ...Object.fromEntries(RULES_T.map(id => [id, 'bR'])),
+  'fin.ledger_account': 'b3', 'fin.journal_entry': 'b3', 'fin.journal_line': 'b3',
+  'fin.party_bank_account': 'm_bank', 'inv.stock_lot': 'm_inv',
+};
+const blockOf = id => id.startsWith('v:') ? VIRT.find(v => v.id === id).block : BLOCK_OF[id] ?? (id.startsWith('pc.') ? 'm_pc' : /^fin\.(customer_request|debtor_)/.test(id) ? 'm_ar' : '?');
+const MODES = {
+  side: {
+    side: SIDE, virt: false, bandTop: 76,
+    bands: [['setup', 'BOOKS SETUP', '', 'var(--fin)', 'var(--fin-soft)'], ['rules', 'RULES & LEDGER MAPPING (S1 PART 2)', '', 'var(--rule)', 'var(--rule-band)'], ['journal', 'JOURNAL (THE BOOKS)', '', 'var(--jrnl)', 'var(--jrnl-band)'], ['purchase', 'SALES VOUCHER (T24)', '', 'var(--acct)', 'var(--acct-band)'], ['vendor', 'INVENTORY (STUB)', '', 'var(--creditor)', 'var(--creditor-band)'], ['shared', 'SHARED', '', 'var(--pc)', 'var(--shared-band)'], ['customer', 'CUSTOMER', '', 'var(--debtor)', 'var(--debtor-band)']],
+    labels: { setup: 'Books setup', rules: 'Rules & ledger mapping', journal: 'Journal (the books)', purchase: 'Sales voucher (T24)', vendor: 'Inventory (stub)', customer: 'Customer side', shared: 'Shared' },
+    views: [['all', 'All'], ['setup', 'Books setup'], ['rules', 'Rules & mapping'], ['purchase', 'Sales voucher'], ['customer', 'Customer'], ['vendor', 'Inventory']],
+    inView: sd => view === 'all' || sd === 'shared' || sd === view || (sd === 'journal' && (view === 'purchase' || view === 'rules')),
+    hue: t => t.side === 'setup' ? 'fin' : t.side === 'rules' ? 'rule' : t.side === 'journal' ? 'jrnl' : t.side === 'vendor' ? 'creditor' : t.side === 'customer' ? 'debtor' : t.side === 'purchase' ? 'acct' : t.schema === 'pc' ? 'pc' : 'shared-fin',
+    legend: [['fin', 'var(--fin)', 'books setup: the book and its dated settings (ours, S1 part 1); branches, years, numbering (Manoj\'s)'], ['fin', 'var(--rule)', 'rules &amp; ledger mapping (ours, S1 part 2): the register of the posting code + the mapping a maker and a checker keep'], ['fin', 'var(--acct)', 'sales voucher (T24)'], ['fin', 'var(--jrnl)', 'the journal: the books both vouchers post into'], ['inv', 'var(--creditor)', 'inventory (stub: stock lots for the cost)'], ['fin', 'var(--debtor)', 'debtor and customer tables'], ['pc', 'var(--pc)', 'shared: Parties &amp; Contacts'], ['fin', 'var(--shared-fin)', 'shared: chart of accounts, GST state codes, bank accounts, event outbox']],
+  },
+  block: {
+    side: blockOf, virt: true, bandTop: 104,
+    bands: [['b0', '0 · SETUP', 'configured once, read by every entry', 'var(--fin)', 'var(--fin-soft)'],
+      ['b1', '① INTAKE', 'what the slices hand over', 'var(--acct)', 'var(--acct-band)'],
+      ['b2', '② TRANSACTION', 'the entry the code plans, by role', 'var(--creditor)', 'var(--creditor-band)'],
+      ['bR', 'RULES & LEDGER MAPPING', 'code decides the lines · configuration the ledgers', 'var(--rule)', 'var(--rule-band)'],
+      ['b3', '③ CORE', 'the books', 'var(--jrnl)', 'var(--jrnl-band)'],
+      ['b4', '④ REPORTS', 'read from the books: no tables', 'var(--rep)', 'var(--rep-band)'],
+      ['m_ar', 'CUSTOMER MODULE', 'receivables: who owes us, on what terms', 'var(--debtor)', 'var(--debtor-band)'],
+      ['m_bank', 'BANKING', 'bank details today', 'var(--bank)', 'var(--bank-band)'],
+      ['m_inv', 'INVENTORY', 'borrowed stub', 'var(--shared-fin)', 'var(--slate-band)'],
+      ['m_pc', 'PARTIES & CONTACTS', 'borrowed: Business Core', 'var(--pc)', 'var(--shared-band)']],
+    labels: { b0: '0 · Setup', b1: '① Accounting intake', b2: '② Accounting transaction', bR: 'Rules & ledger mapping (S1 part 2)', b3: '③ Core accounting', b4: '④ Reports', m_ar: 'Customer module', m_bank: 'Banking module', m_inv: 'Inventory module (borrowed stub)', m_pc: 'Parties & Contacts (borrowed)' },
+    views: [['all', 'All'], ['spine', '0 → ④ Accounting'], ['bR', 'Rules & mapping'], ['m_ar', 'Customer'], ['m_bank', 'Banking'], ['m_inv', 'Inventory'], ['m_pc', 'P&C']],
+    inView: sd => view === 'all' || sd === 'b3' || sd === view || (view === 'spine' && /^b/.test(sd)),
+    hue: t => ({ b0: 'fin', b1: 'acct', b2: 'creditor', bR: 'rule', b3: 'jrnl', b4: 'rep', m_ar: 'debtor', m_bank: 'bank', m_inv: 'shared-fin', m_pc: 'pc' })[t.side] || 'shared-fin',
+    legend: [['0', 'var(--fin)', 'setup: configured once (book, settings, years, branches, numbering)'], ['①', 'var(--acct)', 'intake: the document and events a slice hands over'], ['②', 'var(--creditor)', 'transaction: the lines the code plans by role (dotted: code)'], ['⚙', 'var(--rule)', 'rules &amp; ledger mapping: the code’s register + the ledger mapping'], ['③', 'var(--jrnl)', 'core: the chart and the journal, the books themselves'], ['④', 'var(--rep)', 'reports: queries over the journal (dashed cards: not tables)'], ['AR', 'var(--debtor)', 'customer module'], ['bank', 'var(--bank)', 'banking module'], ['inv', 'var(--shared-fin)', 'inventory module (borrowed stub)'], ['pc', 'var(--pc)', 'Parties &amp; Contacts (borrowed)']],
+    columns: [
+      ['fin.book', 'fin.book_setting', 'fin.setting_definition'],
+      ['fin.branch', 'fin.fiscal_year', 'fin.document_sequence'],
+      ['p:event', 'p:etype'],
+      ['fin.sales_invoice', 'p:family', 'fin.sales_invoice_history', 'fin.outbox'],
+      ['v:facts', 'v:post', 'v:tests'],
+      ['fin.sales_invoice_line', 'v:gates', 'fin.gst_state_code'],
+      ['fin.line_role', 'fin.posting_rule', 'fin.posting_rule_case', 'fin.posting_rule_role'],
+      ['fin.account_determination', 'fin.account_determination_history'],
+      ['v:lookup', 'v:gaps'],
+      ['fin.journal_entry', 'fin.journal_line', 'p:jtrace'],
+      ['fin.ledger_account'],
+      ['v:tb', 'v:cust', 'v:stock', 'v:gst'],
+      null,
+      ['fin.customer_request', 'fin.customer_request_approval', 'fin.customer_request_history'],
+      ['fin.debtor_account', 'fin.debtor_account_history', 'fin.debtor_tax_registration'],
+      ['fin.debtor_category', 'fin.debtor_location', 'fin.debtor_credit_limit'],
+      ['fin.party_bank_account', 'v:bank'],
+      ['inv.stock_lot'],
+      ['pc.operated_party', 'pc.party_standing', 'pc.private_anchor'],
+      ['pc.party', 'pc.party_trade_name', 'pc.party_identifier'],
+      ['pc.business_location', 'pc.contact', 'pc.contact_party_association', 'pc.contact_point', 'pc.record_history'],
+    ],
+  },
+};
+const MODE_ERRORS = DATA.tables.filter(t => blockOf(t.id) === '?').map(t => `no block for ${t.id}`);
+if (MODE_ERRORS.length) console.error('block layout:', MODE_ERRORS);
+let MODE = MODES.side;
+let approach = true;
+const VIS_VIRT = () => VIRT.filter(v => !v.prop || approach);
+const ALL = () => MODE.virt ? TABLES.concat(VIS_VIRT()) : TABLES;
 // initial layout: columns left → right (purchase | vendor | shared | customer), stacked top → bottom
-const COLUMNS = [
+MODES.side.columns = [
   ['fin.book', 'fin.book_setting', 'fin.setting_definition'],
   ['fin.branch', 'fin.fiscal_year', 'fin.document_sequence'],
+  ['fin.line_role', 'fin.posting_rule', 'fin.posting_rule_case', 'fin.posting_rule_role'],
+  ['fin.account_determination', 'fin.account_determination_history'],
   ['fin.journal_entry', 'fin.journal_line'],
   ['fin.sales_invoice', 'fin.sales_invoice_line', 'fin.sales_invoice_history'],
   ['inv.stock_lot'],
@@ -311,12 +474,14 @@ const COLUMNS = [
   ['fin.debtor_account', 'fin.debtor_account_history', 'fin.debtor_tax_registration'],
   ['fin.customer_request', 'fin.customer_request_approval', 'fin.customer_request_history'],
 ];
-{ const placed = new Set(COLUMNS.flat()); const left = TABLES.filter(t => !placed.has(t.id)).map(t => t.id); if (left.length) COLUMNS.push(left); }
-const GAP_X = 300, GAP_Y = 64, TOP = 110, LEFT = 60;
+Object.values(MODES).forEach(m => { const placed = new Set(m.columns.flat()); const left = TABLES.filter(t => !placed.has(t.id)).map(t => t.id); if (left.length) m.columns.push(left); });
+let COLUMNS = MODES.side.columns;
+const GAP_X = 300, GAP_Y = 64, TOP = 110, LEFT = 60, ROW_GAP = 260;
 
 // ───────────────────────────── geometry ─────────────────────────────
 const HH = 40, RH = 22;
 const byId = Object.fromEntries(TABLES.map(t => [t.id, t]));
+VIRT.forEach(v => { v.virt = true; v.side = v.block; v.cols = []; byId[v.id] = v; });
 const meas = document.createElement('canvas').getContext('2d');
 const tw = (txt, font) => { meas.font = font; return meas.measureText(txt).width; };
 const FN = '13px "Segoe UI", system-ui, sans-serif', FT = '12px Consolas, "Cascadia Mono", ui-monospace, monospace', FH1 = 'bold 14px Consolas, ui-monospace, monospace', FK = '11px "Segoe UI", system-ui, sans-serif';
@@ -327,13 +492,20 @@ function measure(t) {
   t.cols.forEach(r => { r.y = y; y += RH; w = Math.max(w, 48 + tw(r.n, FN) + 18 + (showTypes ? tw(r.t, FT) : 0) + (r.nul ? 28 : 0) + 14); });
   t.w = Math.ceil(w); t.h = y + 8;
 }
+function measureV(v) {
+  let w = 250;
+  w = Math.max(w, tw(v.title, 'bold 14px "Segoe UI"') + 28, tw(v.sub, 'italic 12px "Segoe UI"') + 28, ...v.lines.map(l => tw(l, '12.5px "Segoe UI"') + 28));
+  v.w = Math.ceil(w); v.h = 58 + v.lines.length * 20 + 10;
+}
 function layout() {
-  TABLES.forEach(measure);
-  let x = LEFT;
+  TABLES.forEach(measure); VIRT.forEach(measureV);
+  let x = LEFT, top = TOP, bottom = TOP;
   COLUMNS.forEach(col => {
+    if (col === null) { x = LEFT; top = bottom + ROW_GAP; return; }
+    col = col.filter(id => !(byId[id].prop && !approach)); if (!col.length) return;
     const cw = Math.max(...col.map(id => byId[id].w));
-    let y = TOP;
-    col.forEach(id => { const t = byId[id]; t.w = cw; t.x = x; t.y = y; y += t.h + GAP_Y; });
+    let y = top;
+    col.forEach(id => { const t = byId[id]; t.w = cw; t.x = x; t.y = y; y += t.h + GAP_Y; bottom = Math.max(bottom, t.y + t.h); });
     x += cw + GAP_X;
   });
 }
@@ -342,14 +514,14 @@ const rowY = (t, n) => { const r = rowOf(t, n); return t.y + (r ? r.y + RH / 2 :
 const right = t => t.x + t.w;
 
 let view = 'all';
-const inView = sd => view === 'all' || sd === 'shared' || sd === view || (sd === 'journal' && view === 'purchase');
+const inView = sd => MODE.inView(sd);
 const isVis = t => inView(t.side);
 const relVis = r => isVis(byId[r.from]) && isVis(byId[r.to]);
 const MARGIN = 36;
 function gapAfter(x, vis) { const n = vis.filter(t => t.x >= x).map(t => t.x); return { start: x, end: n.length ? Math.min(...n) : x + GAP_X }; }
 function gapBefore(x, vis) { const p = vis.filter(t => right(t) <= x).map(right); return { start: p.length ? Math.max(...p) : x - GAP_X, end: x }; }
 function computeRoutes() {
-  const vis = TABLES.filter(isVis), plans = new Map(), gaps = new Map();
+  const vis = ALL().filter(isVis), plans = new Map(), gaps = new Map();
   const ask = (gap, sortY) => { const key = Math.round(gap.start); if (!gaps.has(key)) gaps.set(key, { gap, asks: [] }); const a = { sortY, x: 0 }; gaps.get(key).asks.push(a); return a; };
   RELS.forEach((r, i) => {
     if (!relVis(r)) return;
@@ -417,10 +589,13 @@ const one = (x, y, d, optional) => optional
 const svg = document.getElementById('svg'), world = document.getElementById('world');
 const gT = document.getElementById('tables'), gR = document.getElementById('rels');
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-const hue = t => t.side === 'setup' ? 'fin' : t.side === 'journal' ? 'jrnl' : t.side === 'vendor' ? 'creditor' : t.side === 'customer' ? 'debtor' : t.side === 'purchase' ? 'acct' : t.schema === 'pc' ? 'pc' : 'shared-fin';
+const hue = t => MODE.hue(t);
 function tableSVG(t) {
-  const hc = `var(--${hue(t)})`;
-  let h = `<g class="tbl" data-id="${t.id}" transform="translate(${t.x},${t.y})">
+  const hc = `var(--${hue(t)})`, own = OWNER(t.id), showOwn = MODE === MODES.block;
+  const ocls = showOwn && (own === 'pc' || own === 'stub') ? ` borrowed${own === 'stub' ? ' stub' : ''}` : '';
+  let h = `<g class="tbl${ocls}" data-id="${t.id}" transform="translate(${t.x},${t.y})">`;
+  if (showOwn) h += `<text class="owntag" x="${t.w - 2}" y="-8" text-anchor="end">${OWN_LABEL[own]}</text>`;
+  h += `
     <rect class="box" width="${t.w}" height="${t.h}" rx="8"/>
     <g class="hd"><path d="M0 ${HH}V8a8 8 0 0 1 8-8H${t.w - 8}a8 8 0 0 1 8 8V${HH}Z" style="fill:${hc}"/>
       <text x="12" y="25" style="font:bold 14px Consolas,ui-monospace,monospace"><tspan opacity=".7">${t.schema}.</tspan>${esc(t.name)}</text>
@@ -442,13 +617,29 @@ function tableSVG(t) {
   });
   return h + '</g>';
 }
-function renderTables() { gT.innerHTML = TABLES.filter(isVis).map(tableSVG).join(''); }
-const BANDS = [['setup', 'BOOKS SETUP', 'var(--fin)', 'var(--fin-soft)'], ['journal', 'JOURNAL (THE BOOKS)', 'var(--jrnl)', 'var(--jrnl-band)'], ['purchase', 'SALES VOUCHER (T24)', 'var(--acct)', 'var(--acct-band)'], ['vendor', 'INVENTORY (STUB)', 'var(--creditor)', 'var(--creditor-band)'], ['shared', 'SHARED', 'var(--pc)', 'var(--shared-band)'], ['customer', 'CUSTOMER', 'var(--debtor)', 'var(--debtor-band)']];
+function vcardSVG(v) {
+  const hc = `var(--${hue(v)})`;
+  return `<g class="tbl vcard${v.prop ? ' prop' : ''}${v.code ? ' code' : ''}" data-id="${v.id}" transform="translate(${v.x},${v.y})">
+    <rect class="box" width="${v.w}" height="${v.h}" rx="10" style="stroke:${hc}"/>
+    <text class="vt" x="14" y="24" style="fill:${hc}">${esc(v.title)}</text>
+    <text class="vs" x="14" y="42">${esc(v.sub)}</text>
+    ${v.lines.map((l, i) => `<text class="vl" x="14" y="${66 + i * 20}">${esc(l)}</text>`).join('')}</g>`;
+}
+function renderTables() { gT.innerHTML = TABLES.filter(isVis).map(tableSVG).join('') + (MODE.virt ? VIS_VIRT().filter(isVis).map(vcardSVG).join('') : ''); }
 function renderBands() {
-  document.getElementById('bands').innerHTML = BANDS.filter(([sd]) => inView(sd)).map(([sd, label, col, bg]) => {
-    const ts = TABLES.filter(t => t.side === sd); if (!ts.length) return '';
-    const x = Math.min(...ts.map(t => t.x)) - 40, y = Math.min(...ts.map(t => t.y)) - 76, xe = Math.max(...ts.map(right)) + 40, ye = Math.max(...ts.map(t => t.y + t.h)) + 40;
-    return `<g class="band"><rect x="${x}" y="${y}" width="${xe - x}" height="${ye - y}" rx="14" style="fill:${bg};stroke:${col}" stroke-opacity=".45"/><text x="${x + 18}" y="${y + 44}" style="fill:${col}">${label}</text></g>`;
+  document.getElementById('bands').innerHTML = MODE.bands.filter(([sd]) => inView(sd)).map(([sd, label, sub, col, bg]) => {
+    const ts = ALL().filter(t => t.side === sd); if (!ts.length) return '';
+    const x = Math.min(...ts.map(t => t.x)) - 40, y = Math.min(...ts.map(t => t.y)) - MODE.bandTop, xe = Math.max(...ts.map(right)) + 40, ye = Math.max(...ts.map(t => t.y + t.h)) + 40;
+    return `<g class="band"><rect x="${x}" y="${y}" width="${xe - x}" height="${ye - y}" rx="14" style="fill:${bg};stroke:${col}" stroke-opacity=".45"/><text x="${x + 18}" y="${y + 44}" style="fill:${col}">${label}</text>${sub ? `<text class="sub" x="${x + 20}" y="${y + 72}" style="fill:${col}">${esc(sub)}</text>` : ''}</g>`;
+  }).join('') + flowArrows();
+}
+function flowArrows() {
+  if (MODE !== MODES.block || !approach || view !== 'all') return '';
+  const box = k => { const ts = ALL().filter(t => t.side === k); return ts.length ? { x: Math.min(...ts.map(t => t.x)) - 40, xe: Math.max(...ts.map(right)) + 40, y: Math.min(...ts.map(t => t.y)) - MODE.bandTop } : null; };
+  return [['b1', 'b2', 'facts → code'], ['b2', 'bR', 'roles → mapping'], ['bR', 'b3', 'approved → post + why'], ['b3', 'b4', 'read']].map(([a, b, label]) => {
+    const A = box(a), B = box(b); if (!A || !B) return '';
+    const y = A.y + 30, x1 = A.xe + 14, x2 = B.x - 14;
+    return `<g class="flow-arrow"><path d="M${x1} ${y}H${x2 - 18}"/><polygon points="${x2},${y} ${x2 - 22},${y - 12} ${x2 - 22},${y + 12}"/><text x="${(x1 + x2) / 2}" y="${y - 14}" text-anchor="middle">${label}</text></g>`;
   }).join('');
 }
 function renderRels() {
@@ -483,7 +674,7 @@ function apply() {
   });
 }
 function bounds() {
-  const v = TABLES.filter(isVis), xs = v.map(t => t.x), ys = v.map(t => t.y - 76), xe = v.map(right), ye = v.map(t => t.y + t.h);
+  const v = ALL().filter(isVis), xs = v.map(t => t.x), ys = v.map(t => t.y - MODE.bandTop), xe = v.map(right), ye = v.map(t => t.y + t.h);
   return { x: Math.min(...xs) - 60, y: Math.min(...ys) - 20, w: Math.max(...xe) - Math.min(...xs) + 120, h: Math.max(...ye) - Math.min(...ys) + 80 };
 }
 function fit() {
@@ -554,8 +745,7 @@ function select(id, ri) {
 }
 const det = document.getElementById('details');
 selbar.onclick = () => det.scrollIntoView({ behavior: 'smooth', block: 'start' });
-const SIDE_LABEL = { setup: 'Books setup', journal: 'Journal (the books)', purchase: 'Sales voucher (T24)', vendor: 'Inventory (stub)', customer: 'Customer side', shared: 'Shared' };
-const kindPill = t => `<span class="kind" style="background:var(--${hue(t)}-soft);color:var(--${hue(t)})">${t.schema === 'fin' ? 'Finance' : t.schema === 'inv' ? 'Inventory' : 'Parties & Contacts'} · ${SIDE_LABEL[t.side]}</span>`;
+const kindPill = t => `<span class="kind" style="background:var(--${hue(t)}-soft);color:var(--${hue(t)})">${t.schema === 'fin' ? 'Finance' : t.schema === 'inv' ? 'Inventory' : 'Parties & Contacts'} · ${MODE.labels[t.side]}</span><span class="kind" style="background:var(--code-bg);color:var(--soft-ink)" title="${esc(OWN_TEXT[OWNER(t.id)])}">${OWN_LABEL[OWNER(t.id)]}</span>`;
 function tableHTML(t, withShow) {
   const fks = RELS.filter(r => r.from === t.id), refs = RELS.filter(r => r.to === t.id);
   const li = xs => `<ul>${xs.map(x => `<li><code>${esc(x)}</code></li>`).join('')}</ul>`;
@@ -586,6 +776,44 @@ function renderDetails() {
       ${r.composite ? `<p>Declared on several columns${/workspace_id/.test(r.cols) ? ', including <code>workspace_id</code>, so a row can never reference another workspace' : ''}.</p>` : ''}`;
     return;
   }
+  if (selT && byId[selT].virt) {
+    const v = byId[selT];
+    det.innerHTML = `<h2>${esc(v.title)}<small>${esc(v.sub)}</small></h2>
+      <span class="kind" style="background:var(--${hue(v)}-soft);color:var(--${hue(v)})">${esc(MODE.labels[v.side])}</span><span class="kind" style="background:${v.prop ? 'var(--new-soft)' : 'var(--code-bg)'};color:${v.prop ? 'var(--new)' : 'var(--muted)'}">${v.prop ? 'PROPOSED · not built' : v.code ? 'CODE · stays in code, not a table' : 'not a table'}</span>
+      <p class="tdoc">${esc(v.text)}</p>`;
+    return;
+  }
+  if (!selT && task === null && MODE === MODES.block) {
+    const rows = MODE.bands.map(([k, label, sub, col]) => {
+      const ts = TABLES.filter(t => t.side === k), vs = VIRT.filter(v => v.block === k);
+      const own = ['ours', 'manoj', 'pc', 'stub'].map(o => [o, ts.filter(t => OWNER(t.id) === o).length]).filter(([, n]) => n).map(([o, n]) => `${n} ${OWN_LABEL[o].toLowerCase()}`).join(' · ');
+      return `<tr><td><i class="sw" style="background:${col}"></i><b>${esc(MODE.labels[k])}</b><br><span class="n">${esc(sub)}</span></td><td>${ts.length}</td><td>${ts.reduce((a, t) => a + t.cols.length, 0)}</td><td>${own || '—'}</td><td>${ts.map(t => `<code>${esc(t.id)}</code>`).join(' ')}${vs.length ? `${ts.length ? '<br>' : ''}<i class="n">not tables: ${vs.map(v => esc(v.title)).join(' · ')}</i>` : ''}</td></tr>`;
+    }).join('');
+    const tot = o => TABLES.filter(t => OWNER(t.id) === o).length;
+    det.innerHTML = `<h2>The schema by accounting block<small>the same ${C.tables} tables, grouped by what they do in accounting</small></h2>
+      <div class="kpis"><span><b>${tot('ours')}</b>ours</span><span><b>${tot('manoj')}</b>Manoj's, as built</span><span><b>${tot('pc')}</b>borrowed from P&amp;C</span><span><b>${tot('stub')}</b>borrowed stub</span><span><b>${VIRT.length}</b>cards that are not tables</span></div>
+      <p>Top row: how an entry is made, left to right. <b>0 Setup</b> is configured once. <b>① Intake</b> is what a slice hands over (Billing's invoice, as booked; the events). <b>② Transaction</b> is the entry the rule plans from it, before approval. <b>③ Core</b> is the books. <b>④ Reports</b> are read from the books. Bottom row: the modules beside the books, and what we borrow.</p>
+      <div class="tw"><table class="blocks"><tr><th>Block</th><th>Tables</th><th>Columns</th><th>Owner</th><th>Tables in it</th></tr>${rows}</table></div>
+      <h3>How to read it</h3>
+      <ul>
+        <li><b>The voucher is split on purpose:</b> its header (<code>sales_invoice</code>: Billing's invoice facts and the approval) is intake; its lines (<code>sales_invoice_line</code>: the Dr / Cr the rule proposed) are the planned transaction. Approval copies the lines into the journal.</li>
+        <li><b>Code decides the lines; configuration decides the ledgers (rev 17):</b> the dotted CODE cards in ② are what stays in code (the facts, the posting function, its tests, the gates). The <b>Rules &amp; ledger mapping</b> band holds the register of that code (<code>posting_rule</code>, its cases and roles) and the mapping a maker and a checker keep (<code>account_determination</code>). Every journal line keeps rule · case · role · mapping row: "why was this posted?" is a query.</li>
+        <li><b>④ has no tables:</b> every report is a query over <code>journal_line</code>. Three are proved in <code>t24_schema_test.sql</code>.</li>
+        <li><b>Borrowed</b> (dashed outline): P&amp;C's tables are Business Core's; we read them and write only through their command. <code>inv.stock_lot</code> is a stub the inventory module will own.</li>
+        <li><b>Manoj's, as built</b>: the core (chart, journal), years, branches, numbering, GST state codes, bank details. We add to them, never change them.</li>
+      </ul>
+      <h3>The proposed approach <span class="addc" style="background:var(--new-soft);color:var(--new)">not built · dotted green cards</span></h3>
+      <ul>
+        <li><b>① One general event table</b> (<code>accounting_event</code>) + an <b>event catalogue</b> (<code>event_type</code>): every slice's events, logged once, with their outcome (posted · ignored · exception). A new event type is a row, never a table. (G41)</li>
+        <li><b>① Documents per family, a type inside:</b> <code>sales_invoice</code> + <code>document_type</code> (invoice · credit note · debit note) + <code>original_document_id</code>. T25 and T26 add no tables. (G42)</li>
+        <li><b>② Rules stay code</b>, versioned; <b>③ the journal</b> stays one general table for every document, + <code>event_id</code> and <code>rule_version</code> on each entry. (G41)</li>
+        <li><b>④ Reports stay queries</b> over the journal.</li>
+        <li><b>The rule:</b> new event type → a catalogue row · new document type in a family → a type value · new document family (receipts, bank) → new typed tables · never a table per event type, never one table for everything.</li>
+        <li>Same pattern as Oracle (XLA_EVENTS · RA_CUSTOMER_TRX · one subledger journal) and SAP (billing VBRK by type · universal journal ACDOCA). Manoj's tables are not changed until agreed.</li>
+      </ul>
+      ${MODE_ERRORS.length ? `<p style="color:#b91c1c">${esc(MODE_ERRORS.join('; '))}</p>` : ''}`;
+    return;
+  }
   if (!selT && task !== null) {
     const s = STEPS[task], n = stepCounts(task);
     const chips = ids => ids.map(id => `<button class="tl" data-id="${id}">${esc(id)}<small>${byId[id].cols.length}</small></button>`).join('');
@@ -613,7 +841,7 @@ function renderDetails() {
   if (!selT) {
     det.innerHTML = `<h2>Our sales engine (Vijay)<small>what the diagram covers</small></h2>
       <div class="kpis"><span><b>${C.tables}</b>tables (fin ${C.fin}, pc ${C.pc}, inv ${C.inv})</span><span><b>${C.columns}</b>columns</span><span><b>${C.fks}</b>foreign keys</span><span><b>${C.checks}</b>checks</span><span><b>${C.unique + C.unique_idx}</b>unique keys</span><span><b>${C.exclude}</b>exclude</span><span><b>${C.docs}</b>table notes</span><span><b>${C.notes}</b>column notes</span></div>
-      <p>The whole of <code>customer_onboarding_schema.dbml</code>, rev 16 (23 Nov 2026): S1 part 1 Set up the books + T12 Create a customer + T24 Sales voucher entry, with the cost of goods sold from inventory. Use <b>All · Books setup · Sales voucher · Customer · Inventory</b> at the top to see one side; the shared tables stay visible. Click a table for its note, keys, checks and columns; click a line for the relationship. Every table is written out in full further down.</p>
+      <p>The whole of <code>customer_onboarding_schema.dbml</code>, rev 17 (24 Nov 2026): S1 part 1 Set up the books + S1 part 2 Posting rules and the ledger mapping + T12 Create a customer + T24 Sales voucher entry, with the cost of goods sold from inventory. Use <b>All · Books setup · Sales voucher · Customer · Inventory</b> at the top to see one side; the shared tables stay visible. Click a table for its note, keys, checks and columns; click a line for the relationship. Every table is written out in full further down.</p>
       <div class="cols2"><div>
       <h3>How this page was made</h3>
       <ul>
@@ -628,13 +856,14 @@ function renderDetails() {
         <li><b>Sales voucher (T24)</b>: <code>sales_invoice</code> / <code>_line</code> / <code>_history</code>, the twin of his purchase voucher. It reads the setup and posts one journal entry.</li>
         <li><b>Customer</b>: the customer request, its approvals and history, and the debtor account with its satellites (T12).</li>
         <li><b>Inventory (stub)</b>: <code>inv.stock_lot</code>, only so the sale can read its cost (FIFO or weighted average). The inventory module owns it (G3).</li>
+        <li><b>Rules &amp; ledger mapping (S1 part 2, rev 17)</b>: <code>line_role</code> (the fixed roles, each with the kind and type of ledger it may take), <code>posting_rule</code> / <code>_case</code> / <code>_role</code> (the register of the posting code: SALES_INVOICE v1, R1–R13, its 12 roles), <code>account_determination</code> (book + document + role + conditions → ledger, dated, maker + checker) and its history. The logic itself stays in code.</li>
         <li><b>Shared</b>: Parties &amp; Contacts (<code>pc</code>, P&amp;C's, followed never changed), the chart of accounts, GST state codes, bank accounts, and the event outbox.</li>
       </ul>
       </div><div>
       <h3>What this page cannot tell you</h3>
       <ul>
         <li>Aikyat's real setting values: the CA decides (G3); the test uses perpetual + FIFO.</li>
-        <li>The posting rules (R1 to R13) and the Submit checks: they live in the app's <code>rules.ts</code> and the T24 doc, not in the schema.</li>
+        <li>The posting logic itself (R1 to R13) and the Submit checks: code (the app's <code>engine.ts</code> / <code>rules.ts</code>). The schema holds their register and the ledger mapping; the block view's dotted CODE cards say what stays in code.</li>
         <li>Which ledger codes are proposed (e.g. 501040 Cost of Goods Sold): see the notes on the tables and the gap list (<code>task_tracker/03_gaps.md</code>).</li>
         <li>Seed data: ${C.seeded} tables hold rows (the count is shown on each table).</li>
       </ul>
@@ -645,7 +874,7 @@ function renderDetails() {
   det.innerHTML = tableHTML(byId[selT], false);
 }
 function renderReference() {
-  const groups = [['setup', 'Books setup', 'var(--fin)'], ['journal', 'Journal (the books)', 'var(--jrnl)'], ['purchase', 'Sales voucher (T24)', 'var(--acct)'], ['customer', 'Customer tables', 'var(--debtor)'], ['vendor', 'Inventory (stub)', 'var(--creditor)'], ['shared', 'Shared tables', 'var(--pc)']];
+  const groups = MODE.bands.map(([k, , , col]) => [k, MODE.labels[k], col]);
   document.getElementById('reference').innerHTML = groups.map(([sc, label, col]) => `<h2 class="sec"><i style="background:${col}"></i>${label}</h2>` +
     TABLES.filter(t => t.side === sc).map(t => `<div class="d">${tableHTML(t, true)}</div>`).join('')).join('');
   document.querySelectorAll('.show').forEach(b => b.onclick = () => { reveal(b.dataset.id); select(b.dataset.id); centerOn(byId[b.dataset.id]); canvas.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
@@ -660,7 +889,7 @@ gR.addEventListener('pointerover', e => {
 gR.addEventListener('pointermove', e => { const b = canvas.getBoundingClientRect(); tip.style.left = (e.clientX - b.left + 14) + 'px'; tip.style.top = (e.clientY - b.top + 14) + 'px'; });
 gR.addEventListener('pointerout', e => { if (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest('.rel')) tip.style.display = 'none'; });
 function renderList() {
-  const groups = [['setup', 'Books setup', 'var(--fin)'], ['journal', 'Journal', 'var(--jrnl)'], ['purchase', 'Sales voucher', 'var(--acct)'], ['customer', 'Customer', 'var(--debtor)'], ['vendor', 'Inventory', 'var(--creditor)'], ['shared', 'Shared', 'var(--pc)']];
+  const groups = MODE.bands.map(([k, , , col]) => [k, MODE.labels[k], col]).filter(([k]) => TABLES.some(t => t.side === k));
   document.getElementById('list').innerHTML =
     `<div class="howto" style="width:100%"><b>Scroll</b> on the diagram to zoom at the pointer · <b>drag</b> the canvas to pan · <b>drag a table</b> to move it, the lines follow · <b>click</b> a table or a line and its details appear here · <b>Esc</b> clears · <b>F</b> fits · <b>0</b> is 100%</div>` +
     groups.map(([sc, label, col]) => `<h4><i style="background:${col}"></i>${label}</h4>` +
@@ -674,7 +903,7 @@ function drawMini() {
   const b = bounds();
   mini.setAttribute('viewBox', `${b.x} ${b.y} ${b.w} ${b.h}`);
   mini.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-  mini.innerHTML = TABLES.filter(isVis).map(t => `<rect x="${t.x}" y="${t.y}" width="${t.w}" height="${t.h}" rx="12" style="fill:var(--${hue(t)});opacity:.45"/>`).join('') +
+  mini.innerHTML = ALL().filter(isVis).map(t => `<rect x="${t.x}" y="${t.y}" width="${t.w}" height="${t.h}" rx="12" style="fill:var(--${hue(t)});opacity:.45"/>`).join('') +
     `<rect id="miniRect" style="fill:var(--fin-soft);fill-opacity:.4;stroke:var(--fin)"/>`;
   miniRect = document.getElementById('miniRect');
   miniView();
@@ -698,7 +927,7 @@ function setTask(i) {
   task = (i === '' || i === null || i === undefined) ? null : +i;
   taskSel.value = task === null ? '' : String(task);
   document.getElementById('taskWrap').classList.toggle('on', task !== null);
-  if (task !== null && view !== 'all') { view = 'all'; document.querySelectorAll('.views button').forEach(b => b.classList.toggle('on', b.dataset.view === 'all')); renderRels(); drawMini(); }
+  if (task !== null && view !== 'all') { view = 'all'; document.querySelectorAll('.views button').forEach(b => b.classList.toggle('on', b.dataset.view === 'all')); renderTables(); renderRels(); drawMini(); }
   selT = null; selR = null; selbar.style.display = 'none';
   renderTables(); applyHighlight(); renderDetails();
 }
@@ -709,7 +938,24 @@ function setView(v) {
   select(null); renderTables(); renderRels(); applyHighlight(); drawMini(); fit();
 }
 function reveal(id) { if (!isVis(byId[id])) setView('all'); }
-document.querySelectorAll('.views button').forEach(b => b.onclick = () => setView(b.dataset.view));
+function renderViews() {
+  document.getElementById('views').innerHTML = MODE.views.map(([k, l]) => `<button data-view="${k}" class="${k === view ? 'on' : ''}">${esc(l)}</button>`).join('');
+  document.querySelectorAll('.views button').forEach(b => b.onclick = () => setView(b.dataset.view));
+}
+function renderLegend() {
+  document.getElementById('legendBands').innerHTML = MODE.legend.map(([b, col, txt]) => `<div class="row"><span class="badge" style="background:${col}">${b}</span><span>${txt}</span></div>`).join('') +
+    (MODE === MODES.block ? `<div class="row"><span class="own" style="border-style:dashed;border-color:var(--pc)"></span><span>dashed outline: borrowed, not ours</span></div><div class="row"><span class="own" style="border-style:dashed;border-color:var(--rep)"></span><span>dashed card: not a table (code or a query)</span></div><div class="row"><span class="own" style="border-style:dotted;border-color:var(--new);background:var(--new-soft)"></span><span>dotted green: PROPOSED, not built</span></div>` : '');
+}
+function setLens(m) {
+  MODE = MODES[m] || MODES.side;
+  document.getElementById('lens').value = MODE === MODES.block ? 'block' : 'side';
+  TABLES.forEach(t => t.side = MODE.side(t.id));
+  COLUMNS = MODE.columns; view = 'all'; selT = null; selR = null; selbar.style.display = 'none';
+  document.getElementById('apprWrap').style.display = MODE === MODES.block ? 'flex' : 'none';
+  layout(); renderViews(); renderLegend(); renderTables(); renderRels(); renderList(); renderReference(); applyHighlight(); renderDetails(); drawMini(); fit();
+}
+document.getElementById('lens').onchange = e => setLens(e.target.value);
+document.getElementById('appr').onchange = e => { approach = e.target.checked; selT = null; selR = null; selbar.style.display = 'none'; layout(); renderTables(); renderRels(); applyHighlight(); renderDetails(); drawMini(); fit(); };
 document.getElementById('zoomIn').onclick = () => zoomAt(1.25, canvas.clientWidth / 2, canvas.clientHeight / 2);
 document.getElementById('zoomOut').onclick = () => zoomAt(0.8, canvas.clientWidth / 2, canvas.clientHeight / 2);
 document.getElementById('fit').onclick = fit;
@@ -718,7 +964,7 @@ document.getElementById('reset').onclick = () => { layout(); renderTables(); ren
 document.getElementById('showTypes').onchange = e => {
   showTypes = e.target.checked;
   TABLES.forEach(t => { const x = t.x, y = t.y; measure(t); t.x = x; t.y = y; });
-  COLUMNS.forEach(col => { const cw = Math.max(...col.map(id => byId[id].w)); col.forEach(id => byId[id].w = cw); });
+  COLUMNS.forEach(col => { if (!col) return; const cw = Math.max(...col.map(id => byId[id].w)); col.forEach(id => byId[id].w = cw); });
   renderTables(); renderRels(); applyHighlight(); drawMini();
 };
 window.addEventListener('keydown', e => {
@@ -731,5 +977,6 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('resize', () => { drawMini(); });
 // ───────────────────────────── go ─────────────────────────────
+renderViews(); renderLegend();
 layout(); renderTables(); renderRels(); renderList(); renderDetails(); renderReference(); drawMini(); fit();
 </script>
