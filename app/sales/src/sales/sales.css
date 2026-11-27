@@ -392,3 +392,16 @@
 .sv-lots[open] summary { margin-bottom: var(--space-2); }
 .sv-scroll { overflow-x: auto; max-width: 100%; }
 .sv-scroll .sv-post { min-width: 560px; }
+
+/* Rev 19 · Upload an invoice: the file on the left, what was read / the checks / the entry on the right */
+
+/* REC (27-Nov-2026) · the entry the AE types, like Tally; the document's amounts beside it */
+.sv-docamounts { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); background: var(--surface); display: flex; flex-direction: column; gap: var(--space-2); }
+.sv-docamounts__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--space-2) var(--space-4); }
+.sv-docamounts__item { display: flex; flex-direction: column; gap: 2px; }
+.sv-docamounts__k { color: var(--text-muted); font-size: var(--fs-sm); }
+.sv-docamounts__v { font-variant-numeric: tabular-nums; font-weight: var(--fw-semibold); }
+.sv-post--typed td .input { width: 100%; min-width: 0; box-sizing: border-box; }
+.sv-post--typed td.num .input { text-align: right; max-width: 140px; }
+.sv-post--typed .sv-lp { min-width: 240px; }
+

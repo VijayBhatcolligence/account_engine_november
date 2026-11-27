@@ -1,35 +1,19 @@
-// Posting rules (T24 §8): what every voucher must satisfy, the rule SALES_INVOICE v1 (R1–R7), the ledgers and
-// their status in the CA's chart, the AE's edit (§8.4), the company switches, and the checks K1–K19.
+// Ledgers and checks (REC, 27-Nov-2026: no posting rules in this app). What every voucher must satisfy, the ledgers the AE
+// picks from (the chart), the receivable ledgers, the company settings, and the checks on a typed entry.
 
 import { PageHeader, Section, StatusPill } from '../ui';
 import { DEBTOR_LEDGER, LEDGERS, PARAMS, SETTINGS } from './catalogue';
-import { CHECK_CODE, POSTING_RULE } from './rules';
+import { CHECK_CODE } from './rules';
 
 const EVERY_VOUCHER: { rule: string; why: string }[] = [
   { rule: 'Total Dr = total Cr, to the paisa (K16)', why: 'Double entry. Nothing is posted unless it balances' },
-  { rule: 'The engine picks the rule and the ledgers; the slice sends amounts', why: 'The invoice sends the business facts (customer, place of supply, lines, tax). The AE may edit the entry only with a reason, and Rajan sees it (§8.4)' },
-  { rule: 'One entry per invoice: revenue, the receivable, GST and (rev 15) the cost of the goods sold', why: 'The CA\'s specimens are invoice-only (no challan for a normal sale): the invoice gives the item and quantity, inventory gives the cost (R13, FIFO or weighted average), in the same entry. Stock is credited once, here' },
-  { rule: 'Never a group ledger; a receivable ledger only through a customer (LEDGER_NOT_POSTABLE)', why: "206010 Statutory Dues becomes a group once the GST heads exist. 107010–107130 are receivable ledgers (account_type receivable): the customer line posts to its account's own ledger and names the account (the commit check: SUBLEDGER_MISMATCH, ACCOUNT_NOT_ON_ITS_LEDGER). No \"control ledger\" (Manoj, 13-Nov)" },
+  { rule: 'The AE types the entry, like Tally: the ledger and Dr or Cr on each line', why: 'REC (Vijay, 27-Nov-2026): each role app owns its accounting layer and will propose the entry; this app records it. No posting rule and no ledger mapping here. The document\'s amounts (GST, totals) and the cost from inventory are calculated and shown for reference' },
+  { rule: 'The entry is checked against the document (K27) and inventory (K26)', why: 'The customer line and the GST by head are compared with the document\'s calculated amounts (a warning Rajan sees); the cost of goods sold must equal inventory\'s, because stock goes out on approval' },
+  { rule: 'Never a group ledger; a receivable ledger only through a customer (LEDGER_NOT_POSTABLE)', why: "107010–107130 are receivable ledgers (account_type receivable): the customer line posts to its account's own ledger and names the account (the commit check: SUBLEDGER_MISMATCH, ACCOUNT_NOT_ON_ITS_LEDGER)" },
   { rule: 'The posting date must be in an open period (K7, K8)', why: 'Oct-2026 open · Sep-2026 soft-closed (Accounts Manager approval) · earlier months closed' },
   { rule: 'Approval re-runs every check, then posts in one transaction', why: "As Manoj's purchase voucher: the customer or the period may have changed since Submit (APPROVAL_REFUSED). If any step stops, nothing is saved" },
   { rule: 'Posted is final: no edit, no delete', why: "A mistake on the invoice is Billing's to correct (a credit note, T25); a wrong entry is reversed, never edited" },
-  { rule: 'One entry per invoice', why: "Each invoice Billing hands over is booked once (the voucher is unique per invoice number and branch)" },
-  { rule: 'Every journal entry keeps its rule version and any edit', why: '"Why was this posted?" is always answerable: the entry → its sales invoice (source_document_id) → rule SALES_INVOICE v1 and the case on each line (fin.posting_rule) → the edit (who, why, approved by)' },
-];
-
-const RULES: [string, string, string, string][] = [
-  ['R1', 'Goods, domestic, local (place of supply = our branch\'s state)', 'Customer (its receivable ledger) = total', '401010 Sale of Products · Output CGST · Output SGST · ± Round off'],
-  ['R2', 'Goods, domestic, inter-state', 'Customer', '401010 Sale of Products · Output IGST · ± Round off'],
-  ['R3', 'Service line (SAC)', 'Customer', '401020 Sale of Services · GST as R1 / R2'],
-  ['R4', 'Export under LUT', 'Customer (107040) in INR', '401030 Export Sales · no GST'],
-  ['R5', 'Export with IGST (rev 3: the CA\'s C2, C4)', 'Customer (107040) = the value only · IGST Refund Receivable 109040 (proposed) = the IGST', '401030 Export Sales · Output IGST'],
-  ['R6', 'SEZ under LUT / with IGST (rev 3: C5, C6)', 'Customer (107050) = the value only · with IGST: IGST Refund Receivable 109040', '401030 (to confirm, G18) · Output IGST when paid'],
-  ['R7', 'TCS item (scrap, luxury …)', 'Customer incl. TCS', '+ TCS payable 206014 (s.394): rate to confirm, not computed in the mock'],
-  ['R8', 'Paid at once: cash / UPI / card (A3)', 'Cash in Hand 108010 or UPI / Card Clearing 108030 (proposed), not the customer', 'as the line\'s own rule'],
-  ['R9', 'Nil-rated, exempt or non-GST line (A5, A6, B4)', '—', 'Sales – Exempt / Nil-rated 401050 (proposed) · no GST; all lines so → a Bill of Supply'],
-  ['R10', 'Freight charged to the buyer (A8)', '—', 'Freight Recovered 401070 (proposed) · GST at the goods\' rate'],
-  ['R11', 'Expense paid as pure agent (B5)', '—', 'Expenses Recoverable 110030 (proposed) · outside the value, no GST'],
-  ['R12', 'Period service billed in advance (B6)', '—', 'Contract Liability 206040 (proposed) · released month by month (period end: G33)'],
+  { rule: 'One entry per document', why: 'Each invoice or note Billing hands over is booked once (unique per number and branch); the journal entry links to it (source_document_id)' },
 ];
 
 const CHECKS: [string, 'Stop' | 'Warn' | 'Stop / Warn', string][] = [
@@ -37,8 +21,10 @@ const CHECKS: [string, 'Stop' | 'Warn' | 'Stop / Warn', string][] = [
   ['K7', 'Stop', 'The posting date (= the invoice date) in a closed month or year'],
   ['K8', 'Warn', 'Soft-closed month'],
   ['K15', 'Warn', 'Customer over its credit limit after this invoice'],
-  ['K16', 'Stop', 'Entry balances (Dr = Cr)'],
-  ['K17', 'Stop / Warn', 'Ledgers are suggestions: any may be picked (no reason). The customer and GST amounts are the invoice\'s; never a group ledger; the customer line only on a receivable ledger; a changed amount needs a reason; Rajan sees every change'],
+  ['K16', 'Stop', 'The entry is typed and balances (Dr = Cr)'],
+  ['K17', 'Stop', 'Every line has a postable ledger (never a group; a receivable ledger only through the customer) and one amount, Dr or Cr'],
+  ['K27', 'Warn', 'The customer line and the GST by head differ from the document\'s calculated amounts (Rajan sees it)'],
+  ['K26', 'Stop', 'The cost of goods sold in the entry differs from inventory\'s (stock goes out on approval)'],
   ['K19', 'Stop', 'The maker may not decide'],
 ];
 
@@ -48,52 +34,9 @@ export function PostingRulesScreen() {
   return (
     <div className="ob-page">
       <PageHeader
-        title="Posting rules"
-        subtitle={`${POSTING_RULE}: the entry the engine suggests for an invoice received from Billing, the ledgers it uses, and the checks. Same rules the backend runs on save, submit and post.`}
+        title="Ledgers and checks"
+        subtitle="No posting rules in this app (REC, 27-Nov-2026): the Accounts Executive types each entry, like Tally, from these ledgers; the checks below run on save, submit and post."
       />
-      <Section title="SALES_INVOICE v1 (effective 1-Apr-2026): event data → rule → entry">
-        <table className="ob-sugg">
-          <thead>
-            <tr>
-              <th>Rule · condition</th>
-              <th>Dr</th>
-              <th>Cr</th>
-            </tr>
-          </thead>
-          <tbody>
-            {RULES.map(([id, cond, dr, cr]) => (
-              <tr key={id}>
-                <th scope="row">
-                  <strong>{id}</strong> · {cond}
-                </th>
-                <td>{dr}</td>
-                <td>{cr}</td>
-              </tr>
-            ))}
-            <tr>
-              <th scope="row">Discount at supply</th>
-              <td colSpan={2}>Already inside the taxable value: no ledger (scope 4.14)</td>
-            </tr>
-            <tr>
-              <th scope="row">Stock and cost of goods sold (R13, rev 15)</th>
-              <td colSpan={2}>Goods on the invoice: Dr 501040 Cost of Goods Sold (proposed) · Cr 106020 Finished Goods, one line per lot (FIFO) or per item (weighted average). The cost comes from inventory (inv.stock_lot), never the selling price; the lots go down at approval.</td>
-            </tr>
-          </tbody>
-        </table>
-        <pre className="sv-rule">{`Example B4-01 · SI-0012, Sri Lakshmi (R1)
-   Dr 107100 Trade Receivables – Dealer/Distributor
-        naming Sri Lakshmi Distributors (ACC-1201)     7,48,125.00
-   Cr 401010 Sale of Products                          7,12,500.00
-   Cr 206011 Output CGST (proposed)                       17,812.50
-   Cr 206012 Output SGST (proposed)                       17,812.50
-   Dr 501040 Cost of Goods Sold (proposed, R13 FIFO)    5,58,000.00
-   Cr 106020 Finished Goods  FG-101 300 lot G-2604      1,62,000.00
-   Cr 106020 Finished Goods  FG-101 300 lot G-2608      1,68,000.00
-   Cr 106020 Finished Goods  FG-102 300 lot C-2607      2,28,000.00
-Example B4-09 · Gulf Snack export under LUT (R4)
-   Dr Gulf Snack Imports LLC (107040)                  9,39,840.00
-   Cr 401030 Export Sales                              9,39,840.00   USD 10,680 × ₹88.00`}</pre>
-      </Section>
       <div className="ob-two">
         <Section title="Ledgers (CA's chart, Indian GAAP)">
           <table className="ob-sugg">
@@ -105,12 +48,12 @@ Example B4-09 · Gulf Snack export under LUT (R4)
                   </th>
                   <td>{l.name}</td>
                   <td className="mono subtle small-note">{l.accountType ?? ''}</td>
-                  <td>{l.proposed ? <StatusPill tone="warning">proposed (CA to confirm)</StatusPill> : l.isGroup ? <StatusPill tone="normal">group</StatusPill> : <StatusPill tone="success">CA ✓</StatusPill>}</td>
+                  <td>{l.proposed ? <StatusPill tone="warning">proposed in the app</StatusPill> : l.isGroup ? <StatusPill tone="normal">group</StatusPill> : l.seeded ? <StatusPill tone="info">seeded default</StatusPill> : <StatusPill tone="success">CA ✓</StatusPill>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="subtle small-note">401011 Sale of Products – Inter-state is only a proposal (probably not needed: the place of supply is on the invoice). Domestic inter-state sales post to 401010. Output GST by head (206011–206013), TCS payable (206014) and Round Off (505120, under Other Expenses – Administrative) wait for the CA (G18). The second column is fin.ledger_account.account_type.</p>
+          <p className="subtle small-note">The ledgers the AE picks from, seeded in the chart by default (Vijay, 26-Nov). "Seeded default": the CA's chart had no code for it, so it carries ours (G18: the CA may renumber). The second column is fin.ledger_account.account_type.</p>
         </Section>
         <Section title="Receivable ledgers (from the debtor category)">
           <table className="ob-sugg">
@@ -130,13 +73,13 @@ Example B4-09 · Gulf Snack export under LUT (R4)
         </Section>
       </div>
       <div className="ob-two">
-        <Section title="The AE's edit (§8.4, Vijay 6-Nov)">
+        <Section title="Typing an entry (REC, 27-Nov-2026)">
           <ul className="ob-plain">
-            <li>The engine fills the entry; it is read-only with each line's rule and why.</li>
-            <li>"Edit entry": change a ledger, split a line, add a line. Every changed or added line needs a reason.</li>
-            <li>Locked: the customer line (= invoice total), the tax lines (= the invoice's tax by head), Dr = Cr.</li>
-            <li>Never a group ledger, never a receivable ledger on another line (LEDGER_NOT_POSTABLE).</li>
-            <li>Rajan sees "Entry differs from rule R1: lines …"; the journal keeps the rule and the edit (who, why, approved by).</li>
+            <li>The entry starts empty. Each line: a ledger (or the customer's account), Dr or Cr, an optional narration.</li>
+            <li>The document's amounts (customer, taxable value, GST by head, round off) are calculated and shown beside, for reference.</li>
+            <li>"Add the cost from inventory" adds the cost of goods sold lines (FIFO or weighted average) in one click: a calculation, not a rule.</li>
+            <li>Submit needs Dr = Cr and postable ledgers; a difference from the document is a warning Rajan sees.</li>
+            <li>A role app's own accounting layer will later propose the entry; it arrives here filled, and the AE checks and records it.</li>
           </ul>
         </Section>
         <Section title="Company settings and parameters">
@@ -156,7 +99,7 @@ Example B4-09 · Gulf Snack export under LUT (R4)
           </ul>
         </Section>
       </div>
-      <Section title="Checks on a sales invoice (K1–K19)">
+      <Section title="Checks on a typed entry (K1–K26)">
         <ul className="check-list">
           {CHECKS.map(([k, level, when]) => (
             <li key={k} className={`check-row ${level === 'Warn' ? 'check-row--reason' : 'check-row--stop'}`}>

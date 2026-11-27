@@ -7,9 +7,9 @@
 
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Ban, Blocks, Check, CheckCheck, CornerUpLeft, Eye, Lock, Plus, Save, Scissors, Send, Undo2, X } from 'lucide-react';
+import { Ban, Blocks, Check, CheckCheck, CornerUpLeft, Eye, Lock, Plus, Save, Send, Undo2, UserPlus, X } from 'lucide-react';
 import { fmtDate, fmtDateTime } from '../domain/dates';
-import { Button, Callout, Dialog, SegmentedControl, StatusPill, Switch, TextInput } from '../ui';
+import { Button, Callout, Dialog, SegmentedControl, StatusPill, TextInput } from '../ui';
 import { ACTORS, ME, STATES, who } from '../onboarding/catalogue';
 import { ReasonDialog } from '../onboarding/screens/OnboardingScreen';
 import { StatusSteps, type Step } from '../onboarding/screens/parts';
@@ -18,15 +18,15 @@ import { COST_METHODS, lotsOf, stockValue, type CostMethod } from './inventory';
 import { useSalesCtx, V_STATUS } from './hooks';
 import { InvoiceDoc } from './InvoiceDoc';
 import { logicOf, type Logic } from './logic';
-import { accountOf, calcOf, checksOf, costOfV, countryName, dueDateOf, entryDiffOf, entryOf, isTcsCategory, issuerOf, money, partyOfAccount, placesOf, POSTING_RULE, rankLedgers, RECEIVABLES, routesOf, rupees, stops, sum, type EntryLine, type SCheck } from './rules';
+import { accountOf, againstOf, costLinesOf, receivableOf, calcOf, checksOf, costOfV, countryName, DOC_LABEL, dueDateOf, entryOf, isNote, isTcsCategory, issuerOf, money, NOTE_REASON, partyOfAccount, placesOf, rankLedgers, routesOf, rupees, stops, sum, type EntryLine, type SCheck } from './rules';
 import { T24_SPEC } from './screenSpec';
-import { isMineV, titleOfV } from './store';
+import { isMineV, titleOfV, useSales } from './store';
 import type { Outcome, Voucher } from './types';
 import { rupeesInWords } from './words';
 
 type Tab = 'invoice' | 'entry' | 'why' | 'history';
 const num = (x: string) => (x === '' ? null : Number(x.replace(/[^0-9.-]/g, '')));
-const ledgerLabel = (k: string) => (LEDGERS[k] ? `${LEDGERS[k].name} (${LEDGERS[k].code})${LEDGERS[k].proposed ? ' · proposed' : ''}` : k || '—');
+const ledgerLabel = (k: string) => (LEDGERS[k] ? `${LEDGERS[k].name} (${LEDGERS[k].code})` : k || '—');
 
 export function VoucherWorkspace({ v, onClose }: { v: Voucher; onClose: () => void }) {
   const { s, ctx } = useSalesCtx();
@@ -36,10 +36,10 @@ export function VoucherWorkspace({ v, onClose }: { v: Voucher; onClose: () => vo
   const [deciding, setDeciding] = useState<{ id: string; outcome: Exclude<Outcome, 'approve'> } | null>(null);
   const [returning, setReturning] = useState(false);
   const [builtWith, setBuiltWith] = useState(false);
+  const close = onClose;
   const a = accountOf(ctx, v.accountId);
   const c = calcOf(v, ctx);
   const st = V_STATUS[v.status];
-  const diff = entryDiffOf(v, ctx);
   // Esc closes the voucher, unless a dialog is open on top of it (that dialog closes first).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !document.querySelector('.scrim') && onClose();
@@ -58,25 +58,24 @@ export function VoucherWorkspace({ v, onClose }: { v: Voucher; onClose: () => vo
         <div className="ob-req__titlerow">
           <div>
             <p className="ob-req__eyebrow">
-              Sales voucher {v.id} · invoice {v.number} from {ACTORS.billing.name} · received {fmtDateTime(v.arrivedAt)}
+              Sales voucher {v.id} · {isNote(v) ? `${DOC_LABEL[v.docType!].toLowerCase()} ${v.number} against ${againstOf(ctx, v)?.number ?? '?'} (${NOTE_REASON[v.noteReason!]})` : `invoice ${v.number}`} from {ACTORS.billing.name} · received {fmtDateTime(v.arrivedAt)}
             </p>
             <h2 className="ob-req__title sv-title">
-              {titleOfV(v, ctx)} <StatusPill tone={st.tone}>{st.label}</StatusPill>
-              {diff && <StatusPill tone="warning">Ledgers changed</StatusPill>}
+              {titleOfV(v, ctx)} {isNote(v) && <StatusPill tone={v.docType === 'credit_note' ? 'warning' : 'info'}>{DOC_LABEL[v.docType!]}</StatusPill>} <StatusPill tone={st.tone}>{st.label}</StatusPill>
             </h2>
           </div>
           <span className="inline-gap">
             <Button size="sm" variant="ghost" icon={Blocks} onClick={() => setBuiltWith(true)}>
               Built with
             </Button>
-            <button className="overlay__close sv-full__close" aria-label="Close" title="Close (Esc)" onClick={onClose}>
+            <button className="overlay__close sv-full__close" aria-label="Close" title="Close (Esc)" onClick={close}>
               <X size={20} />
             </button>
           </span>
         </div>
         <div className="ob-req__facts">
           <span>
-            <span className="subtle">Invoice</span> <span className="mono">{v.number}</span>
+            <span className="subtle">{isNote(v) ? DOC_LABEL[v.docType!] : 'Invoice'}</span> <span className="mono">{v.number}</span>
           </span>
           <span>
             <span className="subtle">Date</span> {fmtDate(v.date)}
@@ -104,8 +103,8 @@ export function VoucherWorkspace({ v, onClose }: { v: Voucher; onClose: () => vo
             value={tab}
             onChange={setTab}
             options={[
-              { value: 'entry', label: diff ? 'Accounting entry •' : 'Accounting entry' },
-              { value: 'invoice', label: 'Invoice from Billing' },
+              { value: 'entry', label: 'Accounting entry' },
+              { value: 'invoice', label: isNote(v) ? `${DOC_LABEL[v.docType!]} from Billing` : 'Invoice from Billing' },
               { value: 'why', label: 'Why each value' },
               { value: 'history', label: 'Approval & history' },
             ]}
@@ -214,7 +213,6 @@ function Sec({ id, title, note, children }: { id: string; title: string; note?: 
   );
 }
 
-const Prop = () => <span className="sv-prop" title="Not in the CA's chart: proposed, the CA to confirm (G18)">proposed</span>;
 
 /** Rev 3: the document the law calls it (A1), its own series. */
 export const DOC_WORDS = { tax_invoice: 'Tax invoice', bill_of_supply: 'Bill of supply', export_invoice: 'Export invoice' } as const;
@@ -388,71 +386,141 @@ function ReceivedInvoiceTab({ v }: { v: Voucher }) {
   );
 }
 
-// ---------- Accounting entry tab (§8.4) ----------
+// ---------- Accounting entry tab: typed by the AE (REC, 27-Nov-2026) ----------
 
 function EntryTab({ v, editable }: { v: Voucher; editable: boolean }) {
   const { s, ctx } = useSalesCtx();
-  const c = calcOf(v, ctx);
   const lines = entryOf(v, ctx);
   const t = sum(lines);
-  const diff = entryDiffOf(v, ctx);
-  const editing = !!v.edit?.amounts && editable;
-  if (!lines.length) return <p className="subtle small-note">The entry appears once the invoice has a customer and at least one line with a quantity.</p>;
+  const a = accountOf(ctx, v.accountId);
+  const ar = a ? receivableOf(a) : null;
+  const customer = a && ar ? { name: a.name, ledger: `${ar.name} (${ar.code})` } : null;
+  const doc = isNote(v) ? DOC_LABEL[v.docType!].toLowerCase() : 'invoice';
   return (
     <div className="sv-tab sv-entries">
       <p className="sv-g30">
-        The amounts come from Billing's invoice <b className="mono">{v.number}</b> (shown at the top). Your work: the ledgers. Keep the suggested ones or pick others, check Dr = Cr, then submit.
+        The entry for {doc} <b className="mono">{v.number}</b>, {v.edit ? 'as you changed it' : <>filled from the {doc}'s amounts on the usual ledgers</>}.
+        It is your choice: change any ledger or amount, add or remove a line, or clear it and type your own, like Tally. Rajan checks it before it posts.
       </p>
-      <div className="sv-entry-bar">
-        <span>
-          Ledgers suggested by <strong>rule {c.rules.join(' + ')}</strong> of {POSTING_RULE}.{editable ? ' Keep them, or pick another: click the ledger and type a name or code.' : ''}
-        </span>
-        {editable && <Switch checked={!!v.edit?.amounts} onChange={(on) => s.setEditing(v.id, on)} label="Change amounts / add lines" />}
-      </div>
-      {diff && (
-        <Callout tone="warning" title={diff}>
-          Rajan sees it when he approves. The journal keeps the suggested ledger and your choice (who, why, approved by). Back to the suggestion: pick it again, or switch "Change amounts" off.
-        </Callout>
-      )}
-      <table className="sv-post sv-post--entry">
+      <DocAmounts v={v} editable={editable} />
+      <table className="sv-post sv-post--entry sv-post--typed">
         <thead>
           <tr>
             <th>#</th>
             <th>Ledger</th>
             <th className="num">Dr ₹</th>
             <th className="num">Cr ₹</th>
-            {editing ? <th aria-label="Actions" /> : <th>Rule · why</th>}
+            <th>Narration</th>
+            {editable && <th aria-label="Remove" />}
           </tr>
         </thead>
         <tbody>
           {lines.map((l, i) => (
-            <EntryRow key={l.id} v={v} l={l} n={i + 1} editing={editing} editable={editable} />
+            <EntryRow key={l.id} v={v} l={l} n={i + 1} editable={editable} customer={customer} />
           ))}
+          {!lines.length && (
+            <tr>
+              <td colSpan={editable ? 6 : 5} className="subtle small-note">
+                No lines yet.{editable ? ' Add a line, pick its ledger, type its amount.' : ''}
+              </td>
+            </tr>
+          )}
         </tbody>
         <tfoot>
           <tr>
-            <td colSpan={2}>{t.dr === t.cr ? <span className="tone-success"><Check size={13} aria-hidden /> Dr = Cr</span> : <span className="tone-critical">Difference {rupees(Math.abs(t.dr - t.cr))}</span>}</td>
+            <td colSpan={2}>{!lines.length ? '' : t.dr === t.cr ? <span className="tone-success"><Check size={13} aria-hidden /> Dr = Cr</span> : <span className="tone-critical">Difference {rupees(Math.abs(t.dr - t.cr))}</span>}</td>
             <td className="num">{rupees(t.dr)}</td>
             <td className="num">{rupees(t.cr)}</td>
-            <td />
+            <td colSpan={editable ? 2 : 1} />
           </tr>
         </tfoot>
       </table>
-      {editing && (
-        <button className="link-btn sv-add" onClick={() => s.addEditLine(v.id)}>
-          <Plus size={13} aria-hidden /> Add a line (ledger, amount, reason)
-        </button>
+      {editable && (
+        <span className="inline-gap">
+          <button className="link-btn sv-add" onClick={() => s.addLine(v.id)}>
+            <Plus size={13} aria-hidden /> Add a line
+          </button>
+          {v.edit && (
+            <button className="link-btn sv-add" onClick={() => s.resetEntry(v.id)}>
+              <Undo2 size={13} aria-hidden /> Back to the default entry
+            </button>
+          )}
+          {lines.length > 0 && (
+            <button className="link-btn sv-add" onClick={() => s.clearEntry(v.id)}>
+              <X size={13} aria-hidden /> Clear and type my own
+            </button>
+          )}
+          {customer && !lines.some((l) => l.ledger === 'party') && (
+            <button className="link-btn sv-add" onClick={() => s.addLine(v.id, { ledger: 'party' })}>
+              <Plus size={13} aria-hidden /> Add the customer line ({customer.name})
+            </button>
+          )}
+        </span>
       )}
       <p className="subtle small-note">
-        <Lock size={11} aria-hidden /> Every ledger is a suggestion: pick another on any line. The customer and GST lines keep the invoice's amounts (what the buyer owes, the tax printed on the invoice and the IRN); to change them, change the invoice lines. The customer line picks among receivable ledgers and always names the customer. Never a group ledger (LEDGER_NOT_POSTABLE). Codes marked <Prop /> are not in the CA's chart yet (G18).
+        <Lock size={11} aria-hidden /> No posting rule in this app: the default is only the document's amounts on the usual ledgers; what you leave or type is what posts. The role app's own accounting layer will later propose the entry.
+        The customer line names the customer's account (its receivable ledger, {ar ? `${ar.code}` : 'from its category'}); never a group ledger. The checks compare the
+        entry with the {doc}'s amounts and warn Rajan of any difference; the cost of goods sold must equal inventory's (stock goes out on approval).
       </p>
-
-      <CostPanel v={v} editable={editable} />
+      {!isNote(v) && <CostPanel v={v} editable={editable} />}
     </div>
   );
 }
 
-/** Rev 15 (R13): the cost of the goods sold, from inventory (FIFO or weighted average), shown with the lots it came from. */
+/** The document's amounts (calculated from its lines: an automatic calculation, not a rule), shown beside the typed entry. */
+function DocAmounts({ v, editable }: { v: Voucher; editable: boolean }) {
+  const { s, ctx } = useSalesCtx();
+  const c = calcOf(v, ctx);
+  const credit = v.docType === 'credit_note';
+  const side = (x: number, customerSide: boolean) => (x ? `${rupees(x)} ${customerSide !== credit ? 'Dr' : 'Cr'}` : '—');
+  const cost = isNote(v) ? null : costOfV(v, ctx, c);
+  const costLines = editable ? costLinesOf(v, ctx) : [];
+  const rows: [string, string][] = [
+    [(v.settlement ?? 'credit') === 'credit' ? 'The customer (what is owed)' : `Paid at once (${v.settlement === 'cash' ? 'cash' : 'UPI / card'})`, side(c.payable, true)],
+    ['Taxable value', side(c.taxable, false)],
+    ...(c.exempt ? [['Nil-rated / exempt / non-GST', side(c.exempt, false)] as [string, string]] : []),
+    ...(c.reimbursement ? [['Pure-agent expenses', side(c.reimbursement, false)] as [string, string]] : []),
+    ...(c.cgst ? [['CGST', side(c.cgst, false)] as [string, string], ['SGST', side(c.sgst, false)] as [string, string]] : []),
+    ...(c.igst ? [['IGST', side(c.igst, false)] as [string, string]] : []),
+    ...(c.roundOff ? [['Round off', `${rupees(Math.abs(c.roundOff))} ${(c.roundOff > 0) !== credit ? 'Cr' : 'Dr'}`] as [string, string]] : []),
+    ...(c.refund ? [['IGST we claim back', rupees(c.refund)] as [string, string]] : []),
+    ...(cost && !cost.problems.length ? [['Cost of the goods (inventory)', `${rupees(cost.total)} (${COST_METHODS[cost.method].label})`] as [string, string]] : []),
+  ];
+  return (
+    <section className="sv-docamounts" aria-label="The document's amounts">
+      <div className="sv-entry-bar">
+        <span>
+          <strong>The {isNote(v) ? DOC_LABEL[v.docType!].toLowerCase() : 'invoice'}'s amounts</strong> (calculated from its lines; for reference)
+        </span>
+        <span className="inline-gap">
+          {cost && !v.entryId && editable && (
+            <SegmentedControl
+              label="Costing method"
+              value={s.costMethod}
+              onChange={(m) => s.setCostMethod(m)}
+              options={(Object.keys(COST_METHODS) as CostMethod[]).map((m) => ({ value: m, label: COST_METHODS[m].label }))}
+            />
+          )}
+          {editable && costLines.length > 0 && (
+            <Button size="sm" icon={Plus} onClick={() => s.addCostLines(v.id)}>
+              {v.edit ? 'Refresh' : 'Add'} the cost from inventory ({costLines.length / 2} lot{costLines.length === 2 ? '' : 's'})
+            </Button>
+          )}
+        </span>
+      </div>
+      <div className="sv-docamounts__grid">
+        {rows.map(([k, val]) => (
+          <div key={k} className="sv-docamounts__item">
+            <span className="sv-docamounts__k">{k}</span>
+            <span className="sv-docamounts__v">{val}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** Rev 15: the cost of the goods sold, from inventory (FIFO or weighted average), shown with the lots it came from. */
 function CostPanel({ v, editable }: { v: Voucher; editable: boolean }) {
   const { s, ctx } = useSalesCtx();
   const c = calcOf(v, ctx);
@@ -465,10 +533,10 @@ function CostPanel({ v, editable }: { v: Voucher; editable: boolean }) {
     <section className="sv-cost" aria-label="Cost of goods sold from inventory">
       <div className="sv-entry-bar">
         <span>
-          <strong>Cost of goods sold</strong> (rule R13): the invoice gives the item and the quantity; <b>inventory</b> gives the cost, never the selling price.
+          <strong>Cost of goods sold</strong> (calculated from inventory): the invoice gives the item and the quantity; <b>inventory</b> gives the cost, never the selling price.
           {posted ? ` Posted by ${COST_METHODS[method].label}.` : ''}
         </span>
-        {!posted && editable && (
+        {false && !posted && editable && (
           <SegmentedControl
             label="Costing method"
             value={s.costMethod}
@@ -515,7 +583,7 @@ function CostPanel({ v, editable }: { v: Voucher; editable: boolean }) {
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={4}>Dr Cost of Goods Sold · Cr Finished Goods (in the entry above)</td>
+              <td colSpan={4}>Dr Cost of Goods Sold · Cr Finished Goods: "Add the cost from inventory" puts these in the entry</td>
               <td className="num">{rupees(cost.total)}</td>
             </tr>
           </tfoot>
@@ -571,8 +639,8 @@ function StockLots({ branch, items }: { branch: string; items: string[] }) {
   );
 }
 
-/** A ledger, chosen from a searchable list: the suggested one first; typing filters and sorts (code, then name). */
-function LedgerPicker({ value, suggested, onChange, label, pool }: { value: string; suggested?: string; onChange: (k: string) => void; label: string; pool?: string[] }) {
+/** A ledger, chosen from a searchable list (typing filters by code or name); the customer's account is the first choice. */
+function LedgerPicker({ value, onChange, label, customer }: { value: string; onChange: (k: string) => void; label: string; customer: { name: string; ledger: string } | null }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [hi, setHi] = useState(0);
@@ -584,7 +652,10 @@ function LedgerPicker({ value, suggested, onChange, label, pool }: { value: stri
     window.addEventListener('mousedown', off);
     return () => window.removeEventListener('mousedown', off);
   }, [open]);
-  const list = rankLedgers(q, suggested, pool);
+  const t = q.trim().toLowerCase();
+  const withCustomer = customer && (!t || customer.name.toLowerCase().includes(t) || 'customer'.startsWith(t));
+  const list = [...(withCustomer ? ['party'] : []), ...rankLedgers(q)];
+  const labelOf = (k: string) => (k === 'party' ? (customer ? `${customer.name} · ${customer.ledger}` : 'The customer') : ledgerLabel(k));
   const pick = (k: string) => {
     onChange(k);
     setOpen(false);
@@ -595,12 +666,12 @@ function LedgerPicker({ value, suggested, onChange, label, pool }: { value: stri
     <div className="sv-lp" ref={ref}>
       <input
         ref={input}
-        className={`input sv-lp__in${!value ? ' is-bad' : ''}${value && suggested && value !== suggested ? ' is-changed' : ''}`}
+        className={`input sv-lp__in${!value ? ' is-bad' : ''}`}
         role="combobox"
         aria-expanded={open}
         aria-autocomplete="list"
         aria-label={label}
-        value={open ? q : value ? ledgerLabel(value) : ''}
+        value={open ? q : value ? labelOf(value) : ''}
         placeholder={open ? 'Type a name or code…' : 'Choose a ledger…'}
         onFocus={() => {
           setOpen(true);
@@ -633,10 +704,18 @@ function LedgerPicker({ value, suggested, onChange, label, pool }: { value: stri
                 pick(k);
               }}
             >
-              <span className="mono sv-lp__code">{LEDGERS[k].code}</span>
-              <span className="sv-lp__name">{LEDGERS[k].name}</span>
-              {k === suggested && <span className="sv-lp__tag">suggested</span>}
-              {LEDGERS[k].proposed && <Prop />}
+              {k === 'party' ? (
+                <>
+                  <span className="mono sv-lp__code">{customer?.ledger.match(/\((\d+)\)/)?.[1] ?? ''}</span>
+                  <span className="sv-lp__name">{customer?.name} (the customer)</span>
+                  <span className="sv-lp__tag">customer</span>
+                </>
+              ) : (
+                <>
+                  <span className="mono sv-lp__code">{LEDGERS[k].code}</span>
+                  <span className="sv-lp__name">{LEDGERS[k].name}</span>
+                </>
+              )}
             </li>
           ))}
           {list.length === 0 && <li className="sv-lp__none">No ledger matches "{q}"</li>}
@@ -646,117 +725,39 @@ function LedgerPicker({ value, suggested, onChange, label, pool }: { value: stri
   );
 }
 
-function EntryRow({ v, l, n, editing, editable }: { v: Voucher; l: EntryLine; n: number; editing: boolean; editable: boolean }) {
+function EntryRow({ v, l, n, editable, customer }: { v: Voucher; l: EntryLine; n: number; editable: boolean; customer: { name: string; ledger: string } | null }) {
   const { s } = useSalesCtx();
-  const side = l.dr ? 'dr' : l.cr ? 'cr' : l.id.startsWith('add:') ? 'both' : 'cr';
-  const sideWord = <strong>{l.dr ? 'Dr' : l.cr ? 'Cr' : ''}</strong>;
-  const name = (
-    <>
-      {sideWord} {l.name} <span className="mono subtle">({l.code})</span>
-      {LEDGERS[l.ledger]?.proposed && <Prop />}
-    </>
-  );
-  const party = l.ledger === 'party';
-  const suggested = l.ruleLedger ?? l.ledgerKey ?? l.ledger;
-  const picker = (
-    <span className="sv-lp-row">
-      {sideWord}
-      <LedgerPicker
-        value={l.ledgerKey ?? l.ledger}
-        suggested={l.id.startsWith('add:') ? undefined : suggested}
-        pool={party ? RECEIVABLES : undefined}
-        onChange={(k) => (l.locked || !v.edit ? s.setLedger(v.id, l.id, k) : s.setEditLine(v.id, l.id, { ledger: k }))}
-        label={`Ledger, line ${n}`}
-      />
-    </span>
-  );
-  const amountNote = l.locked && (
-    <span className="sv-rule-hint">
-      <Lock size={10} aria-hidden /> Amount = {l.role === 'party' || l.role === 'settlement' ? 'what the buyer owes' : l.role === 'refund' ? 'the IGST we claim back' : l.role === 'cost' ? `the cost from inventory${l.lot ? `, lot ${l.lot}` : ''}` : "the invoice's tax"}
-      {party ? ` · names ${l.name}` : ''}
-      {l.changed && l.ruleLedger ? ` · suggested ${ledgerLabel(l.ruleLedger)}` : ''}
-    </span>
-  );
-  if (l.locked && editable)
-    return (
-      <tr className={l.changed ? 'is-changed' : undefined}>
-        <td>{n}</td>
-        <td>
-          {picker}
-          {amountNote}
-        </td>
-        <td className="num">{l.dr ? rupees(l.dr) : ''}</td>
-        <td className="num">{l.cr ? rupees(l.cr) : ''}</td>
-        {editing ? (
-          <td />
-        ) : (
-          <td className="subtle small-note">
-            <b>{l.changed ? 'your choice' : l.rule}</b> · {l.why}
-          </td>
-        )}
-      </tr>
-    );
+  const stock = l.item ? <span className="sv-rule-hint">{l.item} · {l.lot ? `lot ${l.lot}` : 'average'} · {l.qty} (from inventory)</span> : null;
   if (!editable)
     return (
-      <tr className={l.changed ? 'is-changed' : undefined}>
+      <tr>
         <td>{n}</td>
         <td>
-          {name} {l.locked && editable && <Lock size={11} aria-label="locked" className="subtle sv-lock" />}
-          {l.locked && editable && <span className="sv-rule-hint">Locked: {l.role === 'party' || l.role === 'settlement' ? '= what the buyer owes' : l.role === 'refund' ? '= the IGST we claim back' : l.role === 'cost' ? '= the cost from inventory' : "= the invoice's tax"}</span>}
+          <strong>{l.dr ? 'Dr' : 'Cr'}</strong> {l.name} <span className="mono subtle">({l.code})</span>
+          {stock}
         </td>
         <td className="num">{l.dr ? rupees(l.dr) : ''}</td>
         <td className="num">{l.cr ? rupees(l.cr) : ''}</td>
-        <td className="subtle small-note">
-          {l.changed ? (
-            <>
-              <StatusPill tone="warning">changed</StatusPill> {l.reason || ''}
-              {l.ruleLedger && l.ruleLedger !== l.ledger ? ` · suggested ${ledgerLabel(l.ruleLedger)}` : ''}
-            </>
-          ) : (
-            <>
-              <b>{l.locked ? 'locked' : l.rule}</b> · {l.why}
-            </>
-          )}
-        </td>
+        <td className="subtle small-note">{l.reason}</td>
       </tr>
     );
-  if (!editing)
-    return (
-      <tr className={l.changed ? 'is-changed' : undefined}>
-        <td>{n}</td>
-        <td>
-          {picker}
-          {l.changed && l.ruleLedger && <span className="sv-rule-hint">Suggested: {ledgerLabel(l.ruleLedger)}</span>}
-        </td>
-        <td className="num">{l.dr ? rupees(l.dr) : ''}</td>
-        <td className="num">{l.cr ? rupees(l.cr) : ''}</td>
-        <td className="subtle small-note">
-          <b>{l.changed ? 'your choice' : l.rule}</b> · {l.why}
-        </td>
-      </tr>
-    );
-  const amt = (k: 'dr' | 'cr') => <TextInput inputMode="decimal" value={l[k] || ''} aria-label={`${k === 'dr' ? 'Debit' : 'Credit'}, line ${n}`} onChange={(ev) => s.setEditLine(v.id, l.id, { [k]: num(ev.target.value) ?? 0 })} />;
+  const amt = (k: 'dr' | 'cr') => <TextInput inputMode="decimal" value={l[k] || ''} aria-label={`${k === 'dr' ? 'Debit' : 'Credit'}, line ${n}`} onChange={(ev) => s.setLine(v.id, l.id, { [k]: num(ev.target.value) ?? 0 })} />;
   return (
-    <tr className={l.changed ? 'is-changed' : undefined}>
+    <tr>
       <td>{n}</td>
       <td>
-        {picker}
-        <span className="sv-rule-hint">{l.ruleLedger ? `Suggested: ${ledgerLabel(l.ruleLedger)}` : 'Added by you'}</span>
-        <TextInput value={l.reason ?? ''} placeholder={l.amountChanged ? 'Reason for the change (required)' : 'Reason (optional)'} className={`input sv-reason${l.amountChanged && !l.reason ? ' is-bad' : ''}`} onChange={(ev) => s.setEditLine(v.id, l.id, { reason: ev.target.value })} aria-label={`Reason, line ${n}`} />
+        <LedgerPicker value={l.ledger} customer={customer} onChange={(k) => s.setLine(v.id, l.id, { ledger: k })} label={`Ledger, line ${n}`} />
+        {stock}
       </td>
-      <td className="num sv-qty">{side !== 'cr' ? amt('dr') : ''}</td>
-      <td className="num sv-qty">{side !== 'dr' ? amt('cr') : ''}</td>
-      <td className="sv-items__x sv-nowrap">
-        {l.role === 'revenue' && (
-          <button className="link-btn" onClick={() => s.splitEditLine(v.id, l.id)} title="Split this line" aria-label={`Split line ${n}`}>
-            <Scissors size={13} />
-          </button>
-        )}
-        {l.role === 'added' && (
-          <button className="link-btn" onClick={() => s.removeEditLine(v.id, l.id)} aria-label={`Remove line ${n}`}>
-            <X size={14} />
-          </button>
-        )}
+      <td className="num sv-qty">{amt('dr')}</td>
+      <td className="num sv-qty">{amt('cr')}</td>
+      <td>
+        <TextInput value={l.reason ?? ''} placeholder="Narration (optional)" className="input sv-reason" onChange={(ev) => s.setLine(v.id, l.id, { reason: ev.target.value })} aria-label={`Narration, line ${n}`} />
+      </td>
+      <td className="sv-items__x">
+        <button className="link-btn" onClick={() => s.removeLine(v.id, l.id)} aria-label={`Remove line ${n}`} title="Remove this line">
+          <X size={14} />
+        </button>
       </td>
     </tr>
   );
@@ -823,7 +824,6 @@ function WhyTab({ v }: { v: Voucher }) {
 function HistoryTab({ v }: { v: Voucher }) {
   const { s, ctx } = useSalesCtx();
   const je = v.entryId ? s.journal.find((e) => e.id === v.entryId) : null;
-  const diff = entryDiffOf(v, ctx);
   return (
     <div className="sv-tab">
       <Sec id="✓" title="Approval">
@@ -850,11 +850,9 @@ function HistoryTab({ v }: { v: Voucher }) {
             ))}
           </ul>
         )}
-        {!v.approvals.length && diff && <p className="tone-warning small-note">Rajan will see: {diff}</p>}
         {je && (
           <p className="small-note">
             Journal {je.id} · {je.rule}
-            {je.edit ? ` · edit by ${ACTORS[je.edit.by].name}, approved by ${ACTORS[je.edit.approvedBy].name}: ${je.edit.diff} (${je.edit.reasons.join('; ')})` : ' · no edit'}
           </p>
         )}
       </Sec>
@@ -880,7 +878,7 @@ function HistoryTab({ v }: { v: Voucher }) {
 
 function stepsOf(v: Voucher): Step[] {
   const steps: Step[] = [
-    { label: `Invoice ${v.number} received from ${ACTORS.billing.name}`, at: v.arrivedAt, state: 'done' },
+    { label: `${isNote(v) ? DOC_LABEL[v.docType!] : 'Invoice'} ${v.number} received from ${ACTORS.billing.name}`, at: v.arrivedAt, state: 'done' },
     { label: `${ACTORS[ME].name} books the entry and submits`, at: v.submittedAt ?? v.returned?.at, state: isMineV(v) ? 'current' : 'done' },
   ];
   if (v.status === 'returned') {
@@ -974,16 +972,27 @@ function ActionColumn({ v, checks, onPreview, onDecide, onReturn }: { v: Voucher
       </div>
       {editable && (
         <div className="ob-side__actions">
-          <Button variant="primary" icon={Send} block disabled={blocking.length > 0} onClick={() => s.submit(v.id)}>
-            {v.submittedAt ? 'Send again to Rajan' : 'Submit to Rajan'}
-          </Button>
-          <span className="subtle small-note">{blocking.length ? 'Fix the items in red first.' : `Goes to Rajan · ${rupees(c.payable)}`}</span>
+          {!v.accountId && v.pendingCustomer ? (
+            <>
+              <Button variant="primary" icon={UserPlus} block onClick={() => s.holdForCustomer(v.id, true)}>
+                Create the customer (T12) →
+              </Button>
+              <span className="subtle small-note">The T12 form opens filled from this document; it comes back to book once the customer is active.</span>
+            </>
+          ) : (
+            <>
+              <Button variant="primary" icon={Send} block disabled={blocking.length > 0} onClick={() => s.submit(v.id)}>
+                {v.submittedAt ? 'Send again to Rajan' : 'Submit to Rajan'}
+              </Button>
+              <span className="subtle small-note">{blocking.length ? 'Fix the items in red first.' : `Goes to Rajan · ${rupees(c.payable)}`}</span>
+            </>
+          )}
           <Button icon={Save} block disabled={!v.dirty} onClick={() => s.saveDraft(v.id)}>
             Save draft
           </Button>
           {!v.submittedAt && (
             <button className="link-btn ob-discard" onClick={onReturn}>
-              <Undo2 size={12} aria-hidden /> The invoice is wrong: return to Billing
+              <Undo2 size={12} aria-hidden /> The {isNote(v) ? DOC_LABEL[v.docType!].toLowerCase() : 'invoice'} is wrong: return to Billing
             </button>
           )}
         </div>
@@ -1004,11 +1013,10 @@ function ChangeSummary({ v }: { v: Voucher }) {
       <ul className="ob-plain ob-plain--tight">
         <li>
           <strong>Rajan</strong> <span className="subtle">(Accounts Manager)</span>: {r.label} · {rupees(c.payable)}
-          {r.entryDiff && <span className="tone-warning"> · {r.entryDiff}</span>}
         </li>
       </ul>
       <p className="subtle small-note">
-        When he approves (every check again): the journal entry posts by {[...c.rules, ...(lines.some((l) => l.role === 'cost') ? ['R13 (cost from inventory)'] : [])].join(' + ') || 'the rule'}: {lines.map((l) => `${l.dr ? 'Dr' : 'Cr'} ${l.code}`).join(' · ')}{v.settlement === 'credit' ? `; the customer owes it, due ${fmtDate(dueDateOf(v, accountOf(ctx, v.accountId)))}` : ''}.
+        When he approves (every check again): the journal entry posts as typed: {lines.map((l) => `${l.dr ? 'Dr' : 'Cr'} ${l.code}`).join(' · ')}{v.settlement === 'credit' ? `; the customer owes it, due ${fmtDate(dueDateOf(v, accountOf(ctx, v.accountId)))}` : ''}.
       </p>
     </div>
   );
@@ -1072,5 +1080,19 @@ function BuiltWith({ open, onClose }: { open: boolean; onClose: () => void }) {
         <p className="small-note">{sp.checks.map(([k, b]) => `${k} ${b}`).join(' · ')}</p>
       </div>
     </Dialog>
+  );
+}
+
+export function PendingCustomer({ v }: { v: Voucher }) {
+  const s = useSales();
+  const p = v.pendingCustomer!;
+  return (
+    <Callout tone="critical" title={`Customer not registered: ${p.name}${p.gstin ? ` · ${p.gstin}` : ''}`}>
+      {isMineV(v) && (
+        <Button size="sm" variant="primary" icon={UserPlus} onClick={() => s.holdForCustomer(v.id, true)}>
+          Create the customer (T12, prefilled) →
+        </Button>
+      )}
+    </Callout>
   );
 }

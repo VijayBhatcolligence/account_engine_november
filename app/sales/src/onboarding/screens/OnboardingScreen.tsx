@@ -67,7 +67,7 @@ export function OnboardingScreen() {
           <span className="ob-rail__text">
             <span className="ob-rail__name">{name}</span>
             <span className="ob-rail__meta">
-              {SIDE_LABEL[r.side]} · {r.formNo} · {ACTORS[r.from].name} · {when}
+              {r.source ? `Automatic · from ${r.source.docNo || r.source.file}` : `${SIDE_LABEL[r.side]} · ${r.formNo} · ${ACTORS[r.from].name}`} · {when}
             </span>
           </span>
         )}
@@ -212,7 +212,7 @@ function RequestWorkspace({ r }: { r: Request }) {
   const checks = checksOf(r, s);
   const [returning, setReturning] = useState<string | null>(null);
   const [sendingBack, setSendingBack] = useState(false);
-  const [showPaper, setShowPaper] = useState(!!r.paper && editable);
+  const [showPaper, setShowPaper] = useState(!!(r.paper || r.source?.uploadId) && editable);
   const [builtWith, setBuiltWith] = useState(false);
   const sections = sectionsFor(r);
   const formErrors = checks.filter((c) => c.sendBack);
@@ -222,10 +222,12 @@ function RequestWorkspace({ r }: { r: Request }) {
     <div className="ob-req">
       <RequestHeader r={r} showPaper={showPaper} onTogglePaper={() => setShowPaper((x) => !x)} onBuiltWith={() => setBuiltWith(true)} />
 
-      <div className={`ob-req__body${showPaper && r.paper ? ' has-paper' : ''}`}>
-        {showPaper && r.paper && <PaperPanel r={r} onClose={() => setShowPaper(false)} />}
+      <div className={`ob-req__body${showPaper && (r.paper || r.source?.uploadId) ? ' has-paper' : ''}`}>
+        {showPaper && r.source?.uploadId && <SourceDocPanel r={r} onClose={() => setShowPaper(false)} />}
+        {showPaper && !r.source && r.paper && <PaperPanel r={r} onClose={() => setShowPaper(false)} />}
 
         <div className="ob-req__main">
+          {r.source && editable && <EventFilled r={r} />}
           {editable && formErrors.length > 0 && (
             <Callout tone="critical" title="This form cannot be set up">
               <ul className="ob-plain">
@@ -236,9 +238,11 @@ function RequestWorkspace({ r }: { r: Request }) {
                 ))}
               </ul>
               <div className="ob-row">
-                <Button variant="destructive" icon={Undo2} onClick={() => setSendingBack(true)}>
-                  Return the form to {ACTORS[r.from].name}
-                </Button>
+                {!r.source && (
+                  <Button variant="destructive" icon={Undo2} onClick={() => setSendingBack(true)}>
+                    Return the form to {ACTORS[r.from].name}
+                  </Button>
+                )}
                 <ApiHint>POST {API}/{r.id}/send-back</ApiHint>
               </div>
             </Callout>
@@ -581,7 +585,15 @@ function RequestHeader({ r, showPaper, onTogglePaper, onBuiltWith }: { r: Reques
       <div className="ob-req__titlerow">
         <div>
           <p className="ob-req__eyebrow">
-            {r.id} · New {SIDE_LABEL[r.side].toLowerCase()} · paper form <strong>{r.formNo}</strong> from {who(r.from)} · opened {fmtDateTime(r.arrivedAt)}
+            {r.source ? (
+              <>
+                {r.id} · New {SIDE_LABEL[r.side].toLowerCase()} · <strong>automatic</strong>: opened by the event {r.source.event} · filled from <strong>{r.source.file || r.source.docNo}</strong> · {fmtDateTime(r.arrivedAt)}
+              </>
+            ) : (
+              <>
+                {r.id} · New {SIDE_LABEL[r.side].toLowerCase()} · paper form <strong>{r.formNo}</strong> from {who(r.from)} · opened {fmtDateTime(r.arrivedAt)}
+              </>
+            )}
           </p>
           <h2 className={`ob-req__title${isEmpty(v.legalName) ? ' subtle' : ''}`}>{titleOf(r)}</h2>
         </div>
@@ -589,9 +601,9 @@ function RequestHeader({ r, showPaper, onTogglePaper, onBuiltWith }: { r: Reques
           <Button size="sm" variant="ghost" icon={Blocks} onClick={onBuiltWith}>
             Built with
           </Button>
-          {r.paper && (
+          {(r.paper || r.source?.uploadId) && (
             <Button size="sm" icon={FileText} onClick={onTogglePaper}>
-              {showPaper ? 'Hide the paper' : 'Show the paper'}
+              {r.source ? (showPaper ? 'Hide the invoice' : 'Show the invoice') : showPaper ? 'Hide the paper' : 'Show the paper'}
             </Button>
           )}
           <StatusOf r={r} />
@@ -760,6 +772,7 @@ function FieldRow({ f, r, locked }: { f: FieldDef; r: Request; locked: boolean }
         </span>
       </span>
       {control(f, r, locked, (v) => s.setValue(r.id, f.key, v))}
+      {r.source?.filled.includes(f.key) && <span className="ob-fromdoc">from the invoice</span>}
       {f.hint && !locked && <span className="field__hint">{f.hint}</span>}
     </div>
   );
@@ -977,12 +990,14 @@ function Checklist({ r, groups, checks, onSendBack }: { r: Request; groups: [Sec
         <Button icon={Save} block disabled={!r.dirty} onClick={() => s.saveDraft(r.id)}>
           Save draft
         </Button>
-        <Button variant={formProblem ? 'destructive' : 'ghost'} icon={Undo2} block onClick={onSendBack}>
-          Return the form to {ACTORS[r.from].name}
-        </Button>
+        {!r.source && (
+          <Button variant={formProblem ? 'destructive' : 'ghost'} icon={Undo2} block onClick={onSendBack}>
+            Return the form to {ACTORS[r.from].name}
+          </Button>
+        )}
         {r.status === 'draft' && r.changes.length === 0 && (
           <button className="link-btn ob-discard" onClick={() => s.discard(r.id)}>
-            <Trash2 size={12} aria-hidden /> Opened by mistake: discard
+            <Trash2 size={12} aria-hidden /> {r.source ? 'Not a customer to create: discard (the document stays waiting in Sales)' : 'Opened by mistake: discard'}
           </button>
         )}
       </div>
@@ -1126,3 +1141,40 @@ export function ReasonDialog({ open, title, description, chips, action, onClose,
   );
 }
 
+/** Rev 21 · AUTOMATIC: the form an event opened and filled. What came from the document, what is still missing. */
+function EventFilled({ r }: { r: Request }) {
+  const src = r.source!;
+  const missing = sectionsFor(r).flatMap((sec) => fieldsOfSection(r, sec.id)).filter((f) => isMissing(f, r));
+  return (
+    <Callout tone="info" title={`Filled automatically from ${src.file || src.docNo} · ${src.filled.length} fields`}>
+      The event <span className="mono">{src.event}</span> opened this form because the customer on {src.docNo || 'the document'} is not registered. Fields marked <span className="ob-fromdoc">from the invoice</span> came from it: check them against the document.{' '}
+      {missing.length ? (
+        <>
+          <b>Still to fill: {missing.length}</b> (what an invoice never shows), marked in red: {missing.slice(0, 8).map((f) => f.label).join(' · ')}
+          {missing.length > 8 ? ' …' : ''}. Then check the GSTIN on the portal and submit.
+        </>
+      ) : (
+        <>Nothing missing: check the GSTIN on the portal and submit.</>
+      )}{' '}
+      The document waits outside the voucher list and comes back to book once the customer is active.
+    </Callout>
+  );
+}
+
+/** The uploaded document beside the form (as the paper form is for a manual request). */
+function SourceDocPanel({ r, onClose }: { r: Request; onClose: () => void }) {
+  const src = r.source!;
+  const url = `/api/db/uploads/${src.uploadId}/file`;
+  return (
+    <aside className="ob-paper ob-srcdoc" aria-label="The uploaded document">
+      <div className="ob-srcdoc__bar">
+        <span className="small-note">The uploaded document · {src.file}</span>
+        <span className="inline-gap">
+          <a className="link-btn small-note" href={url} target="_blank" rel="noreferrer">open</a>
+          <button className="link-btn small-note" onClick={onClose}>hide</button>
+        </span>
+      </div>
+      {src.mime === 'application/pdf' ? <iframe title={src.file} src={`${url}#view=FitH`} className="ob-srcdoc__frame" /> : <img alt={src.file} src={url} className="ob-srcdoc__img" />}
+    </aside>
+  );
+}

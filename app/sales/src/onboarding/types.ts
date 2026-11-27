@@ -205,6 +205,9 @@ export interface Request {
   accountId?: string;
   dirty?: boolean;
   history: HistoryLine[];
+  /** Rev 21 · AUTOMATIC: the form was opened and filled by an event (a document whose customer is not registered),
+   *  not typed from a paper form. filled: the fields the event filled; the accountant fills the rest and submits. */
+  source?: { kind: 'document'; event: string; uploadId: string; file: string; mime: string; docNo: string; voucherId: string; filled: string[] };
 }
 
 /** An active party account, as one view: accounting.subledger_account (+ its dated control account)
@@ -238,6 +241,7 @@ export interface Account {
   /** The control account (ledger group) is effective-dated: since when, and how it was set. */
   controlSince?: ISODate;
   controlSource?: 'suggested' | 'chosen';
+  /** Rev 19: created from an uploaded invoice WITHOUT the T12 approvals (the demo shortcut); a real company registers it first. */
 }
 
 // ---------- The walkthrough's link to the backend design ----------

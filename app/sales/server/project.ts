@@ -8,22 +8,24 @@
 //                      credit limit, history), party_bank_account                                               ← requests, accounts
 //   T24 (fin.*)        sales_invoice (from Submit on), its lines BY ROLE with the mapping row used, its history  ← vouchers
 //   books (fin.*)      journal_entry / journal_line (+ the 7 trace columns), document_sequence                   ← journal
-//   inventory (inv.*)  stock_lot (quantities left after each sale)                                               ← lots
+//   inventory (inv.*)  stock_lot (quantities left after each sale), stock_return (Stores' receipts, rev 18)     ← lots, returns
+//   rev 18 (T25/T26)   credit and debit notes: the same sales_invoice rows (document_type, the invoice, the reason);
+//                      the Stock back entry of a return receipt (voucher_type stock_return), book_setting return_stock_posting
 // Not written (not in our schema): the vendor side's accounts and requests (Manoj's creditor tables); the app's own
 // UI state (drafts being typed, notices, the log) is kept whole in demo.app_state so the app reloads from the database.
 import type pg from 'pg';
 import { DEBTOR_MASTER, STATES } from '../src/onboarding/catalogue';
 import type { Account, Party, Request } from '../src/onboarding/types';
 import { COST_METHODS, type CostMethod, type StockLot } from '../src/sales/inventory';
-import { calcOf, dueDateOf, entryOf, type EntryLine, type SalesCtx } from '../src/sales/rules';
+import { dueDateOf, entryOf, type SalesCtx } from '../src/sales/rules';
 import { DEBTOR_LEDGER, LEDGERS } from '../src/sales/catalogue';
-import type { JournalEntry, JournalLine, Voucher } from '../src/sales/types';
+import type { JournalEntry, JournalLine, ReturnStockPosting, StockReturn, Voucher } from '../src/sales/types';
 import { insertOnce, uid, upsert, WS } from './db';
 import { BOOK, branchIdOf, contactOf, fyOf, OP } from './reference';
 
 export interface Snapshot {
   onboarding: { now: string; parties: Party[]; accounts: Account[]; requests: Request[] } & Record<string, unknown>;
-  sales: { vouchers: Voucher[]; journal: JournalEntry[]; lots: StockLot[]; costMethod: CostMethod } & Record<string, unknown>;
+  sales: { vouchers: Voucher[]; journal: JournalEntry[]; lots: StockLot[]; costMethod: CostMethod; returns?: StockReturn[]; returnStock?: ReturnStockPosting } & Record<string, unknown>;
 }
 
 const s = (v: unknown) => (v === null || v === undefined || v === '' ? null : String(v));
@@ -43,15 +45,17 @@ const requestUid = (requestId: string) => uid('request', requestId);
 const voucherUid = (voucherId: string) => uid('voucher', voucherId);
 const entryUid = (entryId: string) => uid('je', entryId);
 const lotUid = (lotId: string) => uid('lot', lotId);
+const returnUid = (returnId: string) => uid('return', returnId);
 
 export interface Counts { [table: string]: number }
 
 export async function project(c: pg.PoolClient, snap: Snapshot): Promise<Counts> {
   const { parties, accounts, requests } = snap.onboarding;
   const { vouchers, journal, lots, costMethod } = snap.sales;
+  const returns = snap.sales.returns ?? [];
   const done: Counts = {};
   const tick = (t: string) => (done[t] = (done[t] ?? 0) + 1);
-  const ctx: SalesCtx = { accounts, parties, requests, journal, vouchers, now: snap.onboarding.now, lots, costMethod };
+  const ctx: SalesCtx = { accounts, parties, requests, journal, vouchers, now: snap.onboarding.now, lots, costMethod, returns };
 
   // ---------------------------------------------------------------- P&C: every party (P&C's tables; here as its stand-in)
   for (const p of parties) {
@@ -107,7 +111,8 @@ export async function project(c: pg.PoolClient, snap: Snapshot): Promise<Counts>
       bank_beneficiary: s(v.beneficiary), bank_name: s(v.bankName), bank_account_no: s(v.bankAccountNo), bank_ifsc: s(v.ifsc),
       credit_or_cash: s(v.creditOrCash), credit_limit_amount: n(v.creditLimit), payment_terms_code: s(v.paymentTerms), credit_days: n(v.creditDays), currency_code: s(v.currency) ?? 'INR',
       po_reference_rule: s(v.poRule), invoice_delivery_channel: s(v.delivery), lut_number: s(v.lut), edpms_softex_reference: s(v.edpms),
-      gst_certificate_attached: yes(v.gstCertificate), pan_copy_attached: yes(v.panCopy), remarks: s(v.remarks),
+      gst_certificate_attached: yes(v.gstCertificate), pan_copy_attached: yes(v.panCopy),
+      remarks: s(v.remarks) ?? (r.source ? `Opened automatically by ${r.source.event}: ${r.source.file} (${r.source.docNo}), ${r.source.filled.length} fields prefilled; the rest typed by the accountant` : null),
       created_by_contact_id: contactOf('teja'), submitted_by_contact_id: r.submittedAt ? contactOf('teja') : null, submitted_at: at(r.submittedAt), submission_number: submissions,
       return_reason: r.sentBack?.reason ?? null, party_id: r.partyId ? partyUid(r.partyId) : null, debtor_account_id: r.accountId ? accountUid(r.accountId) : null, activated_at: at(r.activatedAt), updated_at: new Date(),
     }, ['request_id']);
@@ -147,7 +152,8 @@ export async function project(c: pg.PoolClient, snap: Snapshot): Promise<Counts>
         request_id: reqId, workspace_id: WS, operated_party_id: OP, request_kind: 'create', stage: 'active', paper_form_number: `OPENING ${a.accountId}`,
         handed_over_by_contact_id: contactOf('arun'), customer_name: a.name, legal_name: p?.legalName ?? a.name, account_name: a.name, debtor_category_code: a.category.toUpperCase(),
         pan: p?.pan ?? null, gstin: a.gstin ?? p?.gstins[0]?.value ?? null, credit_limit_amount: a.creditLimit, credit_days: a.creditDays, created_by_contact_id: contactOf('teja'),
-        party_id: p ? partyUid(p.partyId) : null, debtor_account_id: did, activated_at: at(a.activatedAt), remarks: 'Opening account: the app starts with it (seed data, illustrative)',
+        party_id: p ? partyUid(p.partyId) : null, debtor_account_id: did, activated_at: at(a.activatedAt),
+        remarks: 'Opening account: the app starts with it (seed data, illustrative)',
       }, ['request_id']);
       tick('fin.customer_request');
     }
@@ -206,11 +212,13 @@ export async function project(c: pg.PoolClient, snap: Snapshot): Promise<Counts>
   // ---------------------------------------------------------------- the journal (Manoj's tables): written once, never changed
   const entryRows = new Map<string, LineRow[]>();
   for (const v of vouchers) if (v.entryId) entryRows.set(v.entryId, linesOf(v, ctx, journal.find((e) => e.id === v.entryId)));
+  for (const e of journal.filter((x) => x.kind === 'stock_return'))
+    entryRows.set(e.id, e.lines.map((l) => ({ code: LEDGERS[l.ledger]?.code ?? null, dr: l.dr, cr: l.cr, role: l.ledger === 'fg_inventory' ? 'stock' : 'cogs', item: l.item, qty: l.qty, lot: l.lot })));
   for (const e of journal) {
     const jid = entryUid(e.id);
     await insertOnce(c, 'fin.journal_entry', {
-      journal_entry_id: jid, workspace_id: WS, operated_party_id: OP, fiscal_year_id: fyOf(e.date), branch_id: branchIdOf(e.branch), posting_date: e.date, voucher_type: 'sales',
-      source_document_id: e.voucherId ? voucherUid(e.voucherId) : null, source_ref_no: e.voucherId ?? e.voucherNo, reverses_journal_entry_id: e.reverses ? entryUid(e.reverses) : null,
+      journal_entry_id: jid, workspace_id: WS, operated_party_id: OP, fiscal_year_id: fyOf(e.date), branch_id: branchIdOf(e.branch), posting_date: e.date, voucher_type: e.kind === 'stock_return' ? 'stock_return' : 'sales',
+      source_document_id: e.kind === 'stock_return' ? returnUid(e.voucherNo) : e.voucherId ? voucherUid(e.voucherId) : null, source_ref_no: e.voucherId ?? e.voucherNo, reverses_journal_entry_id: e.reverses ? entryUid(e.reverses) : null,
       narration: e.narration, posted_by_contact_id: contactOf(e.postedBy), posted_at: at(e.postedAt),
     }, ['journal_entry_id']);
     tick('fin.journal_entry');
@@ -220,7 +228,7 @@ export async function project(c: pg.PoolClient, snap: Snapshot): Promise<Counts>
       await insertOnce(c, 'fin.journal_line', {
         journal_line_id: uid('jl', `${e.id}:${i + 1}`), workspace_id: WS, journal_entry_id: jid, line_no: i + 1,
         ledger_account_code: l.code ?? (acc ? DEBTOR_LEDGER[acc.category] ?? '107010' : null), debtor_account_id: acc ? accountUid(acc.accountId) : null, branch_id: branchIdOf(e.branch),
-        debit: l.dr, credit: l.cr, ...(await traceOf(c, l)),
+        debit: l.dr, credit: l.cr,
       }, ['journal_line_id']);
       tick('fin.journal_line');
     }
@@ -237,16 +245,20 @@ export async function project(c: pg.PoolClient, snap: Snapshot): Promise<Counts>
     keptVouchers.push(id);
     const decided = [...v.approvals].reverse().find((x) => x.status !== 'pending' && x.decidedAt);
     const rows = linesOf(v, ctx, v.entryId ? journal.find((e) => e.id === v.entryId) : undefined);
-    const hasGoods = v.lines.some((l) => l.kind === 'goods');
+    const note = !!v.docType && v.docType !== 'invoice';
+    // An invoice with goods stamps the book's settings; a note only when it carries the stock back (rev 18).
+    const hasGoods = note ? rows.some((l) => l.role === 'stock') : v.lines.some((l) => l.kind === 'goods');
     const stage = v.status === 'draft' ? 'draft' : v.status;
     const history = v.history.map((h) => ({ h, op: opOfVoucher(h.text) })).filter((x) => x.op);
     await upsert(c, 'fin.sales_invoice', {
       sales_invoice_id: id, workspace_id: WS, operated_party_id: OP, branch_id: branchIdOf(v.branch), debtor_account_id: a ? accountUid(a.accountId) : null,
-      internal_ref_no: v.id, original_sales_invoice_id: id, revision_no: 0, posting_date: v.date, invoice_no: v.number ?? v.id, invoice_date: v.date,
+      internal_ref_no: v.id, original_sales_invoice_id: id, revision_no: 0, posting_date: v.date, invoice_no: v.number ?? v.id, invoice_date: v.docDate ?? v.date,
       due_date: dueDateOf(v, a ?? null) ?? v.date, narration: v.narration, inventory_mode: hasGoods ? 'perpetual' : null,
       costing_method: hasGoods ? (costMethod === 'fifo' ? 'fifo' : 'weighted_average') : null, stage, version_number: Math.max(1, history.length),
       submitted_by_contact_id: contactOf(v.maker), submitted_at: at(v.submittedAt), decided_by_contact_id: decided && stage !== 'submitted' ? contactOf(decided.checker) : null,
       decided_at: decided && stage !== 'submitted' ? at(decided.decidedAt) : null, decision_reason: v.decisionReason ?? null, journal_entry_id: v.entryId ? entryUid(v.entryId) : null, updated_at: new Date(),
+      document_type: v.docType ?? 'invoice', against_sales_invoice_id: note && v.againstId ? voucherUid(v.againstId) : null, note_reason: note ? v.noteReason ?? null : null,
+      scheme_reference: note ? v.schemeRef ?? null : null, stock_return_id: note && v.returnId ? returnUid(v.returnId) : null, return_stock_posting: note && v.noteReason === 'return' ? v.returnStock ?? 'stores_receipt' : null,
     }, ['sales_invoice_id']);
     tick('fin.sales_invoice');
     // Its lines: replaced whole on each save (the schema: "replaced whole on each Submit"); a posted voucher's = its journal entry's.
@@ -256,9 +268,9 @@ export async function project(c: pg.PoolClient, snap: Snapshot): Promise<Counts>
       await insertOnce(c, 'fin.sales_invoice_line', {
         sales_invoice_line_id: uid('sil', `${v.id}:${i + 1}`), workspace_id: WS, sales_invoice_id: id, line_no: i + 1, side: l.dr ? 'Dr' : 'Cr',
         ledger_account_code: acc ? null : l.code, debtor_account_id: acc ? accountUid(acc.accountId) : null,
-        inventory_item_code: l.cr && l.item ? l.item : null, quantity: l.cr && l.item ? l.qty ?? null : null,
-        stock_lot_id: l.cr && l.item && l.lot ? lotUid(lots.find((x) => x.lot === l.lot && x.item === l.item)?.lotId ?? l.lot) : null,
-        amount: l.dr || l.cr, ...(await traceOf(c, l)),
+        inventory_item_code: l.role === 'stock' && l.item ? l.item : null, quantity: l.role === 'stock' && l.item ? l.qty ?? null : null,
+        stock_lot_id: l.role === 'stock' && l.item && l.lot ? lotUid(note && v.returnId ? returns.find((r) => r.id === v.returnId)?.toLotId ?? l.lot : lots.find((x) => x.lot === l.lot && x.item === l.item && !x.godown.endsWith('-QC'))?.lotId ?? l.lot) : null,
+        amount: l.dr || l.cr,
       }, ['sales_invoice_line_id']);
       tick('fin.sales_invoice_line');
     }
@@ -268,29 +280,41 @@ export async function project(c: pg.PoolClient, snap: Snapshot): Promise<Counts>
     }
   }
   await c.query(`DELETE FROM fin.sales_invoice WHERE journal_entry_id IS NULL AND NOT (sales_invoice_id = ANY($1::uuid[]))`, [keptVouchers]);
+
+  // ---------------------------------------------------------------- rev 18: Stores' return receipts (after the invoices: the trigger reads their lines)
+  for (const r of returns) {
+    const a = accounts.find((x) => x.accountId === r.accountId);
+    await upsert(c, 'inv.stock_return', {
+      stock_return_id: returnUid(r.id), workspace_id: WS, return_no: r.id, branch_id: branchIdOf(r.branch), received_on: day(r.at), debtor_account_id: a ? accountUid(a.accountId) : null,
+      against_sales_invoice_id: voucherUid(r.invoiceId), item_code: r.item, from_stock_lot_id: lotUid(lots.find((x) => x.lot === r.fromLot && x.item === r.item && !x.godown.endsWith('-QC'))?.lotId ?? r.fromLot),
+      quantity: r.qty, condition: r.condition, to_stock_lot_id: lotUid(r.toLotId), unit_cost: r.unitCost, journal_entry_id: r.entryId ? entryUid(r.entryId) : null, recorded_by_contact_id: contactOf('latha'),
+    }, ['stock_return_id']);
+    tick('inv.stock_return');
+  }
   await c.query(`UPDATE fin.document_sequence SET last_number = GREATEST(last_number, $1) WHERE workspace_id = $2 AND document_type = 'sales_invoice'`, [lastNo, WS]);
 
-  // The book's costing method follows the app's switch (dated from the scenario day; S1 part 1, never edited: closed + a new row).
-  const want = costMethod === 'fifo' ? 'fifo' : 'weighted_average';
+  // The book's settings follow the app's switches (dated from the scenario day; never edited: closed + a new row).
   const today = day(snap.onboarding.now)!;
-  const { rows: cur } = await c.query(`SELECT book_setting_id, setting_value, effective_from::text AS f FROM fin.book_setting WHERE book_id = $1 AND setting_code = 'costing_method' AND effective_until IS NULL`, [BOOK]);
-  if (cur[0] && cur[0].setting_value !== want) {
+  const follow = async (code: string, want: string, words: string) => {
+    const { rows: cur } = await c.query(`SELECT book_setting_id, setting_value, effective_from::text AS f FROM fin.book_setting WHERE book_id = $1 AND setting_code = $2 AND effective_until IS NULL`, [BOOK, code]);
+    if (!cur[0] || cur[0].setting_value === want) return;
     if (cur[0].f >= today) await c.query('UPDATE fin.book_setting SET setting_value = $1, reason = $2 WHERE book_setting_id = $3', [want, `Changed in the app on ${today} (illustrative)`, cur[0].book_setting_id]);
     else {
       await c.query('UPDATE fin.book_setting SET effective_until = $1 WHERE book_setting_id = $2', [today, cur[0].book_setting_id]);
-      await insertOnce(c, 'fin.book_setting', { book_setting_id: uid('setting', `costing_method:${today}:${want}`), workspace_id: WS, book_id: BOOK, setting_code: 'costing_method', setting_value: want, effective_from: today, reason: `Changed in the app (${COST_METHODS[costMethod].label}), illustrative`, approved_by_contact_id: contactOf('rajan'), approved_at: new Date() }, ['book_setting_id']);
+      await insertOnce(c, 'fin.book_setting', { book_setting_id: uid('setting', `${code}:${today}:${want}`), workspace_id: WS, book_id: BOOK, setting_code: code, setting_value: want, effective_from: today, reason: `Changed in the app (${words}), illustrative`, approved_by_contact_id: contactOf('rajan'), approved_at: new Date() }, ['book_setting_id']);
     }
-  }
+  };
+  await follow('costing_method', costMethod === 'fifo' ? 'fifo' : 'weighted_average', COST_METHODS[costMethod].label);
+  await follow('return_stock_posting', snap.sales.returnStock ?? 'stores_receipt', snap.sales.returnStock ?? 'stores_receipt');
   return done;
 }
 
 // ---------------------------------------------------------------- lines BY ROLE, and the mapping row each one used
-interface LineRow { code: string | null; account?: string; dr: number; cr: number; role: string | null; ruleCase: string | null; item?: string; qty?: number; lot?: string | null; reason?: string; facts: Facts | null }
-interface Facts { party: string; scope: string | null; line: string | null; tax: string | null; settle: string; on: string }
+interface LineRow { code: string | null; account?: string; dr: number; cr: number; role: string | null; item?: string; qty?: number; lot?: string | null }
 
 const TAX_ROLE: Record<string, string> = { out_cgst: 'output_cgst', out_sgst: 'output_sgst', out_igst: 'output_igst' };
-/** The app's line role (engine.ts) → the schema's line_role (rev 17). */
-function roleOf(l: { role?: EntryLine['role']; ledger: string; dr: number }): string | null {
+/** What a line is (for the stock columns of fin.sales_invoice_line): the customer, a stock line, a cost line … by its ledger. */
+function roleOf(l: { ledger: string }): string | null {
   const k = l.ledger;
   if (k === 'party') return 'customer';
   if (TAX_ROLE[k]) return TAX_ROLE[k];
@@ -301,64 +325,21 @@ function roleOf(l: { role?: EntryLine['role']; ledger: string; dr: number }): st
   if (k === 'fg_inventory') return 'stock';
   if (k === 'contract_liability') return 'deferred_revenue';
   if (k === 'reimbursement_recoverable') return 'recoverable_expense';
-  if (l.role === 'added') return null; // a line the AE added: no rule wrote it
+  if (k === 'sales_returns') return 'sales_return'; // rev 18
+  if (k === 'discount_allowed') return 'discount_allowed';
   if (LEDGERS[k]?.nature === 'income') return 'revenue';
   return null;
 }
 
-/** The voucher's lines: a posted one's are its journal entry's (as booked); otherwise the entry the rule (and the AE) make now. */
+/** The voucher's lines: a posted one's are its journal entry's (as booked); otherwise the entry the AE typed (REC: no rule). */
 function linesOf(v: Voucher, ctx: SalesCtx, posted?: JournalEntry): LineRow[] {
-  let c: ReturnType<typeof calcOf> | null = null;
-  try {
-    c = calcOf(v, ctx);
-  } catch {
-    c = null;
-  }
-  const facts = (ledger: string): Facts | null => {
-    if (!c) return null;
-    const row = c.rows.find((r) => r.revenue === ledger) ?? c.rows[0];
-    return { party: c.kind, scope: c.kind === 'domestic' ? (c.intra ? 'intra_state' : 'inter_state') : null, line: row?.kind ?? null, tax: row?.taxability ?? null, settle: v.settlement ?? 'credit', on: v.date };
-  };
-  const caseFor = (ledger: string, role: string | null) => {
-    if (role === 'cogs' || role === 'stock') return 'R13';
-    if (role === 'settlement') return 'R8';
-    if (!c || !['revenue', 'deferred_revenue', 'recoverable_expense', 'igst_refund'].includes(role ?? '')) return null;
-    if (role === 'igst_refund') return c.kind === 'sez' ? 'R6' : 'R5';
-    return c.rows.find((r) => r.revenue === ledger)?.rule ?? null;
-  };
-  const src: { ledger: string; code?: string; account?: string; dr: number; cr: number; role?: EntryLine['role']; item?: string; qty?: number; lot?: string | null; reason?: string }[] = posted
+  const src: { ledger: string; code?: string; account?: string; dr: number; cr: number; item?: string; qty?: number; lot?: string | null }[] = posted
     ? posted.lines.map((l: JournalLine) => ({ ...l, account: l.accountId, code: l.ledger === 'party' ? undefined : LEDGERS[l.ledger]?.code ?? l.code }))
-    : entryOf(v, ctx).filter((l) => l.dr || l.cr).map((l) => ({ ledger: l.ledger, code: l.ledger === 'party' ? undefined : l.code, account: l.ledger === 'party' ? v.accountId : undefined, dr: l.dr, cr: l.cr, role: l.role, item: l.item, qty: l.qty, lot: l.lot, reason: l.changed ? l.reason || 'ledger picked by the AE' : undefined }));
-  return src.map((l) => {
-    const role = roleOf(l);
-    return { code: l.code ?? null, account: l.account, dr: l.dr, cr: l.cr, role, ruleCase: caseFor(l.ledger, role), item: l.item, qty: l.qty, lot: l.lot, reason: l.reason, facts: facts(l.ledger) };
-  });
+    : entryOf(v, ctx).filter((l) => l.dr || l.cr).map((l) => ({ ledger: l.ledger, code: l.ledger === 'party' ? undefined : l.code, account: l.ledger === 'party' ? v.accountId : undefined, dr: l.dr, cr: l.cr, item: l.item, qty: l.qty, lot: l.lot }));
+  return src.map((l) => ({ code: l.code ?? null, account: l.account, dr: l.dr, cr: l.cr, role: roleOf(l), item: l.item, qty: l.qty, lot: l.lot }));
 }
 
-const plainLine = (l: JournalLine): LineRow => ({ code: l.ledger === 'party' ? null : LEDGERS[l.ledger]?.code ?? l.code ?? null, account: l.accountId, dr: l.dr, cr: l.cr, role: null, ruleCase: null, facts: null });
-
-/** The 7 trace columns: the rule, its case, the role, and the mapping row fin.determine_ledger gives on the posting date. */
-async function traceOf(c: pg.PoolClient, l: LineRow) {
-  const none = { rule_code: null, rule_version: null, rule_case: null, line_role_code: null, account_determination_id: null, determined_ledger_code: null, override_reason: null };
-  if (!l.role) return none;
-  const base = { rule_code: 'SALES_INVOICE', rule_version: 1, rule_case: l.ruleCase, line_role_code: l.role };
-  if (l.role === 'customer' || !l.facts) return { ...base, account_determination_id: null, determined_ledger_code: null, override_reason: null };
-  await c.query('SAVEPOINT det');
-  try {
-    const { rows } = await c.query(
-      `SELECT d.account_determination_id AS id, d.ledger_account_code AS ledger FROM fin.account_determination d
-        WHERE d.account_determination_id = fin.determine_ledger($1, $2, 'sales_invoice', $3, $9::date, $4, $5, $6, $7, $8)`,
-      [WS, BOOK, l.role, l.facts.party, l.facts.scope, l.facts.line, l.facts.tax, l.facts.settle, l.facts.on],
-    );
-    await c.query('RELEASE SAVEPOINT det');
-    const d = rows[0];
-    const overridden = d && d.ledger !== l.code;
-    return { ...base, account_determination_id: d?.id ?? null, determined_ledger_code: d?.ledger ?? null, override_reason: overridden ? l.reason ?? 'ledger picked by the AE (§8.4)' : null };
-  } catch {
-    await c.query('ROLLBACK TO SAVEPOINT det');
-    return { ...base, account_determination_id: null, determined_ledger_code: null, override_reason: null }; // no row or a tie: the line keeps its ledger, untraced
-  }
-}
+const plainLine = (l: JournalLine): LineRow => ({ code: l.ledger === 'party' ? null : LEDGERS[l.ledger]?.code ?? l.code ?? null, account: l.accountId, dr: l.dr, cr: l.cr, role: null });
 
 function opOfVoucher(text: string): 'submit' | 'decide' | null {
   if (/^(Entry booked|Sent again|Booked)/i.test(text)) return 'submit';

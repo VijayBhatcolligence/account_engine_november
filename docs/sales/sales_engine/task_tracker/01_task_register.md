@@ -46,8 +46,8 @@ Every task on the Accounts Executive's task card, and whether the engine support
 | T22 | Book the ITC reversal on written-off stock | Inventory | ⬜ | — | |
 | T23 | Draft the FX revaluation run | AR/AP | ⬜ | — | |
 | T24 | Book a sales voucher (the accounting entry of Billing's invoice; rev 12) | Sales | 🟡 | task_list/T24_sales_voucher_entry.md (§20 rev 15) · customer_onboarding_schema.dbml rev 15 (Manoj's model: sales_invoice / _line / _history; + the cost of goods sold from inventory, inv.stock_lot) · t24_example_data.md · out.sql · t24_schema_test.sql · Customer Creation Walkthrough.html (Part 2) | **Rev 2 (16-Nov): built the way Manoj built the purchase voucher (T1). Rev 3 (16-Nov): the CA's 43 specimens: F1 (export / SEZ with IGST) and F2 (third-party ship-to) corrected; Bill of Supply, B2C and paid at once, freight, pure agent, deferred services, incoterm, advance link added; 24 / 24 CA answer keys pass; 25 / 25 wrong rows refused. Rev 4 (18-Nov, Vijay): T24 is the invoice only; the challan is a read-only source, its recording, stock and cost entry are the Stores task G30; the invoice opens full screen; schema notes only. Rev 5 (18-Nov, Vijay): the invoice is independent, typed as the CA's 43 specimens (no challan, order or PO); fields on none of them removed (listed); discount, transport, payment reference added; schema rev 7 (+3 columns, +2 CHECKs); 27 / 27 refused.** App: branches, the AM's three decisions, IRP refusal and retry, IRN cancel ≤ 24 h, check codes; 53 tests. Schema: 9 new tables + his books core + 2 stubs; runs on PostgreSQL 18, B4-01 posts, 19 / 19 wrong rows refused. Next: the code in the engine repo (hand-over in the dbml) |
-| T25 | Issue a sales credit note | Sales | ⬜ | — | 29-Oct revision |
-| T26 | Issue a sales debit note | Sales | ⬜ | — | 29-Oct revision |
+| T25 | Issue a sales credit note | Sales | ✅ **built (rev 18, 25-Nov)**: the same voucher family (`document_type` credit_note, the invoice it corrects, the reason: return · scheme discount · price correction · goodwill); a return waits for Stores' receipt `inv.stock_return` (C-17); the stock back by the receipt (default, the CA's E1) or by the note (a setting). The CA's E1–E3 pass; scenario B4-06, B4-07 proved on PostgreSQL and in the app | G42 (built, to agree with Manoj), G45, G46, G47 | 29-Oct revision |
+| T26 | Issue a sales debit note | Sales | ✅ **built (rev 18, 25-Nov)**: `document_type` debit_note against the invoice (price increase · extra charge); an extra entry, not a reversal. The CA's E4 passes; scenario B4-08 proved on PostgreSQL and in the app | G42, G45 | 29-Oct revision |
 | T27 | Book the dispatched-not-billed accrual | Sales | ⬜ | — | 29-Oct revision |
 
 ## T12 in detail
@@ -103,3 +103,10 @@ Every task on the Accounts Executive's task card, and whether the engine support
 | 6. Exception | IRP refuses → issued, Compliance retries · a check fails again at approval · period or year closed · the AE's edited entry (to Rajan) |
 
 **T24 rev 3 · how we work now (Vijay, 16-Nov):** we build each task ourselves (UI, schema, proof) and hand it to Manoj to merge. A task is complete when the CA's answer keys in its scope pass as tests, the schema runs on PostgreSQL, the UI shows every path, the CA has reviewed it, and the hand-over pack is ready. T24 waits for the CA's review (G34).
+
+## App demos (not tasks on the card)
+
+| Demo | Where it sits | Status | Measured | Gaps |
+|---|---|---|---|---|
+| **Upload an invoice** (app rev 19–21, 25/26-Nov): **withdrawn 27-Nov (REC)**: the reader and upload are removed; the code is on the local branch `archive/ae-engine-rev21` | — | — | — | G49–G52, G54, G56 not needed |
+| **REC · the recording model** (27-Nov-2026) | The AE types each entry, like Tally; role apps will propose entries (G58). Schema rev 19 (37 tables): the posting rules and the mapping removed; S1 part 2 withdrawn | Built: app + schema rev 19 | 61 / 61 app tests; t24_schema_test 56 / 56; db:e2e | G57, G58 |

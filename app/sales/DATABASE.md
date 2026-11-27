@@ -1,6 +1,8 @@
 # The app's database (PostgreSQL, the engine's schema)
 
-The app saves into the engine's own schema: `docs/sales/sales_engine/out.sql` (rev 17, 42 tables), run as it is.
+> **REC (27-Nov-2026):** schema rev 19 (37 tables): the posting rules and the ledger mapping are removed; the AE types each entry, like Tally. The invoice reader is removed (kept on the local branch `archive/ae-engine-rev21`).
+
+The app saves into the engine's own schema: `docs/sales/sales_engine/out.sql` (rev 19, 37 tables), run as it is.
 
 ## Run it
 
@@ -11,7 +13,7 @@ The app saves into the engine's own schema: `docs/sales/sales_engine/out.sql` (r
 | The app | `npm run dev` | The app and its backend together, on http://localhost:5174 |
 | Look inside | `npm run db:status` | Rows per table |
 | Start again | `npm run db:reset`, or Demo → "Reset the demo" | Drops and rebuilds everything |
-| Prove it | `npm run db:e2e` | Drives the app's stores: a new customer and SV-0012 booked + approved, each saved; a wrong save refused. **Rebuilds the database** |
+| Prove it | `npm run db:e2e` | Drives the app's stores: a new customer, SV-0012 (its entry typed), Stores' return D-05 and the notes B4-06, B4-07, B4-08 (typed; both stock settings), a T12 form filled by an event, each saved; a wrong save refused. **Rebuilds the database** |
 
 In the app, the top bar shows **Saved to PostgreSQL hh:mm**. **Rules → Backend view** shows each table read back from the database, and the last saves.
 
@@ -33,10 +35,12 @@ the app opens ◀── GET /api/db/state ◀── demo.app_state (the app's ow
 |---|---|
 | Parties (both sides) | `pc.*`: party, PAN / GSTINs, addresses, trade name, standing, contacts (as P&C's stand-in) |
 | Customer requests and accounts (T12) | `customer_request` (+ approval, history), `debtor_account` (+ tax registration, location, credit limit, history), `party_bank_account` |
-| Sales vouchers (T24), from Submit on | `sales_invoice`, `sales_invoice_line` by role, with the mapping row used (rev 17), `sales_invoice_history` |
-| The journal | `journal_entry`, `journal_line` (+ rule, case, role, mapping row), `document_sequence` |
+| Sales vouchers (T24), from Submit on | `sales_invoice`, `sales_invoice_line` (the entry as the AE typed it), `sales_invoice_history` |
+| Credit and debit notes (T25, T26, rev 18) | the same `sales_invoice` rows with `document_type`, the invoice they correct and the reason |
+| Stores' return receipts (D-05) | `inv.stock_return`; the Stock back entry (`journal_entry` type `stock_return`) when the book's setting says the receipt posts it |
+| The journal | `journal_entry`, `journal_line` (as typed; no rule or mapping columns since rev 19), `document_sequence` |
 | Stock | `inv.stock_lot` (quantities left) |
-| Setup, from the app's catalogues | company, branches, years, chart, GST states, debtor categories, book + settings, roles, rule SALES_INVOICE v1, the 19 mapping rows |
+| Setup, from the app's catalogues | company, branches, years, chart, GST states, debtor categories, book + settings (no rules or mapping since rev 19) |
 
 **Not stored:**
 - The vendor side's accounts and requests: their tables are Manoj's and are not in our schema. Vendor parties are stored.
@@ -45,6 +49,7 @@ the app opens ◀── GET /api/db/state ◀── demo.app_state (the app's ow
 **Assumptions to know:**
 - An account the app starts with gets an "OPENING" request, because `debtor_account` needs the request it was opened from.
 - Its terms not on a form use defaults; their remarks say so.
+- Rev 21: a document whose customer is not registered opens a normal T12 request, filled by the event: `remarks` "Opened automatically by …". There is no shortcut: every customer goes through the T12 approvals. The document waits in the app state (`held`), not in `fin.sales_invoice`, until the customer is active.
 
 ## Moving the database (Docker, Supabase …)
 

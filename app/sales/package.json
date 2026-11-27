@@ -16,7 +16,9 @@
     "db:setup": "vite-node scripts/db.ts setup",
     "db:reset": "vite-node scripts/db.ts reset",
     "db:status": "vite-node scripts/db.ts status",
-    "db:e2e": "vite-node scripts/e2e.ts"
+    "db:e2e": "vite-node scripts/e2e.ts",
+    "verify": "node scripts/verify.mjs",
+    "ui:check": "node scripts/ui/both-paths.cjs"
   },
   "dependencies": {
     "immer": "^10.1.1",
@@ -31,6 +33,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "playwright-core": "^1.49.1",
     "typescript": "~5.6.3",
     "vite": "^5.4.11",
     "vitest": "^2.1.8"

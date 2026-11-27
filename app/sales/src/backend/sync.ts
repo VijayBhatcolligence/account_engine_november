@@ -28,7 +28,7 @@ const onboardingSlice = () => {
 };
 const salesSlice = () => {
   const s = useSales.getState();
-  return { vouchers: s.vouchers, journal: s.journal, lots: s.lots, costMethod: s.costMethod };
+  return { vouchers: s.vouchers, journal: s.journal, lots: s.lots, costMethod: s.costMethod, returns: s.returns, returnStock: s.returnStock, held: s.held };
 };
 /** What a save is about: the data, not where you are looking (nav) — moving between screens never saves. */
 const fingerprint = () => {

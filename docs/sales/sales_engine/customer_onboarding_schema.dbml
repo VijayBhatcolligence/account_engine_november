@@ -1,6 +1,46 @@
 // Task T12 · Create a customer (Sales hands the form) + Task T24 · Sales voucher entry + Task S1 part 1 · Set up the books
-// + S1 part 2 · Posting rules and the ledger mapping — the database · rev 17 (24-Nov-2026)
+// + T25 · Sales credit note + T26 · Sales debit note — the database
+// · rev 19 (27-Nov-2026)
 //
+// REV 19 (27-Nov, Vijay, REC-D2: "only remove auto posting rule … accountant will type and enter … all mapping rule remove …
+//   nothing else removed: we need inventory and auto calculation"): each role app owns its accounting layer and proposes the
+//   complete entry; the AE records it like Tally: picks the ledger, types Dr / Cr, saves. Proposal: proposals/REC.md.
+//   REMOVED (rev 17, S1 part 2, withdrawn): 6 tables fin.line_role, fin.posting_rule, fin.posting_rule_case,
+//     fin.posting_rule_role, fin.account_determination, fin.account_determination_history (and their 17 Refs);
+//     7 columns on fin.journal_line (rule_code, rule_version, rule_case, line_role_code, account_determination_id,
+//     determined_ledger_code, override_reason) + 6 CHECKs + the index journal_line_determination_idx + 3 Refs;
+//     the same 7 on fin.sales_invoice_line + 7 CHECKs + 3 Refs;
+//     out.sql's hand-written rev 17 block (posting_rule_no_overlap, account_determination_no_overlap, specificity GENERATED,
+//     trigger account_determination_guard, fin.determine_ledger, fin.account_determination_gaps).
+//   KEPT (nothing else changes): T12, the books core, the journal (still balanced by Manoj's commit check), the sales document
+//     family (T24 / T25 / T26), inventory (inv.stock_lot, inv.stock_return), book settings, ledger_account, debtor_category.
+//   Done work checked again: T24, T25, T26 (t24_schema_test.sql: the entries the same, the ledgers typed).
+//   + P&C stubs aligned with P&C migrations 002–007, 27-Nov (REC §5, REC-D8 / D9: "take pull from P&C, update it accordingly"):
+//     no (workspace_id, id) key on pc.party_identifier / pc.party_standing (P&C has none) → fin.debtor_tax_registration and
+//     fin.debtor_account link by the single-column key (as fin.branch already did); pc.party_trade_name's key (workspace_id,
+//     party_id, trade_name_id) and the standing → trade-name link on those 3 columns; recorded_at / updated_at NOT NULL
+//     DEFAULT now() on the stubs; scope, activity_ref, decision_ref (jsonb); the full allowed values in the notes.
+//
+// REV 18 (25-Nov, Vijay: "a note is a handoff, like the invoice: Billing issues it, the AE books it"; one type column; a link
+//   to the invoice; ledgers assumed to exist (S2 will create them); no amount limit for now; stock back: BOTH ways, a setting;
+//   credit notes: return, discount with GST, AND the commercial one without GST): T25 + T26, the CA's E1–E4, scenario B4-06/07/08.
+//   ONE family, no new voucher tables (G42, as Oracle AR / SAP billing): fin.sales_invoice +6 columns: document_type (invoice
+//     | credit_note | debit_note), against_sales_invoice_id (the invoice a note corrects: GST s.34 names it), note_reason
+//     (return | scheme_discount | price_correction | goodwill · price_increase | additional_charge), scheme_reference (the
+//     pre-agreed scheme that lets a discount reduce GST, s.15(3)(b); C-19), stock_return_id (a return needs Stores' receipt
+//     first; C-17), return_stock_posting (stamped from the book's setting).
+//   +1 table inv.stock_return: Stores' Sales Return Receipt (D-05), a STUB like inv.stock_lot (the inventory module owns it).
+//   Stock back on a return (Dr Finished Goods · Cr COGS at the cost it LEFT at): a book setting return_stock_posting (a new
+//     setting is a row): stores_receipt (default: the CA's E1 "Stock back (GRN)" and the team lead's "an entry is posted by
+//     the document that causes it") or with_credit_note (in the note's own entry).
+//   journal_entry.voucher_type + 'stock_return' (Manoj's CHECK, as rev 2 added 'sales'; T1 and T24 checked again).
+//   Rules (data rows, no new tables): SALES_CREDIT_NOTE v1 (R1–R5), SALES_DEBIT_NOTE v1 (R1–R2), SALES_RETURN_RECEIPT v1 (R1);
+//     roles + sales_return, discount_allowed (rows of rev 17's tables: removed in rev 19); ledgers assumed: Sales Returns
+//     401090, Discount Allowed 506020 (proposed, G45).
+//   By hand (out.sql): triggers sales_note_against_invoice (a posted invoice, the same customer and GSTIN, not before it) and
+//     stock_return_not_more_than_sold (Part C: never more than left on that batch for that invoice).
+//
+// REV 17 — REMOVED IN REV 19 (kept as history; none of the objects below exists any more).
 // REV 17 (24-Nov, Vijay + the reviewer's note: "code decides what accounting entries are required; configuration decides which
 //   ledgers receive them; the journal stores the result and its traceability"): S1 PART 2, before T25 / T26.
 //   Until now the ledgers were in the app's code (catalogue.ts LEDGERS, engine.ts caseOf) and the journal could not say which
@@ -173,6 +213,8 @@
 //
 // Lines: black = foreign key inside one owner · grey = a foreign key into P&C (same database), declared with workspace_id
 // as Manoj's merged ER does: (workspace_id, x_id) → pc.<table> (workspace_id, x_id). (rev 3 said "a plain value": changed in rev 4.)
+// Except (rev 19, P&C pull): pc.party_identifier and pc.party_standing have no (workspace_id, id) key in P&C, so the links to
+// them are single-column, to their primary key.
 // Example ids in notes (OP-1, P-1, DA-1 …) are the walkthrough's labels; real ids are uuids.
 
 // =====================================================================
@@ -185,6 +227,8 @@ Table pc.operated_party [headercolor: #0F766E] {
   party_id uuid [not null, note: 'P-OUR = Aikyat Technologies']
   since date
   until date
+  recorded_at timestamptz [not null, default: `now()`, note: 'P&C: when Aikyat first recorded the row (never changed)']
+  updated_at timestamptz [not null, default: `now()`, note: 'P&C: touched on every change']
   Indexes {
     (workspace_id, operated_party_id) [unique, note: 'the P&C key: the target of every Finance foreign key']
   }
@@ -194,7 +238,7 @@ Table pc.operated_party [headercolor: #0F766E] {
 Table pc.private_anchor [headercolor: #0F766E] {
   anchor_id uuid [pk]
   workspace_id text [not null]
-  anchor_kind text [not null, note: 'organization | person']
+  anchor_kind text [not null, note: 'person | organization | system | destination (P&C: private_anchor_kind_valid)']
   created_at timestamptz [not null]
   Note: 'A hidden identity row behind every party and contact; its id becomes party_id / contact_id. Finance never reads it.'
 }
@@ -205,8 +249,8 @@ Table pc.party [headercolor: #0F766E] {
   party_kind text [not null, note: 'person | organization']
   legal_name text
   legal_form_code text [note: 'pc.legal_form: IN_PVT_LTD … (only IN_PVT_LTD is seeded today)']
-  recorded_at timestamptz
-  updated_at timestamptz
+  recorded_at timestamptz [not null, default: `now()`, note: 'P&C: when Aikyat first recorded the row (never changed)']
+  updated_at timestamptz [not null, default: `now()`, note: 'P&C: touched on every change']
   Indexes {
     (workspace_id, party_id) [unique, note: 'the P&C key: the target of every Finance foreign key']
   }
@@ -220,6 +264,11 @@ Table pc.party_trade_name [headercolor: #0F766E] {
   name text [not null, note: 'the form\'s Customer Name']
   since date
   until date
+  recorded_at timestamptz [not null, default: `now()`, note: 'P&C: when Aikyat first recorded the row (never changed)']
+  updated_at timestamptz [not null, default: `now()`, note: 'P&C: touched on every change']
+  Indexes {
+    (workspace_id, party_id, trade_name_id) [unique, note: 'P&C\'s party_trade_name_workspace_party_identity_key: the target of the standing\'s trade-name link (the name belongs to the same party)']
+  }
 }
 
 Table pc.party_identifier [headercolor: #0F766E] {
@@ -232,9 +281,8 @@ Table pc.party_identifier [headercolor: #0F766E] {
   standing_code text [note: 'GST: active | suspended | cancelled | none_held']
   since date
   until date
-  Indexes {
-    (workspace_id, party_identifier_id) [unique, note: 'the P&C key: the target of every Finance foreign key']
-  }
+  recorded_at timestamptz [not null, default: `now()`, note: 'P&C: when Aikyat first recorded the row (never changed)']
+  updated_at timestamptz [not null, default: `now()`, note: 'P&C: touched on every change']
   Note: 'PAN and EVERY GSTIN (main + B1) of the customer. Not unique by design: a match never merges by itself. No location column.'
 }
 
@@ -250,6 +298,8 @@ Table pc.business_location [headercolor: #0F766E] {
   country_code text
   since date
   until date [note: 'a closed place gets an until; never deleted']
+  recorded_at timestamptz [not null, default: `now()`, note: 'P&C: when Aikyat first recorded the row (never changed)']
+  updated_at timestamptz [not null, default: `now()`, note: 'P&C: touched on every change']
   Indexes {
     (workspace_id, business_location_id) [unique, note: 'the P&C key: the target of every Finance foreign key']
   }
@@ -265,19 +315,20 @@ Table pc.party_standing [headercolor: #0F766E] {
   trade_name_id uuid
   since date
   until date
-  Indexes {
-    (workspace_id, party_standing_id) [unique, note: 'the P&C key: the target of every Finance foreign key']
-  }
+  recorded_at timestamptz [not null, default: `now()`, note: 'P&C: when Aikyat first recorded the row (never changed)']
+  updated_at timestamptz [not null, default: `now()`, note: 'P&C: touched on every change']
   Note: 'P-1 is a customer OF our company OP-1. A party already our vendor gets a second standing, never a second party.'
 }
 
 Table pc.contact [headercolor: #0F766E] {
   contact_id uuid [pk, note: 'same value as its private_anchor']
   workspace_id text [not null]
-  contact_kind text [not null, note: 'person | system: every Finance *_contact_id must be a person (checked by the action; a foreign key cannot)']
+  contact_kind text [not null, note: 'person | system | destination (P&C: contact_kind_valid): every Finance *_contact_id must be a person (checked by the action; a foreign key cannot)']
   display_name text [not null]
   accountable_party_id uuid
   destination_role text
+  recorded_at timestamptz [not null, default: `now()`, note: 'P&C: when Aikyat first recorded the row (never changed)']
+  updated_at timestamptz [not null, default: `now()`, note: 'P&C: touched on every change']
   Indexes {
     (workspace_id, contact_id) [unique, note: 'the P&C key: the target of every Finance foreign key']
   }
@@ -290,19 +341,24 @@ Table pc.contact_party_association [headercolor: #0F766E] {
   contact_id uuid [not null]
   party_id uuid [not null]
   capacity_code text [not null, note: 'customer_contact (to be seeded)']
+  scope jsonb [note: 'P&C: what the association covers, a non-empty object, or none']
   since date
   until date
+  recorded_at timestamptz [not null, default: `now()`, note: 'P&C: when Aikyat first recorded the row (never changed)']
+  updated_at timestamptz [not null, default: `now()`, note: 'P&C: touched on every change']
 }
 
 Table pc.contact_point [headercolor: #0F766E] {
   contact_point_id uuid [pk]
   workspace_id text [not null]
   contact_id uuid [not null]
-  channel_kind text [not null, note: 'phone | email']
+  channel_kind text [not null, note: 'email | phone | url | postal (P&C: contact_point_channel_kind_valid; postal = a business_location, no route_value)']
   route_value text
   business_location_id uuid
   since date
   until date
+  recorded_at timestamptz [not null, default: `now()`, note: 'P&C: when Aikyat first recorded the row (never changed)']
+  updated_at timestamptz [not null, default: `now()`, note: 'P&C: touched on every change']
 }
 
 Table pc.record_history [headercolor: #0F766E] {
@@ -314,7 +370,9 @@ Table pc.record_history [headercolor: #0F766E] {
   operation text [not null]
   row_snapshot jsonb [not null]
   performer_contact_id uuid
-  recorded_at timestamptz
+  recorded_at timestamptz [not null, default: `now()`]
+  activity_ref jsonb [note: 'P&C: the activity that wrote it, a non-empty object, or none']
+  decision_ref jsonb [note: 'P&C: the decision behind it, a non-empty object, or none']
   Note: 'P&C\'s own history: one row per P&C record written.'
 }
 
@@ -326,7 +384,7 @@ Ref: pc.party_identifier.party_id > pc.party.party_id
 Ref: pc.business_location.party_id > pc.party.party_id
 Ref: pc.party_standing.party_id > pc.party.party_id
 Ref: pc.party_standing.operated_party_id > pc.operated_party.operated_party_id
-Ref: pc.party_standing.trade_name_id > pc.party_trade_name.trade_name_id
+Ref: pc.party_standing.(workspace_id, party_id, trade_name_id) > pc.party_trade_name.(workspace_id, party_id, trade_name_id)  // rev 19 (P&C pull): P&C's party_standing_trade_name_belongs_to_party
 Ref: pc.contact_party_association.contact_id > pc.contact.contact_id
 Ref: pc.contact_party_association.party_id > pc.party.party_id
 Ref: pc.contact_point.contact_id > pc.contact.contact_id
@@ -748,9 +806,9 @@ Ref: fin.debtor_credit_limit.source_request_id > fin.customer_request.request_id
 Ref: fin.debtor_account_history.debtor_account_id > fin.debtor_account.debtor_account_id
 Ref: fin.debtor_account.(workspace_id, party_id) > pc.party.(workspace_id, party_id) [color: #9ca3af]
 Ref: fin.debtor_account.(workspace_id, operated_party_id) > pc.operated_party.(workspace_id, operated_party_id) [color: #9ca3af]
-Ref: fin.debtor_account.(workspace_id, party_standing_id) > pc.party_standing.(workspace_id, party_standing_id) [color: #9ca3af]
+Ref: fin.debtor_account.party_standing_id > pc.party_standing.party_standing_id [color: #9ca3af]  // rev 19 (P&C pull): P&C has no (workspace_id, party_standing_id) key
 Ref: fin.debtor_account.(workspace_id, collection_owner_contact_id) > pc.contact.(workspace_id, contact_id) [color: #9ca3af]
-Ref: fin.debtor_tax_registration.(workspace_id, party_identifier_id) > pc.party_identifier.(workspace_id, party_identifier_id) [color: #9ca3af]
+Ref: fin.debtor_tax_registration.party_identifier_id > pc.party_identifier.party_identifier_id [color: #9ca3af]  // rev 19 (P&C pull): as fin.branch; P&C has no (workspace_id, party_identifier_id) key
 Ref: fin.debtor_location.(workspace_id, business_location_id) > pc.business_location.(workspace_id, business_location_id) [color: #9ca3af]
 Ref: fin.debtor_credit_limit.(workspace_id, approved_by_contact_id) > pc.contact.(workspace_id, contact_id) [color: #9ca3af]
 Ref: fin.debtor_account_history.(workspace_id, performer_contact_id) > pc.contact.(workspace_id, contact_id) [color: #9ca3af]  // rev 4 (F2)
@@ -886,7 +944,7 @@ Table fin.journal_entry [headercolor: #B45309] {
   posted_by_contact_id uuid [note: 'T24: the Accounts Manager who approved']
   posted_at timestamptz [not null, default: `now()`]
   checks {
-    `voucher_type IN ('purchase', 'opening', 'sales')` [name: 'journal_entry_voucher_type_valid']
+    `voucher_type IN ('purchase', 'opening', 'sales', 'stock_return')` [name: 'journal_entry_voucher_type_valid']
     `reverses_journal_entry_id <> journal_entry_id` [name: 'journal_entry_does_not_reverse_itself']
   }
   Indexes {
@@ -896,6 +954,8 @@ Table fin.journal_entry [headercolor: #B45309] {
     (workspace_id, operated_party_id, posting_date) [name: 'journal_entry_posting_date_idx']
   }
   Note: '''Manoj's (0005), written once (append-only trigger). T24 rev 2 changes ONE thing: voucher_type also allows 'sales'
+(credit and debit notes post as 'sales' too: their own document, so one forward entry each). Rev 18 adds 'stock_return': the
+Stock back entry of Stores' return receipt (source_document_id = inv.stock_return), when the book's setting says so
 (the CHECK is dropped and re-added; his rows are untouched; T1 is checked again).
 At commit, fin.check_journal_entry refuses an entry that breaks any of 8 rules (HINT = the code): ENTRY_NOT_BALANCED ·
 ENTRY_ACROSS_COMPANIES · ENTRY_OUTSIDE_ITS_YEAR · FINANCIAL_YEAR_CLOSED · POSTED_TO_A_GROUP · SUBLEDGER_MISMATCH ·
@@ -913,23 +973,10 @@ Table fin.journal_line [headercolor: #B45309] {
   branch_id uuid [not null]
   debit "numeric(18,2)" [not null, default: 0]
   credit "numeric(18,2)" [not null, default: 0]
-  rule_code text [note: 'rev 17 (S1 part 2): the rule that wrote the line: SALES_INVOICE. NULL: a line typed by hand, or his purchase line until his rules register (G41)']
-  rule_version integer [note: 'rev 17: 1. With the rule, never without']
-  rule_case text [note: 'rev 17: the case of the rule: R1 · R13. NULL: a line common to every case (the customer, GST, round-off)']
-  line_role_code text [note: 'rev 17: what the line is for: revenue · output_cgst · cogs · customer. Must be one its rule writes (FK)']
-  account_determination_id uuid [note: 'rev 17: the mapping row that gave the ledger (fin.account_determination). NULL: the customer line (its account\'s own ledger) or no rule']
-  determined_ledger_code text [note: 'rev 17: the ledger the mapping gave (401010); the FK proves it is that row\'s ledger. = the posted ledger unless overridden']
-  override_reason text [note: 'rev 17: why another ledger than the mapping gave (the AE\'s edit, §8.4): required then, refused otherwise']
   checks {
     `(debit > 0) <> (credit > 0)` [name: 'journal_line_debit_or_credit']
     `debit >= 0 AND credit >= 0` [name: 'journal_line_not_negative']
     `creditor_account_id IS NULL OR debtor_account_id IS NULL` [name: 'journal_line_vendor_or_customer']
-    `(rule_code IS NULL) = (rule_version IS NULL)` [name: 'journal_line_rule_has_version']
-    `(rule_code IS NULL) = (line_role_code IS NULL)` [name: 'journal_line_rule_has_role']
-    `rule_case IS NULL OR rule_code IS NOT NULL` [name: 'journal_line_case_needs_rule']
-    `(account_determination_id IS NULL) = (determined_ledger_code IS NULL)` [name: 'journal_line_determined_has_row']
-    `determined_ledger_code IS NULL OR determined_ledger_code = ledger_account_code OR coalesce(btrim(override_reason), '') <> ''` [name: 'journal_line_override_has_reason']
-    `override_reason IS NULL OR (determined_ledger_code IS NOT NULL AND determined_ledger_code IS DISTINCT FROM ledger_account_code)` [name: 'journal_line_reason_only_on_override']
   }
   Indexes {
     (workspace_id, journal_entry_id, line_no) [unique, name: 'journal_line_no_key']
@@ -937,11 +984,9 @@ Table fin.journal_line [headercolor: #B45309] {
     (workspace_id, creditor_account_id) [name: 'journal_line_creditor_idx']
     (workspace_id, ledger_account_code) [name: 'journal_line_ledger_idx']
     (workspace_id, branch_id, ledger_account_code) [name: 'journal_line_branch_ledger_idx']
-    (workspace_id, account_determination_id) [name: 'journal_line_determination_idx', note: 'rev 17: the lines a mapping row gave (may it be closed on a date?)']
   }
-  Note: '''Manoj's (0005). Rev 17 adds 7 trace columns, all nullable so his purchase lines stay valid (to agree with him: G41):
-the rule, its version and case, the line's role, the mapping row and the ledger it gave, and the reason for an override.
-"Why was this posted?" = this line → its rule version (the code) → its mapping row (the configuration). One line per fin.sales_invoice_line at Post, the 7 copied as they are. What a customer owes =
+  Note: '''Manoj's (0005), as built. Rev 17's 7 trace columns (rule, version, case, role, mapping row, determined ledger,
+override reason) are removed in rev 19: the AE picks the ledger and types Dr / Cr. One line per fin.sales_invoice_line at Post. What a customer owes =
 Σ(debit − credit) of its lines (journal.debtor_balance, the twin of creditor_balance); it always adds up to the receivable ledgers.'''
 }
 
@@ -991,6 +1036,12 @@ Table fin.sales_invoice [headercolor: #15803D] {
   due_date date [not null, note: 'invoice date + the customer\'s credit days (30): 06-Nov-2026. Paid at once: the invoice date']
   invoice_financial_year integer [not null, note: 'GENERATED: the April year of invoice_date (2026)']
   narration text [note: 'Being goods sold to Sri Lakshmi Distributors: copied to the journal entry']
+  document_type text [not null, default: 'invoice', note: 'rev 18 (T25, T26): invoice | credit_note | debit_note. ONE family: a note is a sales document, booked the same way (G42)']
+  against_sales_invoice_id uuid [note: 'rev 18: the invoice a note corrects (GST s.34: the note names it): KA/INV/2627/0143. NULL on an invoice. Trigger: a posted invoice of the same customer and GSTIN']
+  note_reason text [note: 'rev 18: credit note: return | scheme_discount (agreed before supply: GST reduced) | price_correction | goodwill (no scheme: no GST, s.15(3)) · debit note: price_increase | additional_charge (late freight)']
+  scheme_reference text [note: 'rev 18: SCH-26-Q2: the pre-agreed scheme that lets a discount reduce GST (s.15(3)(b)); only and always on a scheme_discount (C-19)']
+  stock_return_id uuid [note: 'rev 18: a return note names Stores\' return receipt (D-05): no receipt, no return note (C-17, "waiting for return receipt")']
+  return_stock_posting text [note: 'rev 18: stores_receipt | with_credit_note: the book\'s setting on the note date, stamped as used (who posts the stock back). Only on a return']
   inventory_mode text [note: 'rev 16: perpetual | periodic, the book\'s setting in force on the invoice date (fin.book_setting), stamped as used. Periodic: no cost lines (T11 posts the month\'s cost). NULL: no goods (services only)']
   costing_method text [note: 'rev 15: fifo | weighted_average, the company\'s method when the cost lines were made (the "why" of their amounts). NULL: no goods (services only), or periodic (rev 16)']
   stage text [not null, note: 'submitted | posted | rejected | draft (sent back) | amended']
@@ -1015,6 +1066,16 @@ Table fin.sales_invoice [headercolor: #15803D] {
     `costing_method IN ('fifo', 'weighted_average')` [name: 'sales_invoice_costing_method_valid']
     `inventory_mode IN ('perpetual', 'periodic')` [name: 'sales_invoice_inventory_mode_valid']
     `(inventory_mode IS NOT DISTINCT FROM 'perpetual') = (costing_method IS NOT NULL)` [name: 'sales_invoice_method_only_when_perpetual']
+    `document_type IN ('invoice', 'credit_note', 'debit_note')` [name: 'sales_invoice_document_type_valid']
+    `(document_type = 'invoice') = (against_sales_invoice_id IS NULL)` [name: 'sales_invoice_note_names_its_invoice']
+    `against_sales_invoice_id <> sales_invoice_id` [name: 'sales_invoice_note_not_against_itself']
+    `(document_type = 'invoice') = (note_reason IS NULL)` [name: 'sales_invoice_note_has_a_reason']
+    `document_type <> 'credit_note' OR note_reason IN ('return', 'scheme_discount', 'price_correction', 'goodwill')` [name: 'sales_invoice_credit_note_reason_valid']
+    `document_type <> 'debit_note' OR note_reason IN ('price_increase', 'additional_charge')` [name: 'sales_invoice_debit_note_reason_valid']
+    `(note_reason IS NOT DISTINCT FROM 'scheme_discount') = (scheme_reference IS NOT NULL)` [name: 'sales_invoice_scheme_needs_reference']
+    `(note_reason IS NOT DISTINCT FROM 'return') = (stock_return_id IS NOT NULL)` [name: 'sales_invoice_return_needs_receipt']
+    `(note_reason IS NOT DISTINCT FROM 'return') = (return_stock_posting IS NOT NULL)` [name: 'sales_invoice_return_has_stock_posting']
+    `return_stock_posting IN ('stores_receipt', 'with_credit_note')` [name: 'sales_invoice_return_stock_posting_valid']
   }
   Indexes {
     (workspace_id, sales_invoice_id) [unique, name: 'sales_invoice_workspace_identity_key']
@@ -1036,9 +1097,10 @@ AMOUNT_NOT_VALID · LEDGER_NOT_POSTABLE · CUSTOMER_NOT_FOUND · DEBTOR_ACCOUNT_
 DEBITS_CREDITS_DIFFER · NOT_AS_INVOICED (the customer, GST and total lines must equal Billing\'s invoice) · rev 15: NO_STOCK_RECORD ·
 STOCK_SHORT · COST_NOT_AS_INVENTORY (the cost lines = the lots by costing_method; FIFO names its lot, weighted average none) ·
 STOCK_LINE_NEEDS_ITEM (a stock ledger line names its item) · rev 16: SETTING_MISSING (no inventory_mode / costing_method in force
-on the invoice date: the exception queue, never a guess) · COST_LINES_WHEN_PERIODIC · rev 17: RULE_NOT_IN_FORCE (no version of
-SALES_INVOICE on the posting date) · ACCOUNT_NOT_DETERMINED · ACCOUNT_AMBIGUOUS (no mapping row, or a tie: the exception queue) ·
-OVERRIDE_NEEDS_REASON · MAPPING_CHANGED (approval looks up again; another row than at Submit → sent back) · AMEND_NOT_POSTED ·
+on the invoice date: the exception queue, never a guess) · COST_LINES_WHEN_PERIODIC · rev 18 (notes): NOTE_AGAINST_A_POSTED_INVOICE ·
+NOTE_SAME_CUSTOMER_AND_GSTIN · WAITING_FOR_RETURN_RECEIPT (C-17) · SCHEME_REFERENCE_NEEDED (C-19) · NOTE_TIME_LIMIT (a GST credit
+note by 30 November after the invoice's year: warn within 60 days, stop after) · (rev 17's RULE_NOT_IN_FORCE · ACCOUNT_NOT_DETERMINED ·
+ACCOUNT_AMBIGUOUS · OVERRIDE_NEEDS_REASON · MAPPING_CHANGED: removed in rev 19, no posting rules or mapping) · AMEND_NOT_POSTED ·
 AMENDMENT_PENDING · FINANCIAL_YEAR_CLOSED · MAKER_MAY_NOT_DECIDE · NO_REASON_GIVEN.
 DIFFERENCES FROM HIS (deliberate): no source_extraction_id (no PDF: Billing hands the invoice over, G37); debtor_account_id may
 be NULL (a B2C sale paid at once, his vendor is always there); the never-twice key is per branch, not per party (the number is
@@ -1051,44 +1113,32 @@ Table fin.sales_invoice_line [headercolor: #15803D] {
   sales_invoice_id uuid [not null]
   line_no integer [not null, note: '1, 2, 3 … (Screen: #)']
   side text [not null, note: 'Dr | Cr']
-  ledger_account_code text [note: 'a ledger line: 401010 Sale of Products · 206011 Output CGST … (rev 17: given by the mapping for the line\'s role; the AE may pick another, with a reason)']
+  ledger_account_code text [note: 'a ledger line: 401010 Sale of Products · 206011 Output CGST … (rev 19: the AE picks it; rev 17\'s mapping removed)']
   debtor_account_id uuid [note: 'the customer line (instead of a ledger): posts to the customer account\'s own receivable ledger']
   inventory_item_code text [note: 'rev 15 (his purchase line has it): the item whose cost leaves stock on this line: FG-101. Set only on a Cr stock line (106020)']
   quantity "numeric(18,3)" [note: 'rev 15: the quantity that leaves stock: 300 (cartons). With the item, never without']
   stock_lot_id uuid [note: 'rev 15: FIFO: the lot it came from (G-2604). NULL under weighted average (all lots, at the average)']
   amount "numeric(18,2)" [not null, note: '7,48,125.00']
-  rule_code text [note: 'rev 17 (S1 part 2): the rule that wrote the line: SALES_INVOICE. NULL: a line typed by hand, or a line the AE added']
-  rule_version integer [note: 'rev 17: 1. With the rule, never without']
-  rule_case text [note: 'rev 17: the case of the rule: R1 · R13. NULL: a line common to every case (the customer, GST, round-off)']
-  line_role_code text [note: 'rev 17: what the line is for: revenue · output_cgst · cogs · customer. Must be one its rule writes (FK)']
-  account_determination_id uuid [note: 'rev 17: the mapping row that gave the ledger (fin.account_determination). NULL: the customer line (its account\'s own ledger) or no rule']
-  determined_ledger_code text [note: 'rev 17: the ledger the mapping gave (401010); the FK proves it is that row\'s ledger. = the posted ledger unless overridden']
-  override_reason text [note: 'rev 17: why another ledger than the mapping gave (the AE\'s edit, §8.4): required then, refused otherwise']
   checks {
     `side IN ('Dr', 'Cr')` [name: 'sales_invoice_line_side_valid']
     `(ledger_account_code IS NULL) <> (debtor_account_id IS NULL)` [name: 'sales_invoice_line_ledger_or_customer']
-    `debtor_account_id IS NULL OR side = 'Dr'` [name: 'sales_invoice_line_customer_is_debit']
     `amount > 0` [name: 'sales_invoice_line_amount_positive']
     `(inventory_item_code IS NULL) = (quantity IS NULL)` [name: 'sales_invoice_line_item_has_quantity']
     `quantity IS NULL OR quantity > 0` [name: 'sales_invoice_line_quantity_positive']
     `stock_lot_id IS NULL OR inventory_item_code IS NOT NULL` [name: 'sales_invoice_line_lot_needs_item']
-    `inventory_item_code IS NULL OR (side = 'Cr' AND ledger_account_code IS NOT NULL)` [name: 'sales_invoice_line_item_on_a_stock_credit']
-    `(rule_code IS NULL) = (rule_version IS NULL)` [name: 'sales_invoice_line_rule_has_version']
-    `(rule_code IS NULL) = (line_role_code IS NULL)` [name: 'sales_invoice_line_rule_has_role']
-    `rule_case IS NULL OR rule_code IS NOT NULL` [name: 'sales_invoice_line_case_needs_rule']
-    `(account_determination_id IS NULL) = (determined_ledger_code IS NULL)` [name: 'sales_invoice_line_determined_has_row']
-    `determined_ledger_code IS NULL OR determined_ledger_code = ledger_account_code OR coalesce(btrim(override_reason), '') <> ''` [name: 'sales_invoice_line_override_has_reason']
-    `override_reason IS NULL OR (determined_ledger_code IS NOT NULL AND determined_ledger_code IS DISTINCT FROM ledger_account_code)` [name: 'sales_invoice_line_reason_only_on_override']
-    `line_role_code IS NULL OR (line_role_code = 'customer') = (debtor_account_id IS NOT NULL)` [name: 'sales_invoice_line_customer_role_is_the_customer']
+    `inventory_item_code IS NULL OR ledger_account_code IS NOT NULL` [name: 'sales_invoice_line_item_on_a_ledger_line']
   }
   Indexes {
     (workspace_id, sales_invoice_id, line_no) [unique, name: 'sales_invoice_line_no_key']
   }
   Note: '''T24: the twin of fin.purchase_invoice_line: side, a ledger OR the customer, amount. Replaced whole on each Submit.
-Rev 17: the code writes each line's ROLE (and case); the mapping (fin.determine_ledger, on the posting date) gives its ledger; the
-line keeps both, and the 7 trace columns go to the journal line unchanged at Post.
+Rev 19: rev 17's 7 trace columns (rule, role, mapping row …) and their CHECKs are removed: the AE picks each ledger.
 At Post: one journal_line per row, same order; the customer line goes to its account\'s ledger (107100) naming the account.
-His vendor line must be Cr; our customer line must be Dr (a sale debits the customer).
+His vendor line must be Cr; our customer line must be Dr (a sale debits the customer). Rev 18: the SIDE rules depend on the
+document (a CHECK cannot read the header), so they moved to the trigger sales_invoice_line_side (by hand): on an invoice or a
+debit note the customer line is Dr and a stock line Cr; on a credit note the customer line is Cr and a stock line (the goods
+back) Dr. Rev 14's CHECKs sales_invoice_line_customer_is_debit and _item_on_a_stock_credit are replaced by it (+ the CHECK
+sales_invoice_line_item_on_a_ledger_line: an item only on a ledger line).
 Rev 15 (R13): the cost lines: Dr 501040 Cost of Goods Sold (the total) · Cr 106020 Finished Goods per lot (FIFO) or per item
 (weighted average), each naming its item and quantity (and its lot under FIFO). B4-01, FIFO: 300 FG-101 from G-2604 at ₹540 +
 300 from G-2608 at ₹560 + 300 FG-102 from C-2607 at ₹760 = ₹5,58,000.00 (lot costs illustrative). The item has no foreign key:
@@ -1124,6 +1174,8 @@ Ref: fin.sales_invoice.(workspace_id, original_sales_invoice_id) > fin.sales_inv
 Ref: fin.sales_invoice.(workspace_id, submitted_by_contact_id) > pc.contact.(workspace_id, contact_id) [color: #9ca3af]
 Ref: fin.sales_invoice.(workspace_id, decided_by_contact_id) > pc.contact.(workspace_id, contact_id) [color: #9ca3af]
 Ref: fin.sales_invoice.(workspace_id, journal_entry_id) > fin.journal_entry.(workspace_id, journal_entry_id)
+Ref: fin.sales_invoice.(workspace_id, against_sales_invoice_id) > fin.sales_invoice.(workspace_id, sales_invoice_id)  // rev 18: the invoice a note corrects
+Ref: fin.sales_invoice.(workspace_id, stock_return_id) > inv.stock_return.(workspace_id, stock_return_id)  // rev 18: the return receipt a return note names
 Ref: fin.sales_invoice_line.(workspace_id, sales_invoice_id) > fin.sales_invoice.(workspace_id, sales_invoice_id) [delete: cascade]
 Ref: fin.sales_invoice_line.(workspace_id, debtor_account_id) > fin.debtor_account.(workspace_id, debtor_account_id)
 Ref: fin.sales_invoice_line.ledger_account_code > fin.ledger_account.account_code
@@ -1204,6 +1256,49 @@ module (receipts, issues, batches, its own history) replaces it (T8 / S4, G3). �
 
 Ref: inv.stock_lot.(workspace_id, branch_id) > fin.branch.(workspace_id, branch_id)
 
+Table inv.stock_return [headercolor: #7C3AED] {
+  stock_return_id uuid [pk, default: `gen_random_uuid()`]
+  workspace_id text [not null]
+  return_no text [not null, note: 'SRR-0001: Stores\' Sales Return Receipt (scenario D-05)']
+  branch_id uuid [not null, note: 'the branch that took the goods back: KA-01']
+  received_on date [not null, note: '20-Oct-2026']
+  debtor_account_id uuid [not null, note: 'the customer who returned them: Sri Lakshmi (C-01)']
+  against_sales_invoice_id uuid [not null, note: 'the invoice they were sold on: KA/INV/2627/0143']
+  item_code text [not null, note: 'FG-101 Glucose biscuit']
+  from_stock_lot_id uuid [not null, note: 'the batch they left from: G-2608 (Stores matches the DC and the batch)']
+  quantity "numeric(18,3)" [not null, note: '40 cartons']
+  condition text [not null, note: 'saleable | damaged (damaged: held in quarantine, KA-QC)']
+  to_stock_lot_id uuid [not null, note: 'where they are now: a lot in KA-QC (damaged) or the batch they left from (saleable)']
+  unit_cost "numeric(18,4)" [not null, note: '₹560: the cost they LEFT at (the invoice\'s cost line for that batch), never the selling price']
+  journal_entry_id uuid [note: 'the Stock back entry (Dr 106020 · Cr 501040), when the book\'s setting is stores_receipt; NULL: the credit note posts it']
+  recorded_by_contact_id uuid [not null, note: 'Latha (Stores Officer)']
+  recorded_at timestamptz [not null, default: `now()`]
+  checks {
+    `quantity > 0` [name: 'stock_return_quantity_positive']
+    `condition IN ('saleable', 'damaged')` [name: 'stock_return_condition_valid']
+    `unit_cost >= 0` [name: 'stock_return_unit_cost_not_negative']
+  }
+  Indexes {
+    (workspace_id, stock_return_id) [unique, name: 'stock_return_workspace_identity_key']
+    (workspace_id, branch_id, return_no) [unique, name: 'stock_return_no_key']
+    (workspace_id, against_sales_invoice_id) [name: 'stock_return_invoice_idx', note: 'what came back on an invoice']
+  }
+  Note: '''Rev 18 (T25): Stores\' Sales Return Receipt (scenario D-05), a STUB like inv.stock_lot: the inventory module owns it (G3).
+The credit note for a return waits for it (C-17) and reads from it the quantity and the cost the goods left at.
+BY HAND (out.sql): trigger stock_return_not_more_than_sold (Part C: never more than the invoice took from that batch, all
+receipts of that invoice and batch together; under weighted average, the item\'s quantity on the invoice).
+Who posts the stock back is the book\'s setting return_stock_posting: stores_receipt → this receipt posts the Stock back entry
+(journal_entry_id, voucher_type stock_return, rule SALES_RETURN_RECEIPT v1, as the CA\'s E1) · with_credit_note → the note does.'''
+}
+
+Ref: inv.stock_return.(workspace_id, branch_id) > fin.branch.(workspace_id, branch_id)
+Ref: inv.stock_return.(workspace_id, debtor_account_id) > fin.debtor_account.(workspace_id, debtor_account_id)
+Ref: inv.stock_return.(workspace_id, against_sales_invoice_id) > fin.sales_invoice.(workspace_id, sales_invoice_id)
+Ref: inv.stock_return.(workspace_id, from_stock_lot_id) > inv.stock_lot.(workspace_id, stock_lot_id)
+Ref: inv.stock_return.(workspace_id, to_stock_lot_id) > inv.stock_lot.(workspace_id, stock_lot_id)
+Ref: inv.stock_return.(workspace_id, journal_entry_id) > fin.journal_entry.(workspace_id, journal_entry_id)
+Ref: inv.stock_return.(workspace_id, recorded_by_contact_id) > pc.contact.(workspace_id, contact_id) [color: #9ca3af]
+
 // =====================================================================
 // S1 part 1 · Set up the books (rev 16): the book and its dated settings. Only what T24 needs; each later task adds its part.
 // =====================================================================
@@ -1277,180 +1372,6 @@ Ref: fin.book_setting.setting_code > fin.setting_definition.setting_code
 Ref: fin.book_setting.(workspace_id, approved_by_contact_id) > pc.contact.(workspace_id, contact_id) [color: #9ca3af]
 
 // =====================================================================
-// S1 part 2 · Posting rules and the ledger mapping (rev 17, 24-Nov-2026)
-// CODE decides which Dr / Cr lines an entry needs, by role; the MAPPING decides which ledger each role goes to; the JOURNAL keeps
-// the result and why. The industry split: SAP (account keys → VKOA / OBYC), Odoo, ERPNext, D365 (posting profiles). Oracle SLA
-// also keeps the line rules as data: not needed while each book has one framework.
-// =====================================================================
-
-Table fin.line_role [headercolor: #4D7C0F] {
-  line_role_code text [pk, note: 'customer · revenue · output_cgst · cogs · stock …']
-  display_name text [not null, note: 'Revenue from the line · Output CGST · Cost of goods sold (R13)']
-  ledger_source text [not null, note: 'determination: fin.account_determination gives the ledger · party_account: the customer\'s own ledger (debtor_account.ledger_account_code, from its category), as SAP takes it from the customer master']
-  required_kind text [not null, note: 'the ledger must be of this kind: income (revenue) · liability (output GST) · asset · expense']
-  required_account_type text [note: 'and of exactly this account_type (NULL: a ledger with none): output_cgst → only a ledger typed output_cgst']
-  checks {
-    `ledger_source IN ('determination', 'party_account')` [name: 'line_role_ledger_source_valid']
-    `required_kind IN ('asset', 'liability', 'equity', 'income', 'expense')` [name: 'line_role_required_kind_valid']
-    `required_account_type IN ('payable', 'receivable', 'stock', 'input_cgst', 'input_sgst', 'input_igst', 'tds_payable', 'output_cgst', 'output_sgst', 'output_igst', 'tcs_payable', 'round_off')` [name: 'line_role_required_account_type_valid']
-  }
-  Note: '''S1 part 2 (rev 17): the FIXED list of line roles, shared by the code and the mapping. The posting code writes a role on
-each line, never a ledger code; the mapping turns the role into a ledger, and may only pick a ledger of the role's kind and type
-(trigger account_determination_guard). A new role comes only with new code (a new rule version).
-Seeded with the 12 roles SALES_INVOICE v1 writes (t24_schema_test.sql). TCS (R7) has no role yet: the app does not compute it.'''
-}
-
-Table fin.posting_rule [headercolor: #4D7C0F] {
-  rule_code text [not null, note: 'SALES_INVOICE (T25 adds SALES_CREDIT_NOTE, T26 SALES_DEBIT_NOTE)']
-  version integer [not null, note: '1. Any change to the logic is a new version; the old one stays for the entries it made']
-  document_type text [not null, note: 'the document it posts: sales_invoice']
-  display_name text [not null, note: 'Sales invoice: the customer, revenue, GST and the cost of goods sold']
-  effective_from date [not null, note: '01-Apr-2026. The version in force on the posting date is used: an old event replays under its old rule']
-  effective_until date [note: 'NULL = in force']
-  code_ref text [not null, note: 'where the logic is: app/sales/src/sales/engine.ts postingFor() (later: the engine\'s posting code)']
-  casebook_ref text [not null, note: 'the tests it passed before release: casebook.test.ts · expected_postings.json (the CA\'s answer keys)']
-  change_note text [note: 'what changed from the previous version']
-  released_at timestamptz [not null, default: `now()`]
-  checks {
-    `version > 0` [name: 'posting_rule_version_positive']
-    `document_type IN ('sales_invoice')` [name: 'posting_rule_document_type_valid']
-    `effective_until IS NULL OR effective_from < effective_until` [name: 'posting_rule_period_is_ordered']
-  }
-  Indexes {
-    (rule_code, version) [pk]
-  }
-  Note: '''S1 part 2 (rev 17): the REGISTER of the posting code: one row per released version of the one function per document type.
-The logic is CODE, tested against the CA's answer keys; it is not data. This row lets every line name the version that wrote it
-(the FK from journal_line) and tells the completeness check which roles a version can write.
-BY HAND (out.sql): posting_rule_no_overlap EXCLUDE (one version of a rule in force on any day).
-Not per workspace: the code is the same for every company. What differs per book (the ledgers) is in fin.account_determination.'''
-}
-
-Table fin.posting_rule_case [headercolor: #4D7C0F] {
-  rule_code text [not null]
-  version integer [not null]
-  case_code text [not null, note: 'R1 … R13: the CA\'s cases, as the app\'s Posting rules screen lists them']
-  display_name text [not null, note: 'Goods, domestic, local (place of supply = our branch\'s state)']
-  checks {
-    `case_code ~ '^R[0-9]+$'` [name: 'posting_rule_case_code_format']
-  }
-  Indexes {
-    (rule_code, version, case_code) [pk]
-  }
-  Note: '''S1 part 2 (rev 17): the cases inside a rule version: which branch of the code wrote a line (R1 local goods, R13 the cost …).
-A line common to every case (the customer, GST, round-off) names none. 13 rows for SALES_INVOICE v1.'''
-}
-
-Table fin.posting_rule_role [headercolor: #4D7C0F] {
-  rule_code text [not null]
-  version integer [not null]
-  line_role_code text [not null]
-  Indexes {
-    (rule_code, version, line_role_code) [pk]
-  }
-  Note: '''S1 part 2 (rev 17): the roles a rule version can write (SALES_INVOICE v1: 12). A line's role must be one of its rule's (FK);
-the completeness check (fin.account_determination_gaps) asks whether a book maps every one of them before it goes live.'''
-}
-
-Table fin.account_determination [headercolor: #4D7C0F] {
-  account_determination_id uuid [pk, default: `gen_random_uuid()`]
-  workspace_id text [not null]
-  book_id uuid [not null, note: 'the BOOK, not only the company: an Ind AS book and an Indian GAAP book may map a role to different ledgers']
-  document_type text [note: 'sales_invoice · NULL = every document (Output CGST is the same ledger for an invoice and its notes)']
-  line_role_code text [not null, note: 'revenue']
-  party_kind text [note: 'condition: domestic | export | sez · NULL = any']
-  supply_scope text [note: 'condition: intra_state | inter_state (place of supply vs our branch\'s state) · NULL = any']
-  line_kind text [note: 'condition: goods | service | charge | reimbursement · NULL = any']
-  taxability text [note: 'condition: taxable | nil_rated | exempt | non_gst · NULL = any']
-  settlement_mode text [note: 'condition: credit | cash | upi_card · NULL = any']
-  specificity integer [not null, note: 'GENERATED (by hand): how many of the 6 conditions are set. The most specific matching row wins; a tie stops (ACCOUNT_AMBIGUOUS)']
-  ledger_account_code text [not null, note: '401010 Sale of Products: postable, of the role\'s kind and type (trigger)']
-  effective_from date [not null, note: '01-Apr-2026. The look-up uses the POSTING DATE']
-  effective_until date [note: 'NULL = in force. A change closes this row and adds a new one (replaces_…): nothing is edited']
-  status text [not null, note: 'proposed (the maker) → approved | rejected (the checker). Only approved rows are used']
-  reason text [not null, note: 'why: "R1, R2: goods sold in India". A change is a change of accounting policy (Ind AS 8)']
-  replaces_account_determination_id uuid [note: 'the row this one replaces (closed on this one\'s start date)']
-  made_by_contact_id uuid [not null, note: 'the maker: the Accounts Executive (Teja)']
-  made_at timestamptz [not null]
-  checked_by_contact_id uuid [note: 'the checker: the Accounts Manager (Rajan); never the maker']
-  checked_at timestamptz
-  recorded_at timestamptz [not null, default: `now()`]
-  checks {
-    `document_type IN ('sales_invoice')` [name: 'account_determination_document_type_valid']
-    `party_kind IN ('domestic', 'export', 'sez')` [name: 'account_determination_party_kind_valid']
-    `supply_scope IN ('intra_state', 'inter_state')` [name: 'account_determination_supply_scope_valid']
-    `line_kind IN ('goods', 'service', 'charge', 'reimbursement')` [name: 'account_determination_line_kind_valid']
-    `taxability IN ('taxable', 'nil_rated', 'exempt', 'non_gst')` [name: 'account_determination_taxability_valid']
-    `settlement_mode IN ('credit', 'cash', 'upi_card')` [name: 'account_determination_settlement_mode_valid']
-    `status IN ('proposed', 'approved', 'rejected')` [name: 'account_determination_status_valid']
-    `effective_until IS NULL OR effective_from < effective_until` [name: 'account_determination_period_is_ordered']
-    `(status = 'proposed') = (checked_by_contact_id IS NULL)` [name: 'account_determination_decided_has_checker']
-    `(checked_by_contact_id IS NULL) = (checked_at IS NULL)` [name: 'account_determination_checker_has_a_time']
-    `checked_by_contact_id IS NULL OR checked_by_contact_id <> made_by_contact_id` [name: 'account_determination_checker_not_maker']
-    `btrim(reason) <> ''` [name: 'account_determination_reason_not_blank']
-    `replaces_account_determination_id <> account_determination_id` [name: 'account_determination_not_its_own_replacement']
-  }
-  Indexes {
-    (workspace_id, account_determination_id) [unique, name: 'account_determination_workspace_identity_key']
-    (workspace_id, account_determination_id, line_role_code, ledger_account_code) [unique, name: 'account_determination_trace_key', note: 'what a line names: the row, its role and its ledger (so the FK proves the line got that row\'s own ledger)']
-    (workspace_id, replaces_account_determination_id) [unique, name: 'account_determination_replaced_once', note: 'WHERE status <> \'rejected\': a row is replaced once']
-    (workspace_id, book_id, line_role_code, effective_from) [name: 'account_determination_lookup_idx', note: 'the rows in force for a role on a date']
-  }
-  Note: '''S1 part 2 (rev 17): THE LEDGER MAPPING: configuration, owned by the accounting administrators (a maker and a checker).
-Book + document type + line role + conditions → ledger, dated. The look-up (fin.determine_ledger, by hand) takes the approved rows
-in force on the posting date whose conditions are NULL or equal to the line's facts; the most specific wins; none →
-ACCOUNT_NOT_DETERMINED, a tie → ACCOUNT_AMBIGUOUS: the exception queue, never a guess.
-The customer line is not mapped here: its ledger is the customer account's own (debtor_account, from its category).
-BY HAND (out.sql): specificity GENERATED · account_determination_no_overlap EXCLUDE (two approved rows with the same book, role and
-conditions never overlap in time) · trigger account_determination_guard: the role is mapped here (ROLE_NOT_MAPPABLE); the ledger is
-postable (LEDGER_NOT_POSTABLE) and of the role's kind and type (ROLE_LEDGER_TYPE_MISMATCH); a decided row is final, only its end
-date may be set, once (DETERMINATION_IS_FINAL); no start or end in a closed year (DETERMINATION_BACKDATED); never ended before a
-posted line that used it (DETERMINATION_IN_USE).
-Corrections never look up again: a reversal copies its lines' ledgers (REVERSAL_NOT_A_MIRROR); a note against an invoice mirrors
-the invoice's lines (T25 / T26). Only a brand-new line is looked up.
-Seeded (t24_schema_test.sql): 19 rows for Aikyat's primary book = the app's ledgers today (catalogue.ts LEDGERS + engine.ts
-caseOf); illustrative until the CA confirms the chart (G18).'''
-}
-
-Table fin.account_determination_history [headercolor: #4D7C0F] {
-  history_id uuid [pk, default: `gen_random_uuid()`]
-  workspace_id text [not null]
-  account_determination_id uuid [not null]
-  operation text [not null, note: 'propose | approve | reject | close']
-  row_snapshot jsonb [not null, note: 'the row as it then stood']
-  performer_contact_id uuid [not null, note: 'Teja (propose) · Rajan (approve, reject, close)']
-  reason text
-  recorded_at timestamptz [not null, default: `now()`]
-  checks {
-    `operation IN ('propose', 'approve', 'reject', 'close')` [name: 'account_determination_history_operation_valid']
-  }
-  Indexes {
-    (workspace_id, account_determination_id, recorded_at) [name: 'account_determination_history_idx']
-  }
-  Note: '''S1 part 2 (rev 17): every step of a mapping row, append-only (as sales_invoice_history): who proposed it, who approved,
-rejected or closed it, and why. A mapping change is a change of accounting policy: this is its audit trail.'''
-}
-
-Ref: fin.posting_rule_case.(rule_code, version) > fin.posting_rule.(rule_code, version)
-Ref: fin.posting_rule_role.(rule_code, version) > fin.posting_rule.(rule_code, version)
-Ref: fin.posting_rule_role.line_role_code > fin.line_role.line_role_code
-Ref: fin.account_determination.(workspace_id, book_id) > fin.book.(workspace_id, book_id)
-Ref: fin.account_determination.line_role_code > fin.line_role.line_role_code
-Ref: fin.account_determination.ledger_account_code > fin.ledger_account.account_code
-Ref: fin.account_determination.(workspace_id, replaces_account_determination_id) > fin.account_determination.(workspace_id, account_determination_id)
-Ref: fin.account_determination.(workspace_id, made_by_contact_id) > pc.contact.(workspace_id, contact_id) [color: #9ca3af]
-Ref: fin.account_determination.(workspace_id, checked_by_contact_id) > pc.contact.(workspace_id, contact_id) [color: #9ca3af]
-Ref: fin.account_determination_history.(workspace_id, account_determination_id) > fin.account_determination.(workspace_id, account_determination_id)
-Ref: fin.account_determination_history.(workspace_id, performer_contact_id) > pc.contact.(workspace_id, contact_id) [color: #9ca3af]
-// the trace on the lines: the proposal (ours) and the journal (Manoj's, to agree: G41)
-Ref: fin.sales_invoice_line.(rule_code, rule_version, line_role_code) > fin.posting_rule_role.(rule_code, version, line_role_code)
-Ref: fin.sales_invoice_line.(rule_code, rule_version, rule_case) > fin.posting_rule_case.(rule_code, version, case_code)
-Ref: fin.sales_invoice_line.(workspace_id, account_determination_id, line_role_code, determined_ledger_code) > fin.account_determination.(workspace_id, account_determination_id, line_role_code, ledger_account_code)
-Ref: fin.journal_line.(rule_code, rule_version, line_role_code) > fin.posting_rule_role.(rule_code, version, line_role_code)
-Ref: fin.journal_line.(rule_code, rule_version, rule_case) > fin.posting_rule_case.(rule_code, version, case_code)
-Ref: fin.journal_line.(workspace_id, account_determination_id, line_role_code, determined_ledger_code) > fin.account_determination.(workspace_id, account_determination_id, line_role_code, ledger_account_code)
-
-// =====================================================================
 // The diagram's groups
 // =====================================================================
 
@@ -1492,7 +1413,7 @@ TableGroup "3 · Books core (Manoj, built): branches, years, numbers, the journa
   fin.journal_line
 }
 
-TableGroup "4 · T24 Sales voucher (new): the twin of Manoj's purchase voucher" [color: #15803D] {
+TableGroup "4 · T24 Sales voucher + T25 credit note + T26 debit note: one sales document family" [color: #15803D] {
   fin.sales_invoice
   fin.sales_invoice_line
   fin.sales_invoice_history
@@ -1500,19 +1421,11 @@ TableGroup "4 · T24 Sales voucher (new): the twin of Manoj's purchase voucher" 
 
 TableGroup "5 · Inventory (rev 15, a stub): where the cost of goods sold comes from" [color: #7C3AED] {
   inv.stock_lot
+  inv.stock_return
 }
 
 TableGroup "0 · S1 part 1 Set up the books (rev 16): the book and its dated settings" [color: #1D4ED8] {
   fin.book
   fin.setting_definition
   fin.book_setting
-}
-
-TableGroup "0b · S1 part 2 Posting rules and the ledger mapping (rev 17): code decides the lines, the mapping the ledgers" [color: #4D7C0F] {
-  fin.line_role
-  fin.posting_rule
-  fin.posting_rule_case
-  fin.posting_rule_role
-  fin.account_determination
-  fin.account_determination_history
 }

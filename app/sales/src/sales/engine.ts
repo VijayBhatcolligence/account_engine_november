@@ -1,112 +1,30 @@
-// The posting rule SALES_INVOICE v1, as ONE pure function (rev 3, 16-Nov-2026): business facts in, the entry out.
-// The engine model (CLAUDE.md §3): the slice sends facts (who, what kind of supply, values, tax by head, how it is
-// settled); the engine picks the rule case and the ledgers. The screen (rules.ts) and the CA's answer keys
-// (casebook.test.ts, docs/sales/shared_doc_reference/expected_postings.json) both call this, so they cannot disagree.
+// REC (Vijay, 27-Nov-2026): the posting rules SALES_INVOICE / SALES_CREDIT_NOTE / SALES_DEBIT_NOTE v1 are REMOVED from this
+// app. Each role app owns its accounting layer and proposes its entry; the Accounts Executive records it, or types it, like
+// Tally (rules.ts entryOf). The rules and the mapping are kept on the local branch archive/ae-engine-rev21.
 //
-// Cases (fin.posting_rule, SALES_INVOICE v1, from 1-Apr-2026):
-//   R1 goods, domestic, local · R2 goods, domestic, inter-state · R3 service · R4 export / SEZ under LUT (no GST)
-//   R5 export with IGST · R6 SEZ with IGST: the buyer owes the value only; IGST paid by us, refund claimed (rev 3 fix, F1)
-//   R7 TCS item · R8 paid at once (cash / UPI / card): the clearing account, not the customer
-//   R9 nil-rated, exempt or non-GST line · R10 freight charged (part of the value, taxed) · R11 pure-agent expense (outside
-//   the value, no GST) · R12 a period service: revenue deferred to Contract Liability, released month by month
-//   R13 (rev 15) goods sold: their cost, from inventory (FIFO or weighted average), in the same entry:
-//       Dr Cost of Goods Sold · Cr Finished Goods (one line per lot, or per item under weighted average)
+// What stays here: the note reasons (a fact of the document, GST s.34) and Stores' return receipt, which is the Stores role's
+// own entry (mocked in this app): the stock back at the cost it left at (the CA's E1).
 
-export type FactLineKind = 'goods' | 'service' | 'charge' | 'reimbursement';
-export type FactTaxability = 'taxable' | 'nil_rated' | 'exempt' | 'non_gst';
+export type NoteDoc = 'credit_note' | 'debit_note';
+export type NoteWhy = 'return' | 'scheme_discount' | 'price_correction' | 'goodwill' | 'price_increase' | 'additional_charge';
 
-export interface FactLine {
-  kind: FactLineKind;
-  taxability: FactTaxability;
-  /** The line's value in ₹ (for a taxable line: its taxable value). */
-  amount: number;
-  cgst: number;
-  sgst: number;
-  igst: number;
-  /** A period service whose revenue is earned over the period (R12). */
-  deferred?: boolean;
-}
-
-export interface Facts {
-  buyer: 'domestic' | 'export' | 'sez';
-  exportType: 'lut' | 'igst' | null;
-  settlement: 'credit' | 'cash' | 'upi_card';
-  /** Place of supply = the issuing branch's state (local) or not (inter-state). */
-  intra: boolean;
-  lines: FactLine[];
-  roundOff: number;
-  /** The customer account's receivable ledger key (debtor_account.ledger_account_code). */
-  receivableKey: string;
-  /** Rev 15 (R13): the cost of the goods sold, read from inventory by the method (absent: no cost lines). */
-  cost?: { item: string; lot: string | null; qty: number; amount: number }[];
-}
-
-export type Role = 'party' | 'settlement' | 'refund' | 'revenue' | 'tax' | 'round' | 'cost';
-export interface PostLine {
-  id: string;
-  role: Role;
-  ledger: string; // LEDGERS key, or 'party' (the customer's account on its receivable ledger)
+export interface StockLine {
+  ledger: 'fg_inventory' | 'cogs';
   dr: number;
   cr: number;
-  rule: string;
-  /** Locked: the books must agree with the invoice and the IRN (§8.4); a cost line: with inventory. */
-  locked: boolean;
-  /** A cost line (R13): the item, its lot (null: weighted average) and the quantity. */
   item?: string;
   lot?: string | null;
   qty?: number;
 }
 
-export const r2 = (n: number) => Math.round(n * 100) / 100;
+const r2 = (n: number) => Math.round(n * 100) / 100;
 
-/** R1–R12: which case and which revenue ledger a line takes. */
-export function caseOf(f: Pick<Facts, 'buyer' | 'exportType'>, l: FactLine, intra: boolean): { rule: string; ledger: string } {
-  if (l.kind === 'reimbursement') return { rule: 'R11', ledger: 'reimbursement_recoverable' };
-  if (l.taxability !== 'taxable') return { rule: 'R9', ledger: 'exempt_sales' };
-  if (f.buyer !== 'domestic') return { rule: f.exportType === 'lut' ? 'R4' : f.buyer === 'sez' ? 'R6' : 'R5', ledger: 'export_sales' };
-  if (l.kind === 'charge') return { rule: 'R10', ledger: 'freight_recovered' };
-  if (l.kind === 'service') return l.deferred ? { rule: 'R12', ledger: 'contract_liability' } : { rule: 'R3', ledger: 'sale_services' };
-  return { rule: intra ? 'R1' : 'R2', ledger: 'sale_products' };
-}
-
-/** What the invoice is worth, what the buyer owes, and the IGST we claim back (R5, R6). */
-export function totalsOf(f: Facts) {
-  const sum = (k: 'amount' | 'cgst' | 'sgst' | 'igst') => r2(f.lines.reduce((t, l) => t + l[k], 0));
-  const value = sum('amount');
-  const tax = r2(sum('cgst') + sum('sgst') + sum('igst'));
-  const total = r2(value + tax + f.roundOff);
-  const refund = f.buyer !== 'domestic' && f.exportType === 'igst' ? sum('igst') : 0;
-  return { value, tax, total, refund, payable: r2(total - refund) };
-}
-
-/** The entry the rule writes. */
-export function postingFor(f: Facts): PostLine[] {
-  if (!f.lines.length) return [];
-  const cases = f.lines.map((l) => caseOf(f, l, f.intra));
-  const ruleWords = [...new Set(cases.map((c) => c.rule))].sort().join(' + ');
-  const t = totalsOf(f);
-  const out: PostLine[] = [];
-  if (f.settlement === 'credit') out.push({ id: 'party', role: 'party', ledger: 'party', dr: t.payable, cr: 0, rule: ruleWords, locked: true });
-  else out.push({ id: 'settle', role: 'settlement', ledger: f.settlement === 'cash' ? 'cash_in_hand' : 'upi_card_clearing', dr: t.payable, cr: 0, rule: 'R8', locked: true });
-  if (t.refund) out.push({ id: 'refund', role: 'refund', ledger: 'igst_refund', dr: t.refund, cr: 0, rule: f.buyer === 'sez' ? 'R6' : 'R5', locked: true });
-  const byLedger = new Map<string, { amount: number; rules: Set<string> }>();
-  f.lines.forEach((l, i) => {
-    const c = cases[i];
-    const g = byLedger.get(c.ledger) ?? { amount: 0, rules: new Set<string>() };
-    g.amount = r2(g.amount + l.amount);
-    g.rules.add(c.rule);
-    byLedger.set(c.ledger, g);
-  });
-  for (const [ledger, g] of byLedger) if (g.amount) out.push({ id: `rev:${ledger}`, role: 'revenue', ledger, dr: 0, cr: g.amount, rule: [...g.rules].sort().join(' + '), locked: false });
-  for (const head of ['cgst', 'sgst', 'igst'] as const) {
-    const amt = r2(f.lines.reduce((s, l) => s + l[head], 0));
-    if (amt > 0) out.push({ id: `tax:${head}`, role: 'tax', ledger: `out_${head}`, dr: 0, cr: amt, rule: ruleWords, locked: true });
-  }
-  if (f.roundOff) out.push({ id: 'round', role: 'round', ledger: 'round_off', dr: f.roundOff < 0 ? -f.roundOff : 0, cr: f.roundOff > 0 ? f.roundOff : 0, rule: ruleWords, locked: false });
-  const cost = (f.cost ?? []).filter((c) => c.amount > 0);
-  if (cost.length) {
-    out.push({ id: 'cost:cogs', role: 'cost', ledger: 'cogs', dr: r2(cost.reduce((t, c) => t + c.amount, 0)), cr: 0, rule: 'R13', locked: true });
-    for (const c of cost) out.push({ id: `cost:${c.item}:${c.lot ?? 'avg'}`, role: 'cost', ledger: 'fg_inventory', dr: 0, cr: c.amount, rule: 'R13', locked: true, item: c.item, lot: c.lot, qty: c.qty });
-  }
-  return out;
+/** Stores' receipt (the Stores role's entry): Dr Finished Goods · Cr Cost of Goods Sold, at the cost the goods left at. */
+export function returnReceiptPostingFor(items: { item: string; lot: string | null; qty: number; amount: number }[]): StockLine[] {
+  const back = items.filter((c) => c.amount > 0);
+  if (!back.length) return [];
+  return [
+    ...back.map((c): StockLine => ({ ledger: 'fg_inventory', dr: c.amount, cr: 0, item: c.item, lot: c.lot, qty: c.qty })),
+    { ledger: 'cogs', dr: 0, cr: r2(back.reduce((t, c) => t + c.amount, 0)) },
+  ];
 }

@@ -7,7 +7,7 @@
 
 import { seedAccounts, seedParties, seedRequests } from '../onboarding/seed';
 import { ITEMS, PARAMS } from './catalogue';
-import { calcOf, currencyOf, einvoiceRequired, entryOf, ewbDays, ewbNeeded, exportTypeOf, kindOf, narrationOf, nextNumber, POSTING_RULE, seriesOf, toJournal, type SalesCtx } from './rules';
+import { calcOf, currencyOf, einvoiceRequired, entryOf, ewbDays, ewbNeeded, exportTypeOf, kindOf, narrationOf, nextNumber, seriesOf, toJournal, type SalesCtx } from './rules';
 import type { Account } from '../onboarding/types';
 import type { InvoiceLine, JournalEntry, Voucher } from './types';
 
@@ -127,7 +127,15 @@ export function seedSales(): { vouchers: Voucher[]; journal: JournalEntry[] } {
     Object.assign(v, { status: 'posted', submittedAt: `${d}T10:30`, postedAt: `${d}T11:05`, entryId: je(++n) });
     v.approvals = [{ id: `APR-${v.id.slice(3)}-1`, why: 'invoice', label: 'Entry check', checker: 'rajan', status: 'approved', decidedAt: `${d}T11:05` }];
     v.history.push({ at: `${d}T10:30`, by: 'teja', text: 'Entry booked and sent to Rajan' }, { at: `${d}T11:05`, by: 'rajan', text: `Approved · posted ${v.entryId}` });
-    journal.push({ id: v.entryId!, voucherNo: v.number!, voucherId: v.id, kind: 'sales', branch: v.branch, date: d, narration: v.narration, lines: toJournal(entryOf(v, ctx), a.accountId), rule: `${POSTING_RULE} · ${c.rules.join(' + ')}`, postedAt: v.postedAt!, postedBy: 'system' });
+    // The opening data's entries, as Teja typed them (REC: no posting rule in this app): the customer, the sales, the GST.
+    v.edit = { by: 'teja', at: `${d}T10:20`, lines: [
+      { id: 'l:1', ledger: 'party', dr: c.payable, cr: 0, reason: '' },
+      { id: 'l:2', ledger: 'sale_products', dr: 0, cr: c.taxable, reason: '' },
+      ...(c.cgst ? [{ id: 'l:3', ledger: 'out_cgst', dr: 0, cr: c.cgst, reason: '' }, { id: 'l:4', ledger: 'out_sgst', dr: 0, cr: c.sgst, reason: '' }] : []),
+      ...(c.igst ? [{ id: 'l:5', ledger: 'out_igst', dr: 0, cr: c.igst, reason: '' }] : []),
+      ...(c.roundOff ? [{ id: 'l:6', ledger: 'round_off', dr: c.roundOff < 0 ? -c.roundOff : 0, cr: c.roundOff > 0 ? c.roundOff : 0, reason: '' }] : []),
+    ] };
+    journal.push({ id: v.entryId!, voucherNo: v.number!, voucherId: v.id, kind: 'sales', branch: v.branch, date: d, narration: v.narration, lines: toJournal(entryOf(v, ctx), a.accountId), rule: 'Typed by Teja, approved by Rajan', postedAt: v.postedAt!, postedBy: 'system' });
   };
   posted(take('SV-0010', '2026-10-05T10:00', { accountId: 'ACC-1205', date: '2026-10-05', lines: [goodsLine('FG-101', 100, 720)], transport: { vehicleNo: 'KA05MN4411', distanceKm: 18 } }));
   posted(take('SV-0011', '2026-10-05T10:05', { accountId: 'ACC-1205', date: '2026-10-05', lines: [goodsLine('FG-102', 100, 990)], transport: { vehicleNo: 'KA05MN4411', distanceKm: 18 } }));

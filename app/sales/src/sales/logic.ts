@@ -5,7 +5,7 @@
 
 import { fmtDate } from '../domain/dates';
 import { categoriesFor, STATES } from '../onboarding/catalogue';
-import { COMPANY, ENDORSEMENT, ITEMS, LEDGERS, PARAMS } from './catalogue';
+import { COMPANY, ENDORSEMENT, ITEMS, PARAMS } from './catalogue';
 import { COST_METHODS } from './inventory';
 import { accountOf, calcOf, costOfV, countryName, dueDateOf, ewbDays, ewbNeeded, issuerOf, itemOf, partyOfAccount, placesOf, receivableOf, rupees, type SalesCtx } from './rules';
 import type { Voucher } from './types';
@@ -33,7 +33,6 @@ export function logicOf(v: Voucher, ctx: SalesCtx): Logic[] {
   const items = [...new Set(c.rows.map((r) => r.item))];
   const local = c.intra === true;
   const exp = c.kind !== 'domestic';
-  const revKeys = [...new Set(c.rows.map((r) => r.revenue))];
   const cost = costOfV(v, ctx, c);
 
   const out: Logic[] = [
@@ -73,19 +72,19 @@ export function logicOf(v: Voucher, ctx: SalesCtx): Logic[] {
       engineer: { reads: `issuer branch GSTIN state (${ours.code}) · place_of_supply · buyer GST position`, rule: 'intra := pos = the branch\'s state; SupTyp B2B / EXPWP / EXPWOP / SEZWP / SEZWOP', stores: 'sales_invoice.supply_type_code, is_inter_state' },
     },
     {
-      key: 'hsn', id: 'C6 · C13', what: 'HSN / SAC and GST rate', value: items.map((i) => { const it = itemOf(i)!; return `${i}: ${it.hsn}, ${it.gst}%`; }).join(' · ') || '—',
+      key: 'hsn', id: 'C6 · C13', what: 'HSN / SAC and GST rate', value: items.map((i) => { const it = itemOf(i) ?? v.lines.find((l) => l.item === i)?.custom; return it ? `${it.name.slice(0, 30)}: ${it.hsn}, ${it.gst}%` : i; }).join(' · ') || '—',
       business: `${items.some((i) => ITEMS[i]) ? 'Biscuits are HSN 1905 31 at 5% (rates from 22-9-2025). ' : ''}${items.some((i) => !ITEMS[i]) ? 'The co-packing service carries SAC 998599 at 18% (placeholder, illustrative). ' : ''}Set once on the item by the Compliance Officer, never typed on the invoice. 6 digits: our turnover is above ₹5 crore.`,
       engineer: { reads: 'item_master.hsn_sac · tax_master(hsn, date) → rate', rule: 'on Billing\'s invoice line; an override → Compliance Officer (G20, C-29)', stores: 'sales_invoice_line.hsn_sac, gst_rate' },
     },
     {
-      key: 'sales', id: 'C17', what: 'Sales ledger (rule)', value: revKeys.map((k) => `${LEDGERS[k].name} (${LEDGERS[k].code})`).join(' · ') || '—',
-      business: exp ? `An ${c.kind === 'sez' ? 'SEZ supply' : 'export'} goes to Export Sales (401030)${c.exportType === 'lut' ? ', with no GST line' : ''}.` : `A domestic sale of our products is Sale of Products (401010)${revKeys.includes('sale_services') ? '; a service is Sale of Services (401020)' : ''}. Local or inter-state use the same ledger: the place of supply is on the invoice (a split 401011 is only a proposal to the CA).`,
-      engineer: { reads: 'line.is_service · buyer kind (domestic / export / SEZ)', rule: `rule ${c.rules.join(' + ') || '—'} of SALES_INVOICE v1 → ${revKeys.map((k) => LEDGERS[k].code).join(', ') || '—'}; the AE may change it with a reason (§8.4)`, stores: 'journal_line.ledger_account_code' },
+      key: 'sales', id: 'C17', what: 'Ledgers', value: 'typed by the Accounts Executive',
+      business: 'The AE picks each ledger and types its debit or credit, as in Tally (REC, 27-Nov-2026). The sales role app\'s own accounting layer will propose the entry later; this app records it. Rajan checks it before it posts.',
+      engineer: { reads: 'the AE\'s lines (ledger, Dr, Cr)', rule: 'no posting rule, no ledger mapping in this app; checks: Dr = Cr, postable ledgers, the customer and GST against the document', stores: 'sales_invoice_line · journal_line' },
     },
     {
       key: 'tax', id: 'D2', what: 'Tax ledgers and amounts', value: c.intra === null ? '—' : exp && c.exportType === 'lut' ? 'IGST nil (LUT)' : local ? `CGST ${rupees(c.cgst)} + SGST ${rupees(c.sgst)}` : `IGST ${rupees(c.igst)}`,
       business: exp && c.exportType === 'lut' ? 'Zero-rated under our LUT: no tax is charged, so no tax line.' : local ? 'Half the rate to the Centre (CGST), half to Karnataka (SGST). We owe both until paid.' : 'The full rate is IGST, owed to the Centre until paid.',
-      engineer: { reads: 'taxable value · gst_rate · supply type', rule: 'per line: CGST = SGST = round2(taxable × rate / 200), IGST = round2(taxable × rate / 100) → 206011 / 206012 / 206013 (proposed under 206010, G18); locked in the entry', stores: 'sales_invoice_line tax columns · journal_line' },
+      engineer: { reads: 'taxable value · gst_rate · supply type', rule: 'per line: CGST = SGST = round2(taxable × rate / 200), IGST = round2(taxable × rate / 100) the AE posts them to 206011 / 206012 / 206013 (Output CGST / SGST / IGST); a warning when the entry differs from the document', stores: 'sales_invoice_line tax columns · journal_line' },
     },
     {
       key: 'cost', id: 'R13', what: 'Cost of goods sold', value: !cost ? 'no goods: no cost' : cost.problems.length ? cost.problems.map((p) => `${p.code} ${p.item}`).join(' · ') : `${rupees(cost.total)} by ${COST_METHODS[cost.method].label}`,

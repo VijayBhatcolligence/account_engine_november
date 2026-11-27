@@ -1,6 +1,8 @@
 // Reference data for T24 Sales voucher entry (docs/sales/sales_engine/task_list/T24_sales_voucher_entry.md), from
 // the biscuit-plant scenario (Full scenario B4, D-01…D-05) and the CA's chart of accounts (I7, Indian GAAP sheet).
-// Company identity numbers are placeholders. Ledger codes the CA's chart does not have are marked "proposed" (§8.3, G18).
+// Company identity numbers are placeholders. Rev 21 (Vijay, 26-Nov): every ledger the posting rules use is SEEDED in the chart by default;
+// those the CA's chart did not list carry our default code ("seeded", G18: the CA may renumber). Only a ledger proposed from an uploaded
+// invoice is "proposed".
 
 import { DEBTOR_MASTER } from '../onboarding/catalogue';
 
@@ -13,8 +15,10 @@ export interface Ledger {
   group: string; // Schedule III head
   nature: Nature;
   statement: Statement;
-  /** Not in the CA's chart: proposed, the CA to confirm (G18). */
+  /** Rev 19: proposed in the app from an uploaded invoice (a new product sales ledger): not in the chart until S2 confirms it. */
   proposed?: boolean;
+  /** Rev 21: a default ledger seeded in the chart with our code (the CA's chart had no code for it: G18, the CA may renumber). */
+  seeded?: boolean;
   /** A group (not postable). */
   isGroup?: boolean;
   /**
@@ -40,16 +44,16 @@ export interface Branch {
   godown: string;
   address: string[];
   /** Rule 46(b): one series per GSTIN per FY, at most 16 characters (fin.document_series). */
-  series: { invoice: string; billOfSupply: string; export: string; creditNote: string };
+  series: { invoice: string; billOfSupply: string; export: string; creditNote: string; debitNote: string };
 }
 export const BRANCHES: Record<string, Branch> = {
   'KA-01': {
     code: 'KA-01', name: 'Bengaluru plant and HQ', branchId: '6b1d0a52-0001-4f0e-8a51-5c0b7a000001', gstin: '29AAECA0000A1ZQ', state: 'KA', godown: 'KA-FG (finished goods)',
-    address: ['Plot 14, KIADB Industrial Area, Peenya 2nd Stage', 'Bengaluru 560058, Karnataka'], series: { invoice: 'KA/INV/2627/', billOfSupply: 'KA/BOS/2627/', export: 'KA/EXP/2627/', creditNote: 'KA/CN/2627/' },
+    address: ['Plot 14, KIADB Industrial Area, Peenya 2nd Stage', 'Bengaluru 560058, Karnataka'], series: { invoice: 'KA/INV/2627/', billOfSupply: 'KA/BOS/2627/', export: 'KA/EXP/2627/', creditNote: 'KA/CN/2627/', debitNote: 'KA/DN/2627/' },
   },
   'TN-01': {
     code: 'TN-01', name: 'Hosur unit', branchId: '6b1d0a52-0002-4f0e-8a51-5c0b7a000002', gstin: '33AAECA0000A1Z1', state: 'TN', godown: 'TN-FG (finished goods)',
-    address: ['SIPCOT Industrial Complex, Phase I', 'Hosur 635126, Tamil Nadu'], series: { invoice: 'TN/INV/2627/', billOfSupply: 'TN/BOS/2627/', export: 'TN/EXP/2627/', creditNote: 'TN/CN/2627/' },
+    address: ['SIPCOT Industrial Complex, Phase I', 'Hosur 635126, Tamil Nadu'], series: { invoice: 'TN/INV/2627/', billOfSupply: 'TN/BOS/2627/', export: 'TN/EXP/2627/', creditNote: 'TN/CN/2627/', debitNote: 'TN/DN/2627/' },
   },
 };
 export const branchOf = (code: string | undefined) => BRANCHES[code ?? ''] ?? BRANCHES['KA-01'];
@@ -119,32 +123,40 @@ export const LEDGERS: Record<string, Ledger> = {
   sale_products: { code: '401010', name: 'Sale of Products', group: 'Revenue from operations', nature: 'income', statement: 'PL' },
   sale_services: { code: '401020', name: 'Sale of Services', group: 'Revenue from operations', nature: 'income', statement: 'PL' },
   export_sales: { code: '401030', name: 'Export Sales', group: 'Revenue from operations', nature: 'income', statement: 'PL' },
-  sale_products_inter: { code: '401011', name: 'Sale of Products – Inter-state', group: 'Revenue from operations', nature: 'income', statement: 'PL', proposed: true },
+  sale_products_inter: { code: '401011', name: 'Sale of Products – Inter-state', group: 'Revenue from operations', nature: 'income', statement: 'PL', seeded: true },
   statutory_dues: { code: '206010', name: 'Statutory Dues Payable', group: 'Other current liabilities', nature: 'liability', statement: 'BS', isGroup: true },
-  out_cgst: { code: '206011', name: 'Output CGST', group: 'Other current liabilities › Statutory dues', nature: 'liability', statement: 'BS', proposed: true, accountType: 'output_cgst' },
-  out_sgst: { code: '206012', name: 'Output SGST', group: 'Other current liabilities › Statutory dues', nature: 'liability', statement: 'BS', proposed: true, accountType: 'output_sgst' },
-  out_igst: { code: '206013', name: 'Output IGST', group: 'Other current liabilities › Statutory dues', nature: 'liability', statement: 'BS', proposed: true, accountType: 'output_igst' },
-  tcs_payable: { code: '206014', name: 'TCS Payable (income tax s.394)', group: 'Other current liabilities › Statutory dues', nature: 'liability', statement: 'BS', proposed: true, accountType: 'tcs_payable' },
+  out_cgst: { code: '206011', name: 'Output CGST', group: 'Other current liabilities › Statutory dues', nature: 'liability', statement: 'BS', seeded: true, accountType: 'output_cgst' },
+  out_sgst: { code: '206012', name: 'Output SGST', group: 'Other current liabilities › Statutory dues', nature: 'liability', statement: 'BS', seeded: true, accountType: 'output_sgst' },
+  out_igst: { code: '206013', name: 'Output IGST', group: 'Other current liabilities › Statutory dues', nature: 'liability', statement: 'BS', seeded: true, accountType: 'output_igst' },
+  tcs_payable: { code: '206014', name: 'TCS Payable (income tax s.394)', group: 'Other current liabilities › Statutory dues', nature: 'liability', statement: 'BS', seeded: true, accountType: 'tcs_payable' },
   // rev 2: 505120 under Other Expenses – Administrative (after the CA's 505110 Miscellaneous), not 506090: round off is not a selling expense.
-  round_off: { code: '505120', name: 'Round Off', group: 'Other expenses – administrative', nature: 'expense', statement: 'PL', proposed: true, accountType: 'round_off' },
-  // Rev 3 (16-Nov, the CA's specimen invoices A3, A5, A8, B5, B6, C2, C4, C6): ledgers the CA's chart does not have yet: proposed (G18).
-  exempt_sales: { code: '401050', name: 'Sales – Exempt / Nil-rated / Non-GST', group: 'Revenue from operations', nature: 'income', statement: 'PL', proposed: true },
-  freight_recovered: { code: '401070', name: 'Freight Recovered', group: 'Revenue from operations', nature: 'income', statement: 'PL', proposed: true },
-  contract_liability: { code: '206040', name: 'Contract Liability (Income Received in Advance)', group: 'Other current liabilities', nature: 'liability', statement: 'BS', proposed: true },
-  reimbursement_recoverable: { code: '110030', name: 'Expenses Recoverable (pure agent)', group: 'Other current assets', nature: 'asset', statement: 'BS', proposed: true },
-  igst_refund: { code: '109040', name: 'IGST Refund Receivable', group: 'Short-term loans and advances', nature: 'asset', statement: 'BS', proposed: true },
-  upi_card_clearing: { code: '108030', name: 'UPI / Card Clearing', group: 'Cash and bank balances', nature: 'asset', statement: 'BS', proposed: true },
+  round_off: { code: '505120', name: 'Round Off', group: 'Other expenses – administrative', nature: 'expense', statement: 'PL', seeded: true, accountType: 'round_off' },
+  // Rev 3 (16-Nov, the CA's specimen invoices A3, A5, A8, B5, B6, C2, C4, C6): ledgers the CA's chart did not have: seeded with our codes (G18).
+  exempt_sales: { code: '401050', name: 'Sales – Exempt / Nil-rated / Non-GST', group: 'Revenue from operations', nature: 'income', statement: 'PL', seeded: true },
+  freight_recovered: { code: '401070', name: 'Freight Recovered', group: 'Revenue from operations', nature: 'income', statement: 'PL', seeded: true },
+  contract_liability: { code: '206040', name: 'Contract Liability (Income Received in Advance)', group: 'Other current liabilities', nature: 'liability', statement: 'BS', seeded: true },
+  reimbursement_recoverable: { code: '110030', name: 'Expenses Recoverable (pure agent)', group: 'Other current assets', nature: 'asset', statement: 'BS', seeded: true },
+  igst_refund: { code: '109040', name: 'IGST Refund Receivable', group: 'Short-term loans and advances', nature: 'asset', statement: 'BS', seeded: true },
+  upi_card_clearing: { code: '108030', name: 'UPI / Card Clearing', group: 'Cash and bank balances', nature: 'asset', statement: 'BS', seeded: true },
   cash_in_hand: { code: '108010', name: 'Cash in Hand', group: 'Cash and bank balances', nature: 'asset', statement: 'BS' },
   // Rev 15 (Vijay, 20-Nov): the cost of goods sold ledger, named as the CA's answer key names it ("COGS", specimens D1-b, D2, E1).
-  // The CA's chart has no such ledger (501030 is Change in Inventory): code proposed (G18).
-  cogs: { code: '501040', name: 'Cost of Goods Sold', group: 'Cost of materials consumed / goods sold', nature: 'expense', statement: 'PL', proposed: true },
+  // The CA's chart has no such ledger (501030 is Change in Inventory): seeded with our code (G18).
+  cogs: { code: '501040', name: 'Cost of Goods Sold', group: 'Cost of materials consumed / goods sold', nature: 'expense', statement: 'PL', seeded: true },
   change_in_inventory: { code: '501030', name: 'Change in Inventory', group: 'Changes in inventories of finished goods (Schedule III)', nature: 'expense', statement: 'PL' },
   fg_inventory: { code: '106020', name: 'Finished Goods', group: 'Inventories', nature: 'asset', statement: 'BS' },
+  // Rev 18 (T25, Vijay 25-Nov: "assume the ledgers exist; S2 creates the chart"): the CA's E1–E3 name them; their codes are proposed (G45).
+  sales_returns: { code: '401090', name: 'Sales Returns', group: 'Revenue from operations', nature: 'income', statement: 'PL', seeded: true },
+  discount_allowed: { code: '506020', name: 'Discount Allowed', group: 'Other expenses – selling', nature: 'expense', statement: 'PL', seeded: true },
   ...RECEIVABLE_LEDGERS,
 };
 
 export const ledgerByCode = (code: string) => Object.entries(LEDGERS).find(([, l]) => l.code === code)?.[0] ?? null;
 /** The receivable ledger key of a debtor category (fin.debtor_category.ledger_account_code). */
+/** Rev 19 (invoice upload): a ledger proposed in the app (a product sales ledger from an uploaded invoice), until the chart (S2) has it. */
+export function addProposedLedger(key: string, l: Ledger) {
+  LEDGERS[key] = { ...l, proposed: true };
+  if (!PICKABLE.includes(key)) PICKABLE.push(key);
+}
 export const receivableKeyOf = (category: string) => `ar_${DEBTOR_LEDGER[category] ?? '107010'}`;
 /** Ledgers the AE may pick when he edits the entry: not a group, not a receivable ledger (LEDGER_NOT_POSTABLE: reached only through a customer). */
 export const PICKABLE = Object.keys(LEDGERS).filter((k) => !LEDGERS[k].isGroup && LEDGERS[k].accountType !== 'receivable');
@@ -217,6 +229,7 @@ export const PARAMS = {
   ewayBillMin: { value: 50_000, words: 'E-way bill above ₹50,000 with goods moving', owner: 'Compliance Officer' },
   einvoice: { value: true, words: 'E-invoicing applies: B2B, export and SEZ invoices get their IRN at approval', owner: 'Compliance Officer' },
   creditNoteFc: { value: 1_00_000, words: 'A credit note needs the Finance Controller as well above ₹1,00,000', owner: 'Accounts Manager' },
+  noteWarnDays: { value: 60, words: 'A GST credit note is issued by 30 November after the invoice’s financial year: warn within 60 days (scenario §1.8)', owner: 'Compliance Officer' },
   roundTo: { value: 1, words: 'Invoice total rounded to the rupee; the difference goes to Round off', owner: 'Accounts Manager' },
   fxUsd: { value: 88, words: 'Placeholder exchange rate for exports: ₹88.00 per USD (scenario, Sales Executive section); its source is the CA\'s (G25)', owner: 'The CA (G25)' },
 };

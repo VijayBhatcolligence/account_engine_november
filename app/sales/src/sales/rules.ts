@@ -17,9 +17,9 @@ import type { CheckResult } from '../onboarding/rules';
 import { branchFor, locationsOf, type BranchView } from '../onboarding/branches';
 import type { Account, ActorKey, Party, PartyLocation, Request } from '../onboarding/types';
 import { BILLING, BRANCHES, branchOf, COMPANY, COUNTRIES, CURRENCY, EXTRAS, fiscalYearOf, IRN_CANCEL_HOURS, ITEMS, LEDGERS, MONTH, OPENING_DUE, PARAMS, periodOf, PICKABLE, receivableKeyOf, SERVICES, type Statement, type Taxability } from './catalogue';
-import { caseOf, postingFor, type FactLine, type Facts } from './engine';
+import type { NoteWhy } from './engine';
 import { COST_METHODS, costOf, issueOf, type CostMethod, type CostResult, type StockLot } from './inventory';
-import type { ApprovalWhy, InvoiceLine, JournalEntry, JournalLine, Voucher } from './types';
+import type { ApprovalWhy, EditLine, InvoiceLine, JournalEntry, JournalLine, StockReturn, Voucher } from './types';
 
 export interface SalesCtx {
   accounts: Account[];
@@ -31,19 +31,22 @@ export interface SalesCtx {
   /** Rev 15: the stock lots (inventory, a demo stub) and the company's costing method. Absent: no cost lines. */
   lots?: StockLot[];
   costMethod?: CostMethod;
+  /** Rev 18: Stores' return receipts (inv.stock_return, a stub). */
+  returns?: StockReturn[];
 }
 
 /** What the entry reads. */
-export type EntryCtx = Pick<SalesCtx, 'accounts' | 'parties' | 'requests' | 'lots' | 'costMethod'> & Partial<Pick<SalesCtx, 'journal'>>;
+export type EntryCtx = Pick<SalesCtx, 'accounts' | 'parties' | 'requests' | 'lots' | 'costMethod'> & Partial<Pick<SalesCtx, 'journal' | 'returns' | 'vouchers'>>;
 
 /** A check with its spec id (T24 §7: K1–K19) and its code (the engine's refusal code, the schema's check). */
 export type SCheck = CheckResult & { k?: string; code?: string };
 
 /** The default code of each check id (T24 §7). A case of its own overrides it (e.g. K7 DATE_IN_FUTURE). */
 export const CHECK_CODE: Record<string, string> = {
+  N1: 'NOTE_AGAINST_A_POSTED_INVOICE', N2: 'WAITING_FOR_RETURN_RECEIPT', N3: 'SCHEME_REFERENCE_NEEDED', N4: 'NOTE_TIME_LIMIT',
   K1: 'DEBTOR_ACCOUNT_NOT_FOUND', K6: 'DISCOUNT_ABOVE_LINE_VALUE', K7: 'PERIOD_CLOSED', K8: 'PERIOD_SOFT_CLOSED', Fill: 'MISSING_REQUIRED_DETAILS', K10: 'E_INVOICE_PRECHECK',
   K11: 'LUT_NOT_VALID', K12: 'SHIPPING_BILL_PENDING', E4: 'COUNTRY_MISSING', E5: 'PORT_CODE_MISSING',
-  K15: 'OVER_CREDIT_LIMIT', R7: 'TCS_RATE_UNCONFIRMED', K16: 'DEBITS_CREDITS_DIFFER', K17: 'ENTRY_DIFFERS_FROM_RULE', K18: 'IRP_30_DAY_LIMIT',
+  K15: 'OVER_CREDIT_LIMIT', R7: 'TCS_RATE_UNCONFIRMED', K16: 'DEBITS_CREDITS_DIFFER', K17: 'ENTRY_LINE_INVALID', K27: 'ENTRY_VS_DOCUMENT', K18: 'IRP_30_DAY_LIMIT',
   K19: 'MAKER_MAY_NOT_DECIDE', A3: 'BRANCH_NOT_VALID', B9: 'TAX_SPLIT', B5: 'BUYER_UNREGISTERED',
   K26: 'STOCK_SHORT', K20: 'THIRD_PARTY_SHIP_TO_INCOMPLETE', K21: 'PLACE_OF_SUPPLY_PROPERTY', K22: 'SERVICE_PERIOD_REQUIRED', K23: 'NON_TAXABLE_LINES', K24: 'IGST_REFUND_CLAIMED', K25: 'ADVANCE_ADJUSTMENT_INVALID',
 };
@@ -52,7 +55,6 @@ export const r2 = (n: number) => Math.round(n * 100) / 100;
 export const rupees = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const money = (n: number, cur: string) => (cur === 'INR' ? rupees(n) : `${cur} ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 
-export const POSTING_RULE = 'SALES_INVOICE v1 (effective 1-Apr-2026)';
 
 export const customers = (ctx: Pick<SalesCtx, 'accounts'>) => ctx.accounts.filter((a) => a.side === 'receivable');
 export const accountOf = (ctx: Pick<SalesCtx, 'accounts'>, id: string) => ctx.accounts.find((a) => a.accountId === id) ?? null;
@@ -115,6 +117,9 @@ export function itemOf(code: string): { name: string; hsn: string; uqc: string; 
   return x ? { name: x.name, hsn: x.sac, uqc: x.uqc, gst: 0, service: x.kind === 'charge', taxability: x.kind === 'reimbursement' ? 'non_gst' : 'taxable' } : null;
 }
 
+/** An invoice line's item: our item master, or (an uploaded invoice) the line's own description, HSN and rate. */
+export const itemOfLine = (l: Pick<InvoiceLine, 'item' | 'custom'>) => l.custom ?? itemOf(l.item);
+
 /** Our LUT is per GSTIN (Rule 96A): valid only for the branch that filed it, inside its dates. */
 export const lutValidOn = (date: string, branch = 'KA-01') => !!date && branch === COMPANY.lut.branch && date >= COMPANY.lut.validFrom && date <= COMPANY.lut.validTo;
 /** E1 default: LUT when the issuing branch's LUT is valid on the invoice date, else with IGST. */
@@ -170,8 +175,6 @@ export interface CalcRow {
   sgst: number;
   igst: number;
   tax: number;
-  revenue: string; // LEDGERS key (C17, by rule)
-  rule: RuleId;
 }
 
 /** Rev 3: the place-of-supply basis (B8), from the CA's specimens and the IGST Act. */
@@ -218,7 +221,6 @@ export interface Calc {
   /** What the buyer owes: the total less any refund-claimed IGST (D10). */
   payable: number;
   foreignTotal: number | null;
-  rules: RuleId[];
   /** One row per HSN and rate, as printed under the invoice. */
   hsn: { hsn: string; gst: number; taxable: number; cgst: number; sgst: number; igst: number }[];
 }
@@ -250,10 +252,9 @@ export function calcOf(v: Voucher, ctx: Pick<SalesCtx, 'accounts' | 'parties' | 
   const posName = pos === '96' ? 'Other countries (outside India)' : pos ? STATES[pos]?.name ?? null : null;
   const intra = pos === null ? null : kind !== 'domestic' ? false : pos === issuerOf(v).state;
   // A charge (freight) follows the goods' rate: part of the same supply (the highest goods rate on the invoice; 18 % when none).
-  const goodsRate = Math.max(0, ...v.lines.filter((l) => l.kind === 'goods').map((l) => itemOf(l.item)?.gst ?? 0)) || 18;
-  const facts = { buyer: kind, exportType: kind === 'domestic' ? null : exportTypeOf(v) };
+  const goodsRate = Math.max(0, ...v.lines.filter((l) => l.kind === 'goods').map((l) => itemOfLine(l)?.gst ?? 0)) || v.chargeGst || 18;
   const rows: CalcRow[] = v.lines
-    .map((l, idx) => ({ l, idx, it: itemOf(l.item) }))
+    .map((l, idx) => ({ l, idx, it: itemOfLine(l) }))
     .filter(({ l, it }) => Number(l.qty) > 0 && it)
     .map(({ l, idx, it }) => {
       const qty = Number(l.qty);
@@ -263,18 +264,14 @@ export function calcOf(v: Voucher, ctx: Pick<SalesCtx, 'accounts' | 'parties' | 
       const foreign = currency === 'INR' ? null : gross;
       const amount = currency === 'INR' ? gross : r2(gross * fx);
       const taxability: Taxability = l.kind === 'reimbursement' ? 'non_gst' : it!.taxability;
-      const gst = taxability !== 'taxable' ? 0 : l.kind === 'charge' ? goodsRate : it!.gst;
+      // Rev 18: a goodwill credit note reduces no GST (s.15(3): no scheme agreed before the supply).
+      const gst = taxability !== 'taxable' || v.noteReason === 'goodwill' ? 0 : l.kind === 'charge' ? goodsRate : it!.gst;
       const half = r2((amount * gst) / 200);
       const cgst = intra ? half : 0;
       const igst = intra === false && !zeroRated ? r2((amount * gst) / 100) : 0;
       const deferred = l.kind === 'service' && !!it!.period;
-      const fl: FactLine = { kind: l.kind, taxability, amount, cgst, sgst: cgst, igst, deferred };
-      const c = caseOf(facts, fl, intra === true);
-      return { idx, kind: l.kind, taxability, deferred, item: l.item, name: it!.name, hsn: it!.hsn, uqc: it!.uqc, qty, rate, discount, foreign, amount, gst, cgst, sgst: cgst, igst, tax: r2(cgst * 2 + igst), revenue: c.ledger, rule: c.rule as RuleId } as CalcRow;
+      return { idx, kind: l.kind, taxability, deferred, item: l.item, name: it!.name, hsn: it!.hsn, uqc: it!.uqc, qty, rate, discount, foreign, amount, gst, cgst, sgst: cgst, igst, tax: r2(cgst * 2 + igst) } as CalcRow;
     });
-  const rules = new Set<RuleId>(rows.map((x) => x.rule));
-  if (isTcsCategory(a)) rules.add('R7');
-  if (v.settlement && v.settlement !== 'credit') rules.add('R8');
   const sumOf = (k: 'amount' | 'cgst' | 'sgst' | 'igst', f: (x: CalcRow) => boolean = () => true) => r2(rows.filter(f).reduce((t, x) => t + x[k], 0));
   const taxable = sumOf('amount', (x) => x.taxability === 'taxable' && x.kind !== 'reimbursement');
   const exempt = sumOf('amount', (x) => x.taxability !== 'taxable' && x.kind !== 'reimbursement');
@@ -302,13 +299,13 @@ export function calcOf(v: Voucher, ctx: Pick<SalesCtx, 'accounts' | 'parties' | 
     rows, kind, registered, currency, fx, exportType: kind === 'domestic' ? null : exportTypeOf(v), pos, posCode, posName, posBasis, intra, supplyType, docType,
     taxable, exempt, reimbursement, cgst, sgst, igst, tcs, exact, total, roundOff: r2(total - exact), refund, payable: r2(total - refund),
     foreignTotal: currency === 'INR' ? null : r2(rows.reduce((t, x) => t + (x.foreign ?? 0), 0)),
-    rules: [...rules].sort((x, y) => Number(x.slice(1)) - Number(y.slice(1))), hsn: [...groups.values()],
+    hsn: [...groups.values()],
   };
 }
 
-/** The facts the invoice sends the posting rule (the engine model: the slice sends facts, the engine picks the ledgers). */
 /** Rev 15 (R13): the cost of the invoice's goods, from the stock lots by the company's method (null: no inventory in the context). */
 export function costOfV(v: Voucher, ctx: EntryCtx, c: Calc = calcOf(v, ctx)): CostResult | null {
+  if (isNote(v)) return null; // a note issues no stock: a return's goods come back through Stores' receipt
   // Posted: the cost is what the entry posted (the stock has moved since), never recomputed.
   if (v.entryId) {
     const je = ctx.journal?.find((e) => e.id === v.entryId);
@@ -318,133 +315,123 @@ export function costOfV(v: Voucher, ctx: EntryCtx, c: Calc = calcOf(v, ctx)): Co
     return { method: je.costMethod ?? 'fifo', picks, total: r2(picks.reduce((t, p) => t + p.amount, 0)), problems: [] };
   }
   if (!ctx.lots) return null;
-  const items = issueOf(c.rows);
+  const items = issueOf(c.rows.filter((r) => !!ITEMS[r.item]));
   if (!items.length) return null;
   return costOf(ctx.lots, ctx.costMethod ?? 'fifo', v.branch, items);
 }
 
-export const factsOf = (v: Voucher, c: Calc, receivableKey: string, cost?: CostResult | null): Facts => ({
-  buyer: c.kind,
-  exportType: c.exportType,
-  settlement: v.settlement ?? 'credit',
-  intra: c.intra === true,
-  lines: c.rows.map((x) => ({ kind: x.kind, taxability: x.taxability, amount: x.amount, cgst: x.cgst, sgst: x.sgst, igst: x.igst, deferred: x.deferred })),
-  roundOff: c.roundOff,
-  receivableKey,
-  ...(cost && !cost.problems.length ? { cost: cost.picks.map((p) => ({ item: p.item, lot: p.lot, qty: p.qty, amount: p.amount })) } : {}),
-});
 
-// ---------- The engine's entry (§8.2) and the AE's edit (§8.4) ----------
+// ---------- The entry: what the Accounts Executive types (REC, Vijay 27-Nov-2026: "like Tally: select the ledger, enter
+// debit and credit, save"). No posting rule and no ledger mapping in this app: a role app's own accounting layer proposes
+// the entry (later); here the AE records it. The automatic calculations stay: the document's amounts (calcOf) and the
+// cost of the goods from inventory (costLinesOf) are shown, and the checks compare the typed entry with them.
 
 export interface EntryLine {
-  id: string; // 'party' · 'settle' · 'refund' · 'rev:sale_products' · 'tax:cgst' · 'round' · edit ids
-  role: 'party' | 'settlement' | 'refund' | 'revenue' | 'tax' | 'round' | 'cost' | 'added';
+  id: string;
+  /** party: the customer's account (on its receivable ledger) · tax: an output GST ledger · cost: a line from inventory · line: any other */
+  role: 'party' | 'tax' | 'cost' | 'line';
   ledger: string; // LEDGERS key, or 'party'
+  /** The ledger shown (the customer line: its receivable ledger). */
+  ledgerKey?: string;
   name: string;
   code: string;
   statement: Statement;
   dr: number;
   cr: number;
-  rule: string; // 'R1' · 'R1 + R3' · 'edit'
-  why: string;
-  locked: boolean;
-  /** Differs from the rule (edited, split or added). */
-  changed?: boolean;
-  /** The amount differs from the rule's, or the line was added / split: a reason is required (a ledger-only change needs none). */
-  amountChanged?: boolean;
+  /** The line's own narration (optional). */
   reason?: string;
-  /** What the rule had on this line. */
-  ruleLedger?: string;
-  /** The ledger key shown in the picker (the customer line: its receivable ledger; others: = ledger). */
-  ledgerKey?: string;
-  /** A cost line (R13): item, lot (null: weighted average), quantity, unit cost. */
+  /** A cost / stock line (from inventory): item, lot (null: weighted average), quantity. */
   item?: string;
   lot?: string | null;
   qty?: number;
-  unitCost?: number;
 }
 
 const L = (key: string) => LEDGERS[key] ?? { code: '—', name: key ? `(${key})` : '(no ledger chosen)', statement: 'PL' as Statement };
+const roleOfLedger = (k: string, item?: string): EntryLine['role'] => (k === 'party' ? 'party' : item ? 'cost' : LEDGERS[k]?.accountType?.startsWith('output_') ? 'tax' : 'line');
 
-const REV_WHY: Record<string, string> = {
-  sale_products: 'Taxable value of goods: a domestic sale of our products (the place of supply is on the invoice)',
-  sale_services: 'Taxable value of service lines (SAC): Sale of Services',
-  export_sales: 'Export / SEZ supply: zero-rated (under LUT no GST; with IGST, the IGST is ours to claim back)',
-  exempt_sales: 'Nil-rated, exempt or non-GST value: no tax charged (R9; the CA\'s specimen A5, A6)',
-  freight_recovered: 'Freight charged to the buyer: part of the value of supply, taxed at the goods\' rate (R10; specimen A8)',
-  reimbursement_recoverable: 'Paid as the buyer\'s pure agent: outside the value of supply, no GST (R11; specimen B5)',
-  contract_liability: 'A period service billed in advance: revenue is earned month by month, so it waits in Contract Liability (R12; specimen B6)',
-};
-
-/** The entry the posting rule writes (read-only unless the AE edits it): engine.postingFor on the invoice's facts. */
-export function ruleEntryOf(v: Voucher, ctx: EntryCtx): EntryLine[] {
-  const c = calcOf(v, ctx);
-  const cost = costOfV(v, ctx, c);
-  const a = accountOf(ctx, v.accountId);
-  if (!a || c.pos === null || c.taxable + c.exempt + c.reimbursement <= 0) return [];
-  const ar = receivableOf(a);
-  const home = STATES[issuerOf(v).state]?.name ?? issuerOf(v).state;
-  const method = cost ? COST_METHODS[cost.method].label : '';
-  return postingFor(factsOf(v, c, ar.key, cost)).map((p): EntryLine => {
-    const pick = p.role === 'cost' && p.item ? cost?.picks.find((x) => x.item === p.item && x.lot === (p.lot ?? null)) : undefined;
-    const lg = p.ledger === 'party' ? { code: ar.code, name: `${a.name} (${a.accountId})`, statement: 'BS' as Statement } : L(p.ledger);
-    const why =
-      p.role === 'party' ? `What the buyer owes${c.refund ? ' (the invoice value less the IGST we claim back)' : ''}, on ${ar.name} (${ar.code}), the receivable ledger of its debtor category; the line names the account`
-      : p.role === 'settlement' ? `Paid at once (${v.settlement === 'cash' ? 'cash' : 'UPI / card'}): the money is in the clearing account, the customer owes nothing (R8; specimen A3)`
-      : p.role === 'refund' ? 'IGST paid by us on the export / SEZ supply and claimed back: not the buyer\'s (R5 / R6; specimens C2, C4, C6)'
-      : p.role === 'tax' ? (p.ledger === 'out_cgst' ? 'Half the GST rate, owed to the Centre (local sale)' : p.ledger === 'out_sgst' ? `Half the GST rate, owed to ${home} (local sale)` : c.kind === 'domestic' ? 'Full GST rate: inter-state' : 'IGST on the export / SEZ supply, paid by us')
-      : p.role === 'round' ? (p.cr ? 'Total rounded up to the rupee' : 'Total rounded down to the rupee')
-      : p.role === 'cost' ? (p.dr ? `The cost of the goods sold (${method}), from inventory: never the selling price` : pick?.lot ? `${p.qty} ${p.item} out of lot ${pick.lot} at ${rupees(pick.unitCost)} (${method})` : `${p.qty} ${p.item} out at the average cost ${rupees(pick?.unitCost ?? 0)} (${method})`)
-      : REV_WHY[p.ledger] ?? '';
-    return { id: p.id, role: p.role, ledger: p.ledger, ledgerKey: p.ledger === 'party' ? ar.key : p.ledger, name: lg.name, code: lg.code, statement: lg.statement, dr: p.dr, cr: p.cr, rule: p.rule, why, locked: p.locked, ...(p.role === 'cost' && p.item ? { item: p.item, lot: p.lot ?? null, qty: p.qty, unitCost: pick?.unitCost } : {}) };
-  });
-}
-
-/** The entry that posts: the rule's, or the AE's edit (party and tax lines always the rule's: locked). */
+/** The entry as typed (fin.sales_invoice_line, then the journal lines). */
 export function entryOf(v: Voucher, ctx: EntryCtx): EntryLine[] {
-  const rule = ruleEntryOf(v, ctx);
-  if (!v.edit || !rule.length) return rule;
-  // Lines whose amount is the invoice's: the ledger may still be picked (Vijay, 18-Nov: every ledger is a suggestion).
-  const picks = v.edit.picks ?? {};
-  const locked = rule.filter((l) => l.locked).map((l): EntryLine => {
-    const k = picks[l.id];
-    if (!k || k === l.ledgerKey) return l;
-    const lg = L(k);
-    return l.ledger === 'party'
-      ? { ...l, code: lg.code, ledgerKey: k, changed: true, ruleLedger: l.ledgerKey, rule: 'edit' }
-      : { ...l, ledger: k, ledgerKey: k, name: lg.name, code: lg.code, statement: lg.statement, changed: true, ruleLedger: l.ledger, rule: 'edit' };
-  });
-  const edited: EntryLine[] = v.edit.lines.map((e) => {
-    const r = e.from ? rule.find((x) => x.id === e.from) : undefined;
-    const amountChanged = !r || Math.abs(r.dr - e.dr) > 0.004 || Math.abs(r.cr - e.cr) > 0.004;
-    const changed = amountChanged || r.ledger !== e.ledger;
+  const a = accountOf(ctx, v.accountId);
+  const ar = a ? receivableOf(a) : null;
+  // Not edited yet: the default entry, filled from the document's amounts (Vijay, 27-Nov: "by default it should show the
+  // entry; then I can edit, it's my choice"). Once the AE changes anything, his lines are the entry.
+  return (v.edit?.lines ?? defaultEntryOf(v, ctx)).map((e): EntryLine => {
+    if (e.ledger === 'party')
+      return { id: e.id, role: 'party', ledger: 'party', ledgerKey: ar?.key, name: a ? `${a.name} (${a.accountId})` : 'The customer (no account yet)', code: ar?.code ?? '—', statement: 'BS', dr: r2(e.dr), cr: r2(e.cr), reason: e.reason };
     const lg = L(e.ledger);
-    return { id: e.id, role: r ? r.role : 'added', ledger: e.ledger, name: lg.name, code: lg.code, statement: lg.statement, dr: r2(e.dr), cr: r2(e.cr), rule: changed ? 'edit' : r!.rule, why: r ? r.why : 'Added by the AE', locked: false, changed, amountChanged, reason: e.reason, ruleLedger: r?.ledger };
+    return { id: e.id, role: roleOfLedger(e.ledger, e.item), ledger: e.ledger, ledgerKey: e.ledger, name: lg.name, code: lg.code, statement: lg.statement, dr: r2(e.dr), cr: r2(e.cr), reason: e.reason, ...(e.item ? { item: e.item, lot: e.lot ?? null, qty: e.qty } : {}) };
   });
-  const isRound = (l: EntryLine) => v.edit!.lines.find((e) => e.id === l.id)?.from === 'round';
-  const head = locked.filter((l) => l.role === 'party' || l.role === 'settlement' || l.role === 'refund');
-  return [...head, ...edited.filter((l) => !isRound(l)), ...locked.filter((l) => l.role === 'tax'), ...edited.filter(isRound), ...locked.filter((l) => l.role === 'cost')];
 }
 
-/** "Entry differs from rule R1: lines 2, 4" (§8.4), or null when the entry is the rule's. */
-export function entryDiffOf(v: Voucher, ctx: EntryCtx): string | null {
-  if (!v.edit) return null;
-  const lines = entryOf(v, ctx);
-  const nos = lines.map((l, i) => (l.changed ? i + 1 : 0)).filter(Boolean);
-  const rule = ruleEntryOf(v, ctx);
-  const dropped = rule.filter((r) => !r.locked && !v.edit!.lines.some((e) => e.from === r.id));
-  if (!nos.length && !dropped.length) return null;
-  return `Entry differs from rule ${calcOf(v, ctx).rules.join(' + ')}: line${nos.length === 1 ? '' : 's'} ${nos.join(', ')}${dropped.length ? ` (removed: ${dropped.map((d) => d.name).join(', ')})` : ''}`;
+/** The default entry: the document's calculated amounts put on the usual ledgers, as a STARTING POINT the AE may change
+ *  line by line (or clear and type his own). Not a posting rule: no rule table, no mapping, no versions; the AE's entry is
+ *  what posts. Usual ledgers: the customer (or the cash / UPI account when paid at once) · by line: goods → Sale of Products,
+ *  services → Sale of Services (a period billed in advance → Contract Liability), nil / exempt → Sales – Exempt, freight
+ *  charged → Freight Recovered, a pure-agent expense → Expenses Recoverable, export / SEZ → Export Sales · a credit note:
+ *  a return → Sales Returns, a discount → Discount Allowed, a price correction → the sales ledger · GST by head · round off ·
+ *  the IGST we claim back · the cost from inventory. A credit note goes the other way. */
+export function defaultEntryOf(v: Voucher, ctx: EntryCtx): EditLine[] {
+  const c = calcOf(v, ctx);
+  if (!c.rows.length || c.pos === null) return [];
+  const credit = v.docType === 'credit_note';
+  const cs = credit ? 'cr' : 'dr'; // the customer's side
+  const os = credit ? 'dr' : 'cr'; // the other side
+  const out: EditLine[] = [];
+  const put = (ledger: string, amount: number, side: 'dr' | 'cr') => {
+    const x = r2(Math.abs(amount));
+    if (x) out.push({ id: `d:${out.length + 1}`, ledger, dr: side === 'dr' ? x : 0, cr: side === 'cr' ? x : 0, reason: '' });
+  };
+  const settle = v.settlement ?? 'credit';
+  put(settle === 'credit' ? 'party' : settle === 'cash' ? 'cash_in_hand' : 'upi_card_clearing', c.payable, cs);
+  if (c.refund) put('igst_refund', c.refund, cs);
+  const ledgerOf = (r: CalcRow) =>
+    credit && v.noteReason === 'return' ? 'sales_returns'
+    : credit && (v.noteReason === 'scheme_discount' || v.noteReason === 'goodwill') ? 'discount_allowed'
+    : r.kind === 'reimbursement' ? 'reimbursement_recoverable'
+    : r.kind === 'charge' ? 'freight_recovered'
+    : c.kind !== 'domestic' ? 'export_sales'
+    : r.taxability !== 'taxable' ? 'exempt_sales'
+    : r.kind === 'service' ? (r.deferred ? 'contract_liability' : 'sale_services')
+    : 'sale_products';
+  const byLedger = new Map<string, number>();
+  for (const r of c.rows) byLedger.set(ledgerOf(r), r2((byLedger.get(ledgerOf(r)) ?? 0) + r.amount));
+  for (const [ledger, amount] of byLedger) put(ledger, amount, os);
+  put('out_cgst', c.cgst, os);
+  put('out_sgst', c.sgst, os);
+  put('out_igst', c.igst, os);
+  if (c.roundOff) put('round_off', c.roundOff, c.roundOff > 0 ? os : cs);
+  return [...out, ...costLinesOf(v, ctx)];
+}
+
+/** An automatic calculation, not a rule: the cost of the goods from inventory (FIFO / weighted average) as lines the AE adds
+ *  with one click (Dr Cost of Goods Sold · Cr Finished Goods, per lot); for a return the note carries back (the book's
+ *  setting): Dr Finished Goods · Cr Cost of Goods Sold at the cost the goods left at. */
+export function costLinesOf(v: Voucher, ctx: EntryCtx): EditLine[] {
+  const back = isNote(v) ? returnCostOf(v, ctx) : undefined;
+  if (back) return back.flatMap((p, i) => [
+    { id: `cost:${i + 1}:dr`, ledger: 'fg_inventory', dr: p.amount, cr: 0, reason: `${p.qty} ${p.item} back, lot ${p.lot}`, item: p.item, lot: p.lot, qty: p.qty },
+    { id: `cost:${i + 1}:cr`, ledger: 'cogs', dr: 0, cr: p.amount, reason: `${p.qty} ${p.item} back, lot ${p.lot}`, item: p.item, lot: p.lot, qty: p.qty },
+  ]);
+  const cost = costOfV(v, ctx);
+  if (!cost || cost.problems.length) return [];
+  return cost.picks.flatMap((p, i) => {
+    const why = `${p.qty} ${p.item}${p.lot ? ` from lot ${p.lot}` : ' at the average'} at ${rupees(p.unitCost)} (${COST_METHODS[cost.method].label})`;
+    return [
+      { id: `cost:${i + 1}:dr`, ledger: 'cogs', dr: p.amount, cr: 0, reason: why, item: p.item, lot: p.lot, qty: p.qty },
+      { id: `cost:${i + 1}:cr`, ledger: 'fg_inventory', dr: 0, cr: p.amount, reason: why, item: p.item, lot: p.lot, qty: p.qty },
+    ];
+  });
 }
 
 export const toJournal = (lines: EntryLine[], accountId?: string): JournalLine[] =>
-  lines.filter((l) => l.dr || l.cr).map((l) => (l.ledger === 'party' ? { ledger: 'party', accountId, dr: l.dr, cr: l.cr, code: l.code } : { ledger: l.ledger, dr: l.dr, cr: l.cr, ...(l.changed && l.reason ? { reason: l.reason } : {}), ...(l.item ? { item: l.item, lot: l.lot ?? null, qty: l.qty } : {}) }));
+  lines.filter((l) => l.dr || l.cr).map((l) => (l.ledger === 'party' ? { ledger: 'party', accountId, dr: l.dr, cr: l.cr, code: l.code } : { ledger: l.ledger, dr: l.dr, cr: l.cr, ...(l.reason ? { reason: l.reason } : {}), ...(l.item ? { item: l.item, lot: l.lot ?? null, qty: l.qty } : {}) }));
 /** ReverseJournalEntry (Manoj's journal.py): the exact mirror, Dr and Cr swapped, line by line. */
 export const mirrorOf = (lines: JournalLine[]): JournalLine[] => lines.map((l) => ({ ...l, dr: l.cr, cr: l.dr }));
 export const sum = (lines: { dr: number; cr: number }[]) => ({ dr: r2(lines.reduce((t, l) => t + l.dr, 0)), cr: r2(lines.reduce((t, l) => t + l.cr, 0)) });
 
-export const dueDateOf = (v: Pick<Voucher, 'date'>, a: Account | null) => {
+export const dueDateOf = (v: Pick<Voucher, 'date'> & Partial<Pick<Voucher, 'docType'>>, a: Account | null) => {
   if (!a || !v.date) return null;
+  if (v.docType === 'credit_note') return v.date; // it reduces what is owed, from its date
   const d = new Date(`${v.date}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + (a.creditDays ?? 0));
   return d.toISOString().slice(0, 10);
@@ -460,8 +447,10 @@ export const ewbNeeded = (c: Calc) => c.rows.some((r) => r.kind === 'goods') && 
 export const einvoiceRequired = (c: Pick<Calc, 'supplyType' | 'docType'>) => c.docType !== 'bill_of_supply' && c.supplyType !== 'B2CS' && c.supplyType !== 'B2CL';
 
 /** Rev 3: the series of the document type (tax invoice, Bill of Supply, export invoice) of the issuing branch. */
-export const seriesOf = (v: Pick<Voucher, 'branch'>, c: Pick<Calc, 'docType'>) => {
+export const seriesOf = (v: Pick<Voucher, 'branch'> & Partial<Pick<Voucher, 'docType'>>, c: Pick<Calc, 'docType'>) => {
   const s = issuerOf(v).series;
+  if (v.docType === 'credit_note') return s.creditNote;
+  if (v.docType === 'debit_note') return s.debitNote;
   return c.docType === 'bill_of_supply' ? s.billOfSupply : c.docType === 'export_invoice' ? s.export : s.invoice;
 };
 
@@ -491,7 +480,8 @@ export function checksOf(v: Voucher, ctx: SalesCtx): SCheck[] {
   const missing: string[] = [];
 
   // K1 customer account.
-  if (!v.accountId) add('K1', 'stop', 'The invoice names no customer account', 'Return it to Billing (or book a walk-in sale paid at once).');
+  if (!v.accountId && v.pendingCustomer) add('K1', 'stop', `Customer not registered: ${v.pendingCustomer.name}`, v.pendingCustomer.requestId ? `Waiting for T12 request ${v.pendingCustomer.requestId}.` : 'Register it first (T12), create it now (demo shortcut), or pick an existing account.');
+  else if (!v.accountId) add('K1', 'stop', 'The invoice names no customer account', 'Return it to Billing (or book a walk-in sale paid at once).');
   else if (!a) add('K1', 'stop', 'No customer account', 'A new customer is set up first (T12 Create a customer).');
   // Posting date = the invoice date (K7, K8): the period and the year must be open.
   if (v.date) {
@@ -503,8 +493,9 @@ export function checksOf(v: Voucher, ctx: SalesCtx): SCheck[] {
     if (per === 'soft') add('K8', 'warn', `${MONTH(v.date)} is soft-closed`, 'Allowed only as an adjustment the Accounts Manager approves.');
   }
   if (c.intra !== null && c.rows.length) add('B9', 'ok', c.kind === 'export' ? 'Export: the invoice carries no CGST / SGST' : c.intra ? 'Invoice GST is CGST + SGST: two tax lines' : 'Invoice GST is IGST: one tax line');
-  // K15 credit (a warning: the goods are already invoiced).
-  if (a && a.creditLimit !== null && c.payable > 0 && (v.settlement ?? 'credit') === 'credit') {
+  if (isNote(v)) noteChecks(v, ctx, add);
+  // K15 credit (a warning: the goods are already invoiced). A credit note lowers what is owed: no credit check.
+  if (v.docType !== 'credit_note' && a && a.creditLimit !== null && c.payable > 0 && (v.settlement ?? 'credit') === 'credit') {
     const due = dueOf(ctx, a.accountId);
     if (due + c.payable > a.creditLimit) add('K15', 'warn', `After this invoice the customer is over its limit by ${inr(due + c.payable - a.creditLimit)}`, 'Allowed; Rajan sees it and Farid (Credit Controller) is told.');
   }
@@ -521,57 +512,55 @@ export function checksOf(v: Voucher, ctx: SalesCtx): SCheck[] {
     if (!cost.problems.length) add('K26', 'ok', `Cost of goods sold by ${COST_METHODS[cost.method].label}: ${rupees(cost.total)} from inventory`, undefined, { code: 'COST_FROM_INVENTORY' });
   }
 
-  // K16, K17: the entry.
-  const lines = entryOf(v, ctx);
-  if (lines.length) {
-    const t = sum(lines);
-    if (t.dr === t.cr) add('K16', 'ok', `Dr = Cr: ${rupees(t.dr)}`, undefined, { code: 'ENTRY_BALANCED' });
-    else add('K16', 'stop', `Dr ${rupees(t.dr)} ≠ Cr ${rupees(t.cr)}`, 'The entry must balance to the paisa.');
-    if (v.edit) editChecks(v, ctx, c, lines, add);
-    else add('K17', 'ok', `Entry by rule ${c.rules.join(' + ')}: not edited`, undefined, { code: 'ENTRY_AS_RULE' });
-  }
+  // K16, K17: the entry the AE typed, against the document's calculated amounts.
+  entryChecks(v, ctx, c, entryOf(v, ctx), add);
   return out;
 }
 
-/** K17: the AE's edit (§8.4). Locked lines, a reason on every changed line, no group or receivable ledger. */
-function editChecks(v: Voucher, ctx: SalesCtx, c: Calc, lines: EntryLine[], add: (k: string, level: SCheck['level'], title: string, detail?: string, more?: Partial<SCheck>) => void) {
-  let broken = false;
-  const stop = (code: string, title: string, detail?: string) => {
-    broken = true;
-    add('K17', 'stop', title, detail, { code });
+/** K16 balance · K17 every line postable · K27 the entry against the document (the customer, GST by head) · K26 the cost
+ *  against inventory. The document's amounts and the cost are calculations, not rules: the AE types the entry. */
+function entryChecks(v: Voucher, ctx: SalesCtx, c: Calc, lines: EntryLine[], add: (k: string, level: SCheck['level'], title: string, detail?: string, more?: Partial<SCheck>) => void) {
+  if (!lines.length) return add('K16', 'stop', 'Type the entry', 'Pick the ledger for each line and enter its debit or credit (like Tally); the document\'s amounts are shown beside.', { code: 'ENTRY_EMPTY' });
+  let ok = true;
+  const stop = (k: string, code: string, title: string, detail?: string) => {
+    ok = false;
+    add(k, 'stop', title, detail, { code });
   };
-  const party = lines.filter((l) => l.role === 'party' || l.role === 'settlement');
-  if (party.length !== 1 || Math.abs(party[0].dr - c.payable) > 0.004) stop('LOCKED_LINE_CHANGED', `Customer line must be Dr ${rupees(c.payable)} (what the buyer owes)`);
-  const refund = r2(lines.filter((l) => l.role === 'refund').reduce((t, l) => t + l.dr, 0));
-  if (Math.abs(refund - c.refund) > 0.004) stop('LOCKED_LINE_CHANGED', `IGST refund line must be Dr ${rupees(c.refund)}`);
-  // The tax lines carry the invoice's tax, whatever ledger is picked; no other line may post into an output tax ledger.
-  for (const head of ['cgst', 'sgst', 'igst'] as const) {
-    const onTaxLines = r2(lines.filter((l) => l.id === `tax:${head}`).reduce((t, l) => t + l.cr - l.dr, 0));
-    if (Math.abs(onTaxLines - c[head]) > 0.004) stop('LOCKED_LINE_CHANGED', `The ${head.toUpperCase()} line is ${rupees(onTaxLines)}: the invoice's tax is ${rupees(c[head])}`, "The tax amount is the invoice's (and the IRN's); only its ledger may be picked.");
-    const got = r2(lines.filter((l) => l.ledger === `out_${head}`).reduce((t, l) => t + l.cr - l.dr, 0));
-    const want = r2(lines.filter((l) => l.id === `tax:${head}` && l.ledger === `out_${head}`).reduce((t, l) => t + l.cr - l.dr, 0));
-    if (Math.abs(got - want) > 0.004) stop('LOCKED_LINE_CHANGED', `Output ${head.toUpperCase()} in the entry is ${rupees(got)}: the invoice's tax is ${rupees(want)}`, 'Only its own tax line (same head) posts into an output tax ledger.');
-  }
   lines.forEach((l, i) => {
     const n = i + 1;
-    if (l.locked) {
-      if (!l.changed) return;
-      const lg = LEDGERS[l.ledgerKey ?? ''];
-      if (l.ledger === 'party' && lg?.accountType !== 'receivable') stop('LEDGER_NOT_POSTABLE', `Line ${n}: the customer line must post to a receivable ledger`);
-      else if (l.ledger !== 'party' && (!lg || lg.isGroup || lg.accountType === 'receivable')) stop('LEDGER_NOT_POSTABLE', `Line ${n}: pick a postable ledger (never a group or a receivable ledger)`);
-      return;
+    if (l.ledger !== 'party') {
+      const lg = LEDGERS[l.ledger];
+      if (!l.ledger) stop('K17', 'MISSING_REQUIRED_DETAILS', `Line ${n}: choose a ledger`);
+      else if (!lg) stop('K17', 'LEDGER_NOT_FOUND', `Line ${n}: ${l.ledger} is not in the chart`);
+      else if (lg.isGroup) stop('K17', 'LEDGER_NOT_POSTABLE', `Line ${n}: ${lg.name} (${lg.code}) is a group, not a ledger`, 'Post to a ledger under it.');
+      else if (lg.accountType === 'receivable') stop('K17', 'LEDGER_NOT_POSTABLE', `Line ${n}: ${lg.name} (${lg.code}) is a receivable ledger`, "Its lines must name a customer account: pick the customer instead.");
     }
-    const lg = LEDGERS[l.ledger];
-    if (!l.ledger) stop('MISSING_REQUIRED_DETAILS', `Line ${n}: choose a ledger`);
-    else if (!lg) stop('LEDGER_NOT_FOUND', `Line ${n}: ${l.ledger} is not in the chart`);
-    else if (lg.isGroup) stop('LEDGER_NOT_POSTABLE', `Line ${n}: ${lg.name} (${lg.code}) is a group, not a ledger`, 'Post to a ledger under it.');
-    else if (lg.accountType === 'receivable') stop('LEDGER_NOT_POSTABLE', `Line ${n}: ${lg.name} (${lg.code}) is a receivable ledger`, "Its lines must name a customer account: only the customer line reaches it, through the customer's own account.");
-    if (l.dr && l.cr) stop('DEBIT_AND_CREDIT', `Line ${n}: both Dr and Cr`);
-    if (l.amountChanged && !l.reason?.trim()) stop('REASON_REQUIRED', `Line ${n}: a reason is needed for the change`, 'A changed amount or an added line carries its reason; Rajan sees it. Picking another ledger needs none (manual for now).');
+    if (l.dr && l.cr) stop('K17', 'DEBIT_AND_CREDIT', `Line ${n}: both Dr and Cr`);
+    if (!l.dr && !l.cr) stop('K17', 'MISSING_REQUIRED_DETAILS', `Line ${n}: no amount`);
   });
-  const diff = entryDiffOf(v, ctx);
-  if (!broken && diff) add('K17', 'warn', diff, 'Goes to Rajan as an exception; the journal keeps the rule and your edit (who, why, approved by).');
-  if (!diff) add('K17', 'ok', 'Entry editable: nothing changed from the rule yet', undefined, { code: 'ENTRY_AS_RULE' });
+  const t = sum(lines);
+  if (t.dr === t.cr) add('K16', 'ok', `Dr = Cr: ${rupees(t.dr)}`, undefined, { code: 'ENTRY_BALANCED' });
+  else stop('K16', 'ENTRY_NOT_BALANCED', `Dr ${rupees(t.dr)} ≠ Cr ${rupees(t.cr)}`, 'The entry must balance to the paisa.');
+  // Against the document (warnings: Rajan sees them). A credit note moves the other way.
+  const sign = v.docType === 'credit_note' ? -1 : 1;
+  const net = (f: (l: EntryLine) => boolean) => r2(lines.filter(f).reduce((s, l) => s + l.dr - l.cr, 0));
+  if ((v.settlement ?? 'credit') === 'credit' && v.accountId) {
+    const party = net((l) => l.ledger === 'party');
+    const want = r2(sign * c.payable);
+    if (Math.abs(party - want) > 0.004) add('K27', 'warn', `The customer line is ${rupees(Math.abs(party))} ${party >= 0 ? 'Dr' : 'Cr'}; the document says ${rupees(Math.abs(want))} ${want >= 0 ? 'Dr' : 'Cr'}`, 'What the customer owes is the document\'s total.', { code: 'ENTRY_VS_DOCUMENT' });
+  }
+  for (const head of ['cgst', 'sgst', 'igst'] as const) {
+    const got = r2(-net((l) => l.ledger === `out_${head}`));
+    const want = r2(sign * c[head]);
+    if (Math.abs(got - want) > 0.004) add('K27', 'warn', `Output ${head.toUpperCase()} in the entry is ${rupees(Math.abs(got))}; the document's ${head.toUpperCase()} is ${rupees(Math.abs(want))}`, "The tax posted is the document's (and its IRN's).", { code: 'ENTRY_VS_DOCUMENT' });
+  }
+  // K26: inventory moves at approval for the goods on the invoice; the books must carry the same cost.
+  const cost = isNote(v) ? null : costOfV(v, ctx, c);
+  if (cost && !cost.problems.length) {
+    const typed = r2(lines.filter((l) => l.ledger === 'cogs' && l.item).reduce((s, l) => s + l.dr - l.cr, 0));
+    if (Math.abs(typed - cost.total) > 0.004) stop('K26', 'COST_NOT_IN_ENTRY', `The cost of goods sold in the entry is ${rupees(typed)}; inventory says ${rupees(cost.total)}`, 'Stock goes out when Rajan approves: add the cost from inventory (one click) so the books and the stock agree.');
+  }
+  if (ok) add('K17', 'ok', `Entry typed: ${lines.length} lines, every ledger postable`, undefined, { code: 'ENTRY_TYPED' });
 }
 
 export const stops = (c: SCheck[]) => c.filter((x) => x.level === 'stop');
@@ -598,10 +587,19 @@ export function rankLedgers(q: string, suggested?: string, pool: string[] = PICK
 }
 
 /** Rajan (Accounts Manager) checks every invoice: Billing combined with this role (tasks doc §9, scenario §3.1). */
-export function routesOf(v: Voucher, ctx: SalesCtx): { why: ApprovalWhy; label: string; checker: ActorKey; entryDiff?: string }[] {
-  const diff = entryDiffOf(v, ctx) ?? undefined;
+export function routesOf(v: Voucher, ctx: SalesCtx): { why: ApprovalWhy; label: string; checker: ActorKey }[] {
+  if (isNote(v)) {
+    // Scenario §1.8: the Accounts Manager approves every note; a scheme discount that reduces GST: the Compliance Officer too
+    // (B4-07(a)); a credit note above ₹1,00,000: the Finance Controller too.
+    const total = calcOf(v, ctx).payable;
+    return [
+      { why: 'note' as const, label: `${DOC_LABEL[v.docType!]} check`, checker: 'rajan' as ActorKey },
+      ...(v.noteReason === 'scheme_discount' ? [{ why: 'gst_scheme' as const, label: `GST reduced under scheme ${v.schemeRef ?? ''} (s.15(3)(b))`, checker: 'venkat' as ActorKey }] : []),
+      ...(v.docType === 'credit_note' && total > PARAMS.creditNoteFc.value ? [{ why: 'over_limit' as const, label: `Credit note above ${inr(PARAMS.creditNoteFc.value)}`, checker: 'usha' as ActorKey }] : []),
+    ];
+  }
   const kind = calcOf(v, ctx).kind;
-  return [{ why: 'invoice', label: `${periodOf(v.date || ctx.now) === 'soft' ? 'Entry check (soft-closed month)' : 'Entry check'}${kind === 'export' ? ' · export' : ''}${diff ? ' · ledgers differ from the suggestion' : ''}`, checker: 'rajan', entryDiff: diff }];
+  return [{ why: 'invoice', label: `${periodOf(v.date || ctx.now) === 'soft' ? 'Entry check (soft-closed month)' : 'Entry check'}${kind === 'export' ? ' · export' : ''}`, checker: 'rajan' }];
 }
 
 export const narrationOf = (v: Voucher, ctx: Pick<SalesCtx, 'accounts'>) => {
@@ -611,3 +609,51 @@ export const narrationOf = (v: Voucher, ctx: Pick<SalesCtx, 'accounts'>) => {
 };
 
 export const countryName = (code: string | undefined) => (code ? COUNTRIES[code] ?? code : '—');
+
+
+// ---------------------------------------------------------------- rev 18 · T25 / T26: the notes
+export const isNote = (v: Pick<Voucher, 'docType'>) => !!v.docType && v.docType !== 'invoice';
+export const DOC_LABEL: Record<string, string> = { invoice: 'Invoice', credit_note: 'Credit note', debit_note: 'Debit note' };
+export const NOTE_REASON: Record<NoteWhy, string> = {
+  return: 'goods returned', scheme_discount: 'scheme discount (GST reduced)', price_correction: 'price correction', goodwill: 'goodwill discount (no GST)',
+  price_increase: 'price increase', additional_charge: 'extra charge billed later',
+};
+/** The invoice a note corrects. */
+export const againstOf = (ctx: Partial<Pick<SalesCtx, 'vouchers'>>, v: Pick<Voucher, 'againstId'>) => (v.againstId ? ctx.vouchers?.find((x) => x.id === v.againstId) ?? null : null);
+/** GST: a credit note that reduces tax is issued by 30 November after the end of the invoice's financial year (s.34(2)). */
+export const noteDeadline = (invoiceDate: string) => {
+  const y = Number(invoiceDate.slice(0, 4)) + (Number(invoiceDate.slice(5, 7)) >= 4 ? 1 : 0);
+  return `${y}-11-30`;
+};
+/** A return's goods at the cost they LEFT at (Stores' receipt names the batch), when the note posts the stock back. */
+export function returnCostOf(v: Voucher, ctx: EntryCtx) {
+  if (v.noteReason !== 'return' || v.returnStock !== 'with_credit_note' || !v.returnId) return undefined;
+  const r = ctx.returns?.find((x) => x.id === v.returnId);
+  return r ? [{ item: r.item, lot: r.fromLot, qty: r.qty, amount: r2(r.qty * r.unitCost) }] : undefined;
+}
+
+/** The note's own checks (scenario B4-06 to B4-08, Part C C-17 to C-19). The limit "not more than left on the invoice": G46. */
+function noteChecks(v: Voucher, ctx: SalesCtx, add: (k: string, level: SCheck['level'], title: string, detail?: string, more?: Partial<SCheck>) => void) {
+  const inv = againstOf(ctx, v);
+  if (!inv) add('N1', 'stop', 'The note names no invoice', 'A credit or debit note corrects one invoice (GST s.34): Billing names it.');
+  else if ((inv.docType ?? 'invoice') !== 'invoice' || inv.status !== 'posted') add('N1', 'stop', `${inv.number} is not a posted invoice`, 'A note corrects a posted invoice only.');
+  else if (inv.accountId !== v.accountId || inv.branch !== v.branch) add('N1', 'stop', 'Another customer or GSTIN than the invoice', "The note must name the invoice's customer and be issued by its branch.", { code: 'NOTE_SAME_CUSTOMER_AND_GSTIN' });
+  else add('N1', 'ok', `Against ${inv.number} of ${inv.date} (posted, same customer and GSTIN)`);
+  if (v.noteReason === 'return') {
+    const r = ctx.returns?.find((x) => x.id === v.returnId);
+    // Rev 21: a return always needs Stores' receipt (C-17; the schema's sales_invoice_return_needs_receipt). Goods with no stock
+    // record (an uploaded invoice's goods not in our item master, T8) have no batch to receive: the note cannot be a return.
+    const stocked = v.lines.some((l) => !!ITEMS[l.item]);
+    if (!r && !stocked) add('N2', 'stop', 'A return needs the goods received back, and these goods are not in our inventory', "Stores receives a return into the batch it left from (C-17); goods not in our item master have no batch (T8). If no goods come back into our stock, pick the reason that fits (a price correction or a discount).", { code: 'RETURN_WITHOUT_STOCK_RECORD' });
+    else if (!r) add('N2', 'stop', 'Waiting for the return receipt', 'Stores records the goods back first (D-05: the batch, the quantity, the condition); then this note can go (C-17).');
+    else add('N2', 'ok', `Stores' receipt ${r.id}: ${r.qty} ${r.item} from batch ${r.fromLot}, ${r.condition}`, v.returnStock === 'with_credit_note' ? "This note posts the stock back (the book's setting)." : `The receipt posted the stock back${r.entryId ? ` (${r.entryId})` : ''}: not this note (the CA's E1).`);
+  }
+  if (v.noteReason === 'scheme_discount' && !v.schemeRef) add('N3', 'stop', 'A scheme discount needs its scheme reference', 'GST is reduced only for a discount agreed before the supply (s.15(3)(b)): name the scheme (C-19).');
+  if (v.noteReason === 'goodwill' && v.schemeRef) add('N3', 'stop', 'Goodwill cannot claim a scheme', 'No scheme agreed before the supply: GST is not reduced (C-19).');
+  if (inv && v.docType === 'credit_note' && v.noteReason !== 'goodwill') {
+    const last = noteDeadline(inv.docDate ?? inv.date);
+    const days = daysBetween(v.docDate ?? v.date, last);
+    if (days < 0) add('N4', 'stop', `The GST time limit passed on ${last}`, "A credit note that reduces GST is issued by 30 November after the invoice's year (s.34(2)). Ask the Accounts Manager.");
+    else if (days <= PARAMS.noteWarnDays.value) add('N4', 'warn', `Credit note limit ${last}, ${days} days left`, 'Within 60 days of the GST time limit (scenario B4-07).');
+  }
+}

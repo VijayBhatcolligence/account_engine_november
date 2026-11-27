@@ -1,5 +1,5 @@
 // Setting the database up, reading it back, and the app's saved state.
-// The schema is NOT copied: it is the engine's own out.sql (docs/sales/sales_engine/out.sql, rev 17), run as it is.
+// The schema is NOT copied: it is the engine's own out.sql (docs/sales/sales_engine/out.sql, rev 19), run as it is.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import pg from 'pg';
@@ -40,7 +40,7 @@ async function ensureDatabase() {
 }
 
 async function schemaExists() {
-  const { rows } = await db().query(`SELECT to_regclass('fin.account_determination') IS NOT NULL AS ok`);
+  const { rows } = await db().query(`SELECT to_regclass('fin.sales_invoice_line') IS NOT NULL AS ok`);
   return rows[0].ok as boolean;
 }
 

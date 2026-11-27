@@ -386,3 +386,10 @@
 .ob-built .ob-sugg th { width: 22%; }
 .ob-field__label { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
 .ob-field__label .ob-owner { flex-shrink: 0; margin-left: 0; }
+
+/* Rev 21 · a form an event opened: the field it filled, and the document beside the form */
+.ob-fromdoc { display: inline-block; align-self: flex-start; margin-top: 2px; padding: 0 6px; border-radius: 999px; font-size: var(--fs-xs, 11px); line-height: 18px; background: color-mix(in srgb, var(--info, #2563eb) 12%, transparent); color: var(--info, #2563eb); }
+.ob-req__body > .ob-srcdoc { max-width: 560px; flex-basis: 0; flex-grow: 6; }
+.ob-srcdoc__frame { flex: 1; width: 100%; min-height: 420px; border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; }
+.ob-srcdoc__img { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; }
+.ob-srcdoc__bar { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }

@@ -1,12 +1,15 @@
--- Generated from customer_onboarding_schema.dbml (rev 17, 24-Nov-2026) by @dbml/core 12.0.0 (export.js).
--- Partial indexes come from their WHERE notes (10). Checked: pglast parses it; it runs on PostgreSQL 18.
+-- Generated from customer_onboarding_schema.dbml (rev 19, 27-Nov-2026) by @dbml/core 12.0.0 (export.js).
+-- Partial indexes come from their WHERE notes (9). Checked: it runs on PostgreSQL 18.
 -- Not here (they are in the engine migrations, by hand): append-only and clock triggers, workspace isolation,
 -- fin.check_journal_entry (the 8 commit rules), the fiscal_year no-overlap EXCLUDE, seeds.
 -- Added by hand at the end (rev 14, as Manoj's 0005): sales_invoice's 2 GENERATED columns and its never-twice EXCLUDE.
 -- Added by hand at the end (rev 16, S1 part 1): book_setting's no-overlap EXCLUDE and its allowed-value trigger.
--- Added by hand at the end (rev 17, S1 part 2): account_determination's GENERATED specificity, 2 EXCLUDE (posting_rule,
--- account_determination), the trigger account_determination_guard, the look-up fin.determine_ledger and the completeness
--- check fin.account_determination_gaps.
+-- Rev 17's hand-written block (S1 part 2: account_determination's GENERATED specificity, 2 EXCLUDE posting_rule_no_overlap and
+-- account_determination_no_overlap, the trigger account_determination_guard, fin.determine_ledger, fin.account_determination_gaps)
+-- is REMOVED in rev 19 (REC-D2: no posting rules, no ledger mapping; the AE picks the ledger).
+-- Rev 19 + P&C stubs aligned with P&C migrations 002–007, 27-Nov (REC §5): in the generated part only (no hand block changes).
+-- Added by hand at the end (rev 18, T25 / T26): triggers sales_note_against_invoice, sales_invoice_line_side and
+-- stock_return_not_more_than_sold.
 
 CREATE SCHEMA "pc";
 
@@ -19,7 +22,9 @@ CREATE TABLE "pc"."operated_party" (
   "workspace_id" text NOT NULL,
   "party_id" uuid NOT NULL,
   "since" date,
-  "until" date
+  "until" date,
+  "recorded_at" timestamptz NOT NULL DEFAULT (now()),
+  "updated_at" timestamptz NOT NULL DEFAULT (now())
 );
 
 CREATE TABLE "pc"."private_anchor" (
@@ -35,8 +40,8 @@ CREATE TABLE "pc"."party" (
   "party_kind" text NOT NULL,
   "legal_name" text,
   "legal_form_code" text,
-  "recorded_at" timestamptz,
-  "updated_at" timestamptz
+  "recorded_at" timestamptz NOT NULL DEFAULT (now()),
+  "updated_at" timestamptz NOT NULL DEFAULT (now())
 );
 
 CREATE TABLE "pc"."party_trade_name" (
@@ -45,7 +50,9 @@ CREATE TABLE "pc"."party_trade_name" (
   "party_id" uuid NOT NULL,
   "name" text NOT NULL,
   "since" date,
-  "until" date
+  "until" date,
+  "recorded_at" timestamptz NOT NULL DEFAULT (now()),
+  "updated_at" timestamptz NOT NULL DEFAULT (now())
 );
 
 CREATE TABLE "pc"."party_identifier" (
@@ -57,7 +64,9 @@ CREATE TABLE "pc"."party_identifier" (
   "value" text,
   "standing_code" text,
   "since" date,
-  "until" date
+  "until" date,
+  "recorded_at" timestamptz NOT NULL DEFAULT (now()),
+  "updated_at" timestamptz NOT NULL DEFAULT (now())
 );
 
 CREATE TABLE "pc"."business_location" (
@@ -71,7 +80,9 @@ CREATE TABLE "pc"."business_location" (
   "postal_code" text,
   "country_code" text,
   "since" date,
-  "until" date
+  "until" date,
+  "recorded_at" timestamptz NOT NULL DEFAULT (now()),
+  "updated_at" timestamptz NOT NULL DEFAULT (now())
 );
 
 CREATE TABLE "pc"."party_standing" (
@@ -82,7 +93,9 @@ CREATE TABLE "pc"."party_standing" (
   "standing_type_code" text NOT NULL,
   "trade_name_id" uuid,
   "since" date,
-  "until" date
+  "until" date,
+  "recorded_at" timestamptz NOT NULL DEFAULT (now()),
+  "updated_at" timestamptz NOT NULL DEFAULT (now())
 );
 
 CREATE TABLE "pc"."contact" (
@@ -91,7 +104,9 @@ CREATE TABLE "pc"."contact" (
   "contact_kind" text NOT NULL,
   "display_name" text NOT NULL,
   "accountable_party_id" uuid,
-  "destination_role" text
+  "destination_role" text,
+  "recorded_at" timestamptz NOT NULL DEFAULT (now()),
+  "updated_at" timestamptz NOT NULL DEFAULT (now())
 );
 
 CREATE TABLE "pc"."contact_party_association" (
@@ -100,8 +115,11 @@ CREATE TABLE "pc"."contact_party_association" (
   "contact_id" uuid NOT NULL,
   "party_id" uuid NOT NULL,
   "capacity_code" text NOT NULL,
+  "scope" jsonb,
   "since" date,
-  "until" date
+  "until" date,
+  "recorded_at" timestamptz NOT NULL DEFAULT (now()),
+  "updated_at" timestamptz NOT NULL DEFAULT (now())
 );
 
 CREATE TABLE "pc"."contact_point" (
@@ -112,7 +130,9 @@ CREATE TABLE "pc"."contact_point" (
   "route_value" text,
   "business_location_id" uuid,
   "since" date,
-  "until" date
+  "until" date,
+  "recorded_at" timestamptz NOT NULL DEFAULT (now()),
+  "updated_at" timestamptz NOT NULL DEFAULT (now())
 );
 
 CREATE TABLE "pc"."record_history" (
@@ -124,7 +144,9 @@ CREATE TABLE "pc"."record_history" (
   "operation" text NOT NULL,
   "row_snapshot" jsonb NOT NULL,
   "performer_contact_id" uuid,
-  "recorded_at" timestamptz
+  "recorded_at" timestamptz NOT NULL DEFAULT (now()),
+  "activity_ref" jsonb,
+  "decision_ref" jsonb
 );
 
 CREATE TABLE "fin"."ledger_account" (
@@ -446,7 +468,7 @@ CREATE TABLE "fin"."journal_entry" (
   "narration" text,
   "posted_by_contact_id" uuid,
   "posted_at" timestamptz NOT NULL DEFAULT (now()),
-  CONSTRAINT "journal_entry_voucher_type_valid" CHECK (voucher_type IN ('purchase', 'opening', 'sales')),
+  CONSTRAINT "journal_entry_voucher_type_valid" CHECK (voucher_type IN ('purchase', 'opening', 'sales', 'stock_return')),
   CONSTRAINT "journal_entry_does_not_reverse_itself" CHECK (reverses_journal_entry_id <> journal_entry_id)
 );
 
@@ -461,22 +483,9 @@ CREATE TABLE "fin"."journal_line" (
   "branch_id" uuid NOT NULL,
   "debit" numeric(18,2) NOT NULL DEFAULT 0,
   "credit" numeric(18,2) NOT NULL DEFAULT 0,
-  "rule_code" text,
-  "rule_version" integer,
-  "rule_case" text,
-  "line_role_code" text,
-  "account_determination_id" uuid,
-  "determined_ledger_code" text,
-  "override_reason" text,
   CONSTRAINT "journal_line_debit_or_credit" CHECK ((debit > 0) <> (credit > 0)),
   CONSTRAINT "journal_line_not_negative" CHECK (debit >= 0 AND credit >= 0),
-  CONSTRAINT "journal_line_vendor_or_customer" CHECK (creditor_account_id IS NULL OR debtor_account_id IS NULL),
-  CONSTRAINT "journal_line_rule_has_version" CHECK ((rule_code IS NULL) = (rule_version IS NULL)),
-  CONSTRAINT "journal_line_rule_has_role" CHECK ((rule_code IS NULL) = (line_role_code IS NULL)),
-  CONSTRAINT "journal_line_case_needs_rule" CHECK (rule_case IS NULL OR rule_code IS NOT NULL),
-  CONSTRAINT "journal_line_determined_has_row" CHECK ((account_determination_id IS NULL) = (determined_ledger_code IS NULL)),
-  CONSTRAINT "journal_line_override_has_reason" CHECK (determined_ledger_code IS NULL OR determined_ledger_code = ledger_account_code OR coalesce(btrim(override_reason), '') <> ''),
-  CONSTRAINT "journal_line_reason_only_on_override" CHECK (override_reason IS NULL OR (determined_ledger_code IS NOT NULL AND determined_ledger_code IS DISTINCT FROM ledger_account_code))
+  CONSTRAINT "journal_line_vendor_or_customer" CHECK (creditor_account_id IS NULL OR debtor_account_id IS NULL)
 );
 
 CREATE TABLE "fin"."sales_invoice" (
@@ -496,6 +505,12 @@ CREATE TABLE "fin"."sales_invoice" (
   "due_date" date NOT NULL,
   "invoice_financial_year" integer GENERATED ALWAYS AS ((EXTRACT(year FROM invoice_date)::integer - CASE WHEN EXTRACT(month FROM invoice_date) < 4 THEN 1 ELSE 0 END)) STORED NOT NULL,
   "narration" text,
+  "document_type" text NOT NULL DEFAULT 'invoice',
+  "against_sales_invoice_id" uuid,
+  "note_reason" text,
+  "scheme_reference" text,
+  "stock_return_id" uuid,
+  "return_stock_posting" text,
   "inventory_mode" text,
   "costing_method" text,
   "stage" text NOT NULL,
@@ -518,7 +533,17 @@ CREATE TABLE "fin"."sales_invoice" (
   CONSTRAINT "sales_invoice_original_is_itself" CHECK (revision_no > 0 OR original_sales_invoice_id = sales_invoice_id),
   CONSTRAINT "sales_invoice_costing_method_valid" CHECK (costing_method IN ('fifo', 'weighted_average')),
   CONSTRAINT "sales_invoice_inventory_mode_valid" CHECK (inventory_mode IN ('perpetual', 'periodic')),
-  CONSTRAINT "sales_invoice_method_only_when_perpetual" CHECK ((inventory_mode IS NOT DISTINCT FROM 'perpetual') = (costing_method IS NOT NULL))
+  CONSTRAINT "sales_invoice_method_only_when_perpetual" CHECK ((inventory_mode IS NOT DISTINCT FROM 'perpetual') = (costing_method IS NOT NULL)),
+  CONSTRAINT "sales_invoice_document_type_valid" CHECK (document_type IN ('invoice', 'credit_note', 'debit_note')),
+  CONSTRAINT "sales_invoice_note_names_its_invoice" CHECK ((document_type = 'invoice') = (against_sales_invoice_id IS NULL)),
+  CONSTRAINT "sales_invoice_note_not_against_itself" CHECK (against_sales_invoice_id <> sales_invoice_id),
+  CONSTRAINT "sales_invoice_note_has_a_reason" CHECK ((document_type = 'invoice') = (note_reason IS NULL)),
+  CONSTRAINT "sales_invoice_credit_note_reason_valid" CHECK (document_type <> 'credit_note' OR note_reason IN ('return', 'scheme_discount', 'price_correction', 'goodwill')),
+  CONSTRAINT "sales_invoice_debit_note_reason_valid" CHECK (document_type <> 'debit_note' OR note_reason IN ('price_increase', 'additional_charge')),
+  CONSTRAINT "sales_invoice_scheme_needs_reference" CHECK ((note_reason IS NOT DISTINCT FROM 'scheme_discount') = (scheme_reference IS NOT NULL)),
+  CONSTRAINT "sales_invoice_return_needs_receipt" CHECK ((note_reason IS NOT DISTINCT FROM 'return') = (stock_return_id IS NOT NULL)),
+  CONSTRAINT "sales_invoice_return_has_stock_posting" CHECK ((note_reason IS NOT DISTINCT FROM 'return') = (return_stock_posting IS NOT NULL)),
+  CONSTRAINT "sales_invoice_return_stock_posting_valid" CHECK (return_stock_posting IN ('stores_receipt', 'with_credit_note'))
 );
 
 CREATE TABLE "fin"."sales_invoice_line" (
@@ -533,28 +558,13 @@ CREATE TABLE "fin"."sales_invoice_line" (
   "quantity" numeric(18,3),
   "stock_lot_id" uuid,
   "amount" numeric(18,2) NOT NULL,
-  "rule_code" text,
-  "rule_version" integer,
-  "rule_case" text,
-  "line_role_code" text,
-  "account_determination_id" uuid,
-  "determined_ledger_code" text,
-  "override_reason" text,
   CONSTRAINT "sales_invoice_line_side_valid" CHECK (side IN ('Dr', 'Cr')),
   CONSTRAINT "sales_invoice_line_ledger_or_customer" CHECK ((ledger_account_code IS NULL) <> (debtor_account_id IS NULL)),
-  CONSTRAINT "sales_invoice_line_customer_is_debit" CHECK (debtor_account_id IS NULL OR side = 'Dr'),
   CONSTRAINT "sales_invoice_line_amount_positive" CHECK (amount > 0),
   CONSTRAINT "sales_invoice_line_item_has_quantity" CHECK ((inventory_item_code IS NULL) = (quantity IS NULL)),
   CONSTRAINT "sales_invoice_line_quantity_positive" CHECK (quantity IS NULL OR quantity > 0),
   CONSTRAINT "sales_invoice_line_lot_needs_item" CHECK (stock_lot_id IS NULL OR inventory_item_code IS NOT NULL),
-  CONSTRAINT "sales_invoice_line_item_on_a_stock_credit" CHECK (inventory_item_code IS NULL OR (side = 'Cr' AND ledger_account_code IS NOT NULL)),
-  CONSTRAINT "sales_invoice_line_rule_has_version" CHECK ((rule_code IS NULL) = (rule_version IS NULL)),
-  CONSTRAINT "sales_invoice_line_rule_has_role" CHECK ((rule_code IS NULL) = (line_role_code IS NULL)),
-  CONSTRAINT "sales_invoice_line_case_needs_rule" CHECK (rule_case IS NULL OR rule_code IS NOT NULL),
-  CONSTRAINT "sales_invoice_line_determined_has_row" CHECK ((account_determination_id IS NULL) = (determined_ledger_code IS NULL)),
-  CONSTRAINT "sales_invoice_line_override_has_reason" CHECK (determined_ledger_code IS NULL OR determined_ledger_code = ledger_account_code OR coalesce(btrim(override_reason), '') <> ''),
-  CONSTRAINT "sales_invoice_line_reason_only_on_override" CHECK (override_reason IS NULL OR (determined_ledger_code IS NOT NULL AND determined_ledger_code IS DISTINCT FROM ledger_account_code)),
-  CONSTRAINT "sales_invoice_line_customer_role_is_the_customer" CHECK (line_role_code IS NULL OR (line_role_code = 'customer') = (debtor_account_id IS NOT NULL))
+  CONSTRAINT "sales_invoice_line_item_on_a_ledger_line" CHECK (inventory_item_code IS NULL OR ledger_account_code IS NOT NULL)
 );
 
 CREATE TABLE "fin"."sales_invoice_history" (
@@ -609,100 +619,6 @@ CREATE TABLE "fin"."book_setting" (
   CONSTRAINT "book_setting_period_is_ordered" CHECK (effective_until IS NULL OR effective_from < effective_until)
 );
 
-CREATE TABLE "fin"."line_role" (
-  "line_role_code" text PRIMARY KEY,
-  "display_name" text NOT NULL,
-  "ledger_source" text NOT NULL,
-  "required_kind" text NOT NULL,
-  "required_account_type" text,
-  CONSTRAINT "line_role_ledger_source_valid" CHECK (ledger_source IN ('determination', 'party_account')),
-  CONSTRAINT "line_role_required_kind_valid" CHECK (required_kind IN ('asset', 'liability', 'equity', 'income', 'expense')),
-  CONSTRAINT "line_role_required_account_type_valid" CHECK (required_account_type IN ('payable', 'receivable', 'stock', 'input_cgst', 'input_sgst', 'input_igst', 'tds_payable', 'output_cgst', 'output_sgst', 'output_igst', 'tcs_payable', 'round_off'))
-);
-
-CREATE TABLE "fin"."posting_rule" (
-  "rule_code" text NOT NULL,
-  "version" integer NOT NULL,
-  "document_type" text NOT NULL,
-  "display_name" text NOT NULL,
-  "effective_from" date NOT NULL,
-  "effective_until" date,
-  "code_ref" text NOT NULL,
-  "casebook_ref" text NOT NULL,
-  "change_note" text,
-  "released_at" timestamptz NOT NULL DEFAULT (now()),
-  CONSTRAINT "posting_rule_version_positive" CHECK (version > 0),
-  CONSTRAINT "posting_rule_document_type_valid" CHECK (document_type IN ('sales_invoice')),
-  CONSTRAINT "posting_rule_period_is_ordered" CHECK (effective_until IS NULL OR effective_from < effective_until),
-  PRIMARY KEY ("rule_code", "version")
-);
-
-CREATE TABLE "fin"."posting_rule_case" (
-  "rule_code" text NOT NULL,
-  "version" integer NOT NULL,
-  "case_code" text NOT NULL,
-  "display_name" text NOT NULL,
-  CONSTRAINT "posting_rule_case_code_format" CHECK (case_code ~ '^R[0-9]+$'),
-  PRIMARY KEY ("rule_code", "version", "case_code")
-);
-
-CREATE TABLE "fin"."posting_rule_role" (
-  "rule_code" text NOT NULL,
-  "version" integer NOT NULL,
-  "line_role_code" text NOT NULL,
-  PRIMARY KEY ("rule_code", "version", "line_role_code")
-);
-
-CREATE TABLE "fin"."account_determination" (
-  "account_determination_id" uuid PRIMARY KEY DEFAULT (gen_random_uuid()),
-  "workspace_id" text NOT NULL,
-  "book_id" uuid NOT NULL,
-  "document_type" text,
-  "line_role_code" text NOT NULL,
-  "party_kind" text,
-  "supply_scope" text,
-  "line_kind" text,
-  "taxability" text,
-  "settlement_mode" text,
-  "specificity" integer GENERATED ALWAYS AS (num_nonnulls(document_type, party_kind, supply_scope, line_kind, taxability, settlement_mode)) STORED NOT NULL,
-  "ledger_account_code" text NOT NULL,
-  "effective_from" date NOT NULL,
-  "effective_until" date,
-  "status" text NOT NULL,
-  "reason" text NOT NULL,
-  "replaces_account_determination_id" uuid,
-  "made_by_contact_id" uuid NOT NULL,
-  "made_at" timestamptz NOT NULL,
-  "checked_by_contact_id" uuid,
-  "checked_at" timestamptz,
-  "recorded_at" timestamptz NOT NULL DEFAULT (now()),
-  CONSTRAINT "account_determination_document_type_valid" CHECK (document_type IN ('sales_invoice')),
-  CONSTRAINT "account_determination_party_kind_valid" CHECK (party_kind IN ('domestic', 'export', 'sez')),
-  CONSTRAINT "account_determination_supply_scope_valid" CHECK (supply_scope IN ('intra_state', 'inter_state')),
-  CONSTRAINT "account_determination_line_kind_valid" CHECK (line_kind IN ('goods', 'service', 'charge', 'reimbursement')),
-  CONSTRAINT "account_determination_taxability_valid" CHECK (taxability IN ('taxable', 'nil_rated', 'exempt', 'non_gst')),
-  CONSTRAINT "account_determination_settlement_mode_valid" CHECK (settlement_mode IN ('credit', 'cash', 'upi_card')),
-  CONSTRAINT "account_determination_status_valid" CHECK (status IN ('proposed', 'approved', 'rejected')),
-  CONSTRAINT "account_determination_period_is_ordered" CHECK (effective_until IS NULL OR effective_from < effective_until),
-  CONSTRAINT "account_determination_decided_has_checker" CHECK ((status = 'proposed') = (checked_by_contact_id IS NULL)),
-  CONSTRAINT "account_determination_checker_has_a_time" CHECK ((checked_by_contact_id IS NULL) = (checked_at IS NULL)),
-  CONSTRAINT "account_determination_checker_not_maker" CHECK (checked_by_contact_id IS NULL OR checked_by_contact_id <> made_by_contact_id),
-  CONSTRAINT "account_determination_reason_not_blank" CHECK (btrim(reason) <> ''),
-  CONSTRAINT "account_determination_not_its_own_replacement" CHECK (replaces_account_determination_id <> account_determination_id)
-);
-
-CREATE TABLE "fin"."account_determination_history" (
-  "history_id" uuid PRIMARY KEY DEFAULT (gen_random_uuid()),
-  "workspace_id" text NOT NULL,
-  "account_determination_id" uuid NOT NULL,
-  "operation" text NOT NULL,
-  "row_snapshot" jsonb NOT NULL,
-  "performer_contact_id" uuid NOT NULL,
-  "reason" text,
-  "recorded_at" timestamptz NOT NULL DEFAULT (now()),
-  CONSTRAINT "account_determination_history_operation_valid" CHECK (operation IN ('propose', 'approve', 'reject', 'close'))
-);
-
 CREATE TABLE "inv"."stock_lot" (
   "stock_lot_id" uuid PRIMARY KEY DEFAULT (gen_random_uuid()),
   "workspace_id" text NOT NULL,
@@ -721,15 +637,35 @@ CREATE TABLE "inv"."stock_lot" (
   CONSTRAINT "stock_lot_unit_cost_not_negative" CHECK (unit_cost >= 0)
 );
 
+CREATE TABLE "inv"."stock_return" (
+  "stock_return_id" uuid PRIMARY KEY DEFAULT (gen_random_uuid()),
+  "workspace_id" text NOT NULL,
+  "return_no" text NOT NULL,
+  "branch_id" uuid NOT NULL,
+  "received_on" date NOT NULL,
+  "debtor_account_id" uuid NOT NULL,
+  "against_sales_invoice_id" uuid NOT NULL,
+  "item_code" text NOT NULL,
+  "from_stock_lot_id" uuid NOT NULL,
+  "quantity" numeric(18,3) NOT NULL,
+  "condition" text NOT NULL,
+  "to_stock_lot_id" uuid NOT NULL,
+  "unit_cost" numeric(18,4) NOT NULL,
+  "journal_entry_id" uuid,
+  "recorded_by_contact_id" uuid NOT NULL,
+  "recorded_at" timestamptz NOT NULL DEFAULT (now()),
+  CONSTRAINT "stock_return_quantity_positive" CHECK (quantity > 0),
+  CONSTRAINT "stock_return_condition_valid" CHECK (condition IN ('saleable', 'damaged')),
+  CONSTRAINT "stock_return_unit_cost_not_negative" CHECK (unit_cost >= 0)
+);
+
 CREATE UNIQUE INDEX ON "pc"."operated_party" ("workspace_id", "operated_party_id");
 
 CREATE UNIQUE INDEX ON "pc"."party" ("workspace_id", "party_id");
 
-CREATE UNIQUE INDEX ON "pc"."party_identifier" ("workspace_id", "party_identifier_id");
+CREATE UNIQUE INDEX ON "pc"."party_trade_name" ("workspace_id", "party_id", "trade_name_id");
 
 CREATE UNIQUE INDEX ON "pc"."business_location" ("workspace_id", "business_location_id");
-
-CREATE UNIQUE INDEX ON "pc"."party_standing" ("workspace_id", "party_standing_id");
 
 CREATE UNIQUE INDEX ON "pc"."contact" ("workspace_id", "contact_id");
 
@@ -789,8 +725,6 @@ CREATE INDEX "journal_line_ledger_idx" ON "fin"."journal_line" ("workspace_id", 
 
 CREATE INDEX "journal_line_branch_ledger_idx" ON "fin"."journal_line" ("workspace_id", "branch_id", "ledger_account_code");
 
-CREATE INDEX "journal_line_determination_idx" ON "fin"."journal_line" ("workspace_id", "account_determination_id");
-
 CREATE UNIQUE INDEX "sales_invoice_workspace_identity_key" ON "fin"."sales_invoice" ("workspace_id", "sales_invoice_id");
 
 CREATE UNIQUE INDEX "sales_invoice_internal_ref_no_key" ON "fin"."sales_invoice" ("workspace_id", "operated_party_id", "internal_ref_no");
@@ -815,21 +749,17 @@ CREATE UNIQUE INDEX "book_setting_workspace_identity_key" ON "fin"."book_setting
 
 CREATE INDEX "book_setting_lookup_idx" ON "fin"."book_setting" ("workspace_id", "book_id", "setting_code", "effective_from");
 
-CREATE UNIQUE INDEX "account_determination_workspace_identity_key" ON "fin"."account_determination" ("workspace_id", "account_determination_id");
-
-CREATE UNIQUE INDEX "account_determination_trace_key" ON "fin"."account_determination" ("workspace_id", "account_determination_id", "line_role_code", "ledger_account_code");
-
-CREATE UNIQUE INDEX "account_determination_replaced_once" ON "fin"."account_determination" ("workspace_id", "replaces_account_determination_id") WHERE status <> 'rejected';
-
-CREATE INDEX "account_determination_lookup_idx" ON "fin"."account_determination" ("workspace_id", "book_id", "line_role_code", "effective_from");
-
-CREATE INDEX "account_determination_history_idx" ON "fin"."account_determination_history" ("workspace_id", "account_determination_id", "recorded_at");
-
 CREATE UNIQUE INDEX "stock_lot_workspace_identity_key" ON "inv"."stock_lot" ("workspace_id", "stock_lot_id");
 
 CREATE UNIQUE INDEX "stock_lot_lot_key" ON "inv"."stock_lot" ("workspace_id", "branch_id", "godown_code", "item_code", "lot_no");
 
 CREATE INDEX "stock_lot_fifo_idx" ON "inv"."stock_lot" ("workspace_id", "branch_id", "item_code", "received_on");
+
+CREATE UNIQUE INDEX "stock_return_workspace_identity_key" ON "inv"."stock_return" ("workspace_id", "stock_return_id");
+
+CREATE UNIQUE INDEX "stock_return_no_key" ON "inv"."stock_return" ("workspace_id", "branch_id", "return_no");
+
+CREATE INDEX "stock_return_invoice_idx" ON "inv"."stock_return" ("workspace_id", "against_sales_invoice_id");
 
 COMMENT ON TABLE "pc"."operated_party" IS 'P&C says which party is our company. THE company key in Finance (as on the vendor side): no legal_entity_id, no separate book key.';
 
@@ -837,9 +767,13 @@ COMMENT ON COLUMN "pc"."operated_party"."operated_party_id" IS 'OP-1: our compan
 
 COMMENT ON COLUMN "pc"."operated_party"."party_id" IS 'P-OUR = Aikyat Technologies';
 
+COMMENT ON COLUMN "pc"."operated_party"."recorded_at" IS 'P&C: when Aikyat first recorded the row (never changed)';
+
+COMMENT ON COLUMN "pc"."operated_party"."updated_at" IS 'P&C: touched on every change';
+
 COMMENT ON TABLE "pc"."private_anchor" IS 'A hidden identity row behind every party and contact; its id becomes party_id / contact_id. Finance never reads it.';
 
-COMMENT ON COLUMN "pc"."private_anchor"."anchor_kind" IS 'organization | person';
+COMMENT ON COLUMN "pc"."private_anchor"."anchor_kind" IS 'person | organization | system | destination (P&C: private_anchor_kind_valid)';
 
 COMMENT ON TABLE "pc"."party" IS 'Who the customer is, as a legal person.';
 
@@ -849,7 +783,15 @@ COMMENT ON COLUMN "pc"."party"."party_kind" IS 'person | organization';
 
 COMMENT ON COLUMN "pc"."party"."legal_form_code" IS 'pc.legal_form: IN_PVT_LTD … (only IN_PVT_LTD is seeded today)';
 
+COMMENT ON COLUMN "pc"."party"."recorded_at" IS 'P&C: when Aikyat first recorded the row (never changed)';
+
+COMMENT ON COLUMN "pc"."party"."updated_at" IS 'P&C: touched on every change';
+
 COMMENT ON COLUMN "pc"."party_trade_name"."name" IS 'the form''s Customer Name';
+
+COMMENT ON COLUMN "pc"."party_trade_name"."recorded_at" IS 'P&C: when Aikyat first recorded the row (never changed)';
+
+COMMENT ON COLUMN "pc"."party_trade_name"."updated_at" IS 'P&C: touched on every change';
 
 COMMENT ON TABLE "pc"."party_identifier" IS 'PAN and EVERY GSTIN (main + B1) of the customer. Not unique by design: a match never merges by itself. No location column.';
 
@@ -858,6 +800,10 @@ COMMENT ON COLUMN "pc"."party_identifier"."scheme_code" IS 'IN_PAN | IN_GST';
 COMMENT ON COLUMN "pc"."party_identifier"."jurisdiction_scope_code" IS 'IN for PAN; the GST state for a GSTIN, e.g. IN-TN';
 
 COMMENT ON COLUMN "pc"."party_identifier"."standing_code" IS 'GST: active | suspended | cancelled | none_held';
+
+COMMENT ON COLUMN "pc"."party_identifier"."recorded_at" IS 'P&C: when Aikyat first recorded the row (never changed)';
+
+COMMENT ON COLUMN "pc"."party_identifier"."updated_at" IS 'P&C: touched on every change';
 
 COMMENT ON TABLE "pc"."business_location" IS 'A physical place of the customer: the registered address, each B1 branch address, a shipping address. Carries no GSTIN.';
 
@@ -869,21 +815,47 @@ COMMENT ON COLUMN "pc"."business_location"."administrative_area_code" IS 'IN-KA'
 
 COMMENT ON COLUMN "pc"."business_location"."until" IS 'a closed place gets an until; never deleted';
 
+COMMENT ON COLUMN "pc"."business_location"."recorded_at" IS 'P&C: when Aikyat first recorded the row (never changed)';
+
+COMMENT ON COLUMN "pc"."business_location"."updated_at" IS 'P&C: touched on every change';
+
 COMMENT ON TABLE "pc"."party_standing" IS 'P-1 is a customer OF our company OP-1. A party already our vendor gets a second standing, never a second party.';
 
 COMMENT ON COLUMN "pc"."party_standing"."standing_type_code" IS 'customer (to be seeded in P&C: no standing types are seeded yet)';
+
+COMMENT ON COLUMN "pc"."party_standing"."recorded_at" IS 'P&C: when Aikyat first recorded the row (never changed)';
+
+COMMENT ON COLUMN "pc"."party_standing"."updated_at" IS 'P&C: touched on every change';
 
 COMMENT ON TABLE "pc"."contact" IS 'The customer''s contact person, and our own staff (Teja, Rajan, Farid, Venkat, Arun): every *_contact_id in Finance points here.';
 
 COMMENT ON COLUMN "pc"."contact"."contact_id" IS 'same value as its private_anchor';
 
-COMMENT ON COLUMN "pc"."contact"."contact_kind" IS 'person | system: every Finance *_contact_id must be a person (checked by the action; a foreign key cannot)';
+COMMENT ON COLUMN "pc"."contact"."contact_kind" IS 'person | system | destination (P&C: contact_kind_valid): every Finance *_contact_id must be a person (checked by the action; a foreign key cannot)';
+
+COMMENT ON COLUMN "pc"."contact"."recorded_at" IS 'P&C: when Aikyat first recorded the row (never changed)';
+
+COMMENT ON COLUMN "pc"."contact"."updated_at" IS 'P&C: touched on every change';
 
 COMMENT ON COLUMN "pc"."contact_party_association"."capacity_code" IS 'customer_contact (to be seeded)';
 
-COMMENT ON COLUMN "pc"."contact_point"."channel_kind" IS 'phone | email';
+COMMENT ON COLUMN "pc"."contact_party_association"."scope" IS 'P&C: what the association covers, a non-empty object, or none';
+
+COMMENT ON COLUMN "pc"."contact_party_association"."recorded_at" IS 'P&C: when Aikyat first recorded the row (never changed)';
+
+COMMENT ON COLUMN "pc"."contact_party_association"."updated_at" IS 'P&C: touched on every change';
+
+COMMENT ON COLUMN "pc"."contact_point"."channel_kind" IS 'email | phone | url | postal (P&C: contact_point_channel_kind_valid; postal = a business_location, no route_value)';
+
+COMMENT ON COLUMN "pc"."contact_point"."recorded_at" IS 'P&C: when Aikyat first recorded the row (never changed)';
+
+COMMENT ON COLUMN "pc"."contact_point"."updated_at" IS 'P&C: touched on every change';
 
 COMMENT ON TABLE "pc"."record_history" IS 'P&C''s own history: one row per P&C record written.';
+
+COMMENT ON COLUMN "pc"."record_history"."activity_ref" IS 'P&C: the activity that wrote it, a non-empty object, or none';
+
+COMMENT ON COLUMN "pc"."record_history"."decision_ref" IS 'P&C: the decision behind it, a non-empty object, or none';
 
 COMMENT ON TABLE "fin"."ledger_account" IS 'The chart of accounts: groups and ledgers in one table. SHARED with the vendor side (Manoj''s table, same columns).
 Rev 5: no "control ledger" (Manoj, 13-Nov): a ledger whose account_type is receivable takes only lines that name a customer account.
@@ -1204,6 +1176,8 @@ T24 uses it for sales_invoice.internal_ref_no (SV-nnnn). The GST invoice number 
 COMMENT ON COLUMN "fin"."document_sequence"."document_type" IS 'purchase_invoice (PV-0001) · T24: sales_invoice (SV-0001); one row per voucher type';
 
 COMMENT ON TABLE "fin"."journal_entry" IS 'Manoj''s (0005), written once (append-only trigger). T24 rev 2 changes ONE thing: voucher_type also allows ''sales''
+(credit and debit notes post as ''sales'' too: their own document, so one forward entry each). Rev 18 adds ''stock_return'': the
+Stock back entry of Stores'' return receipt (source_document_id = inv.stock_return), when the book''s setting says so
 (the CHECK is dropped and re-added; his rows are untouched; T1 is checked again).
 At commit, fin.check_journal_entry refuses an entry that breaks any of 8 rules (HINT = the code): ENTRY_NOT_BALANCED ·
 ENTRY_ACROSS_COMPANIES · ENTRY_OUTSIDE_ITS_YEAR · FINANCIAL_YEAR_CLOSED · POSTED_TO_A_GROUP · SUBLEDGER_MISMATCH ·
@@ -1225,9 +1199,8 @@ COMMENT ON COLUMN "fin"."journal_entry"."reverses_journal_entry_id" IS 'a revers
 
 COMMENT ON COLUMN "fin"."journal_entry"."posted_by_contact_id" IS 'T24: the Accounts Manager who approved';
 
-COMMENT ON TABLE "fin"."journal_line" IS 'Manoj''s (0005). Rev 17 adds 7 trace columns, all nullable so his purchase lines stay valid (to agree with him: G41):
-the rule, its version and case, the line''s role, the mapping row and the ledger it gave, and the reason for an override.
-"Why was this posted?" = this line → its rule version (the code) → its mapping row (the configuration). One line per fin.sales_invoice_line at Post, the 7 copied as they are. What a customer owes =
+COMMENT ON TABLE "fin"."journal_line" IS 'Manoj''s (0005), as built. Rev 17''s 7 trace columns (rule, version, case, role, mapping row, determined ledger,
+override reason) are removed in rev 19: the AE picks the ledger and types Dr / Cr. One line per fin.sales_invoice_line at Post. What a customer owes =
 Σ(debit − credit) of its lines (journal.debtor_balance, the twin of creditor_balance); it always adds up to the receivable ledgers.';
 
 COMMENT ON COLUMN "fin"."journal_line"."ledger_account_code" IS 'always a ledger; the customer line: the account''s own receivable ledger (107100 …)';
@@ -1235,20 +1208,6 @@ COMMENT ON COLUMN "fin"."journal_line"."ledger_account_code" IS 'always a ledger
 COMMENT ON COLUMN "fin"."journal_line"."creditor_account_id" IS 'set on a vendor''s line';
 
 COMMENT ON COLUMN "fin"."journal_line"."debtor_account_id" IS 'set on a customer''s line (T24): the subledger is these lines grouped by account';
-
-COMMENT ON COLUMN "fin"."journal_line"."rule_code" IS 'rev 17 (S1 part 2): the rule that wrote the line: SALES_INVOICE. NULL: a line typed by hand, or his purchase line until his rules register (G41)';
-
-COMMENT ON COLUMN "fin"."journal_line"."rule_version" IS 'rev 17: 1. With the rule, never without';
-
-COMMENT ON COLUMN "fin"."journal_line"."rule_case" IS 'rev 17: the case of the rule: R1 · R13. NULL: a line common to every case (the customer, GST, round-off)';
-
-COMMENT ON COLUMN "fin"."journal_line"."line_role_code" IS 'rev 17: what the line is for: revenue · output_cgst · cogs · customer. Must be one its rule writes (FK)';
-
-COMMENT ON COLUMN "fin"."journal_line"."account_determination_id" IS 'rev 17: the mapping row that gave the ledger (fin.account_determination). NULL: the customer line (its account''s own ledger) or no rule';
-
-COMMENT ON COLUMN "fin"."journal_line"."determined_ledger_code" IS 'rev 17: the ledger the mapping gave (401010); the FK proves it is that row''s ledger. = the posted ledger unless overridden';
-
-COMMENT ON COLUMN "fin"."journal_line"."override_reason" IS 'rev 17: why another ledger than the mapping gave (the AE''s edit, §8.4): required then, refused otherwise';
 
 COMMENT ON TABLE "fin"."sales_invoice" IS 'T24: the twin of fin.purchase_invoice. One row per Billing invoice the AE books; created at Submit (as his).
 FLOW: Submit (AE) → submitted ─Decide (Accounts Manager, not the maker)→ approve: every gate again + PostJournalEntry in one
@@ -1263,9 +1222,10 @@ AMOUNT_NOT_VALID · LEDGER_NOT_POSTABLE · CUSTOMER_NOT_FOUND · DEBTOR_ACCOUNT_
 DEBITS_CREDITS_DIFFER · NOT_AS_INVOICED (the customer, GST and total lines must equal Billing''s invoice) · rev 15: NO_STOCK_RECORD ·
 STOCK_SHORT · COST_NOT_AS_INVENTORY (the cost lines = the lots by costing_method; FIFO names its lot, weighted average none) ·
 STOCK_LINE_NEEDS_ITEM (a stock ledger line names its item) · rev 16: SETTING_MISSING (no inventory_mode / costing_method in force
-on the invoice date: the exception queue, never a guess) · COST_LINES_WHEN_PERIODIC · rev 17: RULE_NOT_IN_FORCE (no version of
-SALES_INVOICE on the posting date) · ACCOUNT_NOT_DETERMINED · ACCOUNT_AMBIGUOUS (no mapping row, or a tie: the exception queue) ·
-OVERRIDE_NEEDS_REASON · MAPPING_CHANGED (approval looks up again; another row than at Submit → sent back) · AMEND_NOT_POSTED ·
+on the invoice date: the exception queue, never a guess) · COST_LINES_WHEN_PERIODIC · rev 18 (notes): NOTE_AGAINST_A_POSTED_INVOICE ·
+NOTE_SAME_CUSTOMER_AND_GSTIN · WAITING_FOR_RETURN_RECEIPT (C-17) · SCHEME_REFERENCE_NEEDED (C-19) · NOTE_TIME_LIMIT (a GST credit
+note by 30 November after the invoice''s year: warn within 60 days, stop after) · (rev 17''s RULE_NOT_IN_FORCE · ACCOUNT_NOT_DETERMINED ·
+ACCOUNT_AMBIGUOUS · OVERRIDE_NEEDS_REASON · MAPPING_CHANGED: removed in rev 19, no posting rules or mapping) · AMEND_NOT_POSTED ·
 AMENDMENT_PENDING · FINANCIAL_YEAR_CLOSED · MAKER_MAY_NOT_DECIDE · NO_REASON_GIVEN.
 DIFFERENCES FROM HIS (deliberate): no source_extraction_id (no PDF: Billing hands the invoice over, G37); debtor_account_id may
 be NULL (a B2C sale paid at once, his vendor is always there); the never-twice key is per branch, not per party (the number is
@@ -1299,6 +1259,18 @@ COMMENT ON COLUMN "fin"."sales_invoice"."invoice_financial_year" IS 'GENERATED: 
 
 COMMENT ON COLUMN "fin"."sales_invoice"."narration" IS 'Being goods sold to Sri Lakshmi Distributors: copied to the journal entry';
 
+COMMENT ON COLUMN "fin"."sales_invoice"."document_type" IS 'rev 18 (T25, T26): invoice | credit_note | debit_note. ONE family: a note is a sales document, booked the same way (G42)';
+
+COMMENT ON COLUMN "fin"."sales_invoice"."against_sales_invoice_id" IS 'rev 18: the invoice a note corrects (GST s.34: the note names it): KA/INV/2627/0143. NULL on an invoice. Trigger: a posted invoice of the same customer and GSTIN';
+
+COMMENT ON COLUMN "fin"."sales_invoice"."note_reason" IS 'rev 18: credit note: return | scheme_discount (agreed before supply: GST reduced) | price_correction | goodwill (no scheme: no GST, s.15(3)) · debit note: price_increase | additional_charge (late freight)';
+
+COMMENT ON COLUMN "fin"."sales_invoice"."scheme_reference" IS 'rev 18: SCH-26-Q2: the pre-agreed scheme that lets a discount reduce GST (s.15(3)(b)); only and always on a scheme_discount (C-19)';
+
+COMMENT ON COLUMN "fin"."sales_invoice"."stock_return_id" IS 'rev 18: a return note names Stores'' return receipt (D-05): no receipt, no return note (C-17, "waiting for return receipt")';
+
+COMMENT ON COLUMN "fin"."sales_invoice"."return_stock_posting" IS 'rev 18: stores_receipt | with_credit_note: the book''s setting on the note date, stamped as used (who posts the stock back). Only on a return';
+
 COMMENT ON COLUMN "fin"."sales_invoice"."inventory_mode" IS 'rev 16: perpetual | periodic, the book''s setting in force on the invoice date (fin.book_setting), stamped as used. Periodic: no cost lines (T11 posts the month''s cost). NULL: no goods (services only)';
 
 COMMENT ON COLUMN "fin"."sales_invoice"."costing_method" IS 'rev 15: fifo | weighted_average, the company''s method when the cost lines were made (the "why" of their amounts). NULL: no goods (services only), or periodic (rev 16)';
@@ -1314,10 +1286,13 @@ COMMENT ON COLUMN "fin"."sales_invoice"."decision_reason" IS 'why rejected or se
 COMMENT ON COLUMN "fin"."sales_invoice"."journal_entry_id" IS 'the posted entry (JE-233)';
 
 COMMENT ON TABLE "fin"."sales_invoice_line" IS 'T24: the twin of fin.purchase_invoice_line: side, a ledger OR the customer, amount. Replaced whole on each Submit.
-Rev 17: the code writes each line''s ROLE (and case); the mapping (fin.determine_ledger, on the posting date) gives its ledger; the
-line keeps both, and the 7 trace columns go to the journal line unchanged at Post.
+Rev 19: rev 17''s 7 trace columns (rule, role, mapping row …) and their CHECKs are removed: the AE picks each ledger.
 At Post: one journal_line per row, same order; the customer line goes to its account''s ledger (107100) naming the account.
-His vendor line must be Cr; our customer line must be Dr (a sale debits the customer).
+His vendor line must be Cr; our customer line must be Dr (a sale debits the customer). Rev 18: the SIDE rules depend on the
+document (a CHECK cannot read the header), so they moved to the trigger sales_invoice_line_side (by hand): on an invoice or a
+debit note the customer line is Dr and a stock line Cr; on a credit note the customer line is Cr and a stock line (the goods
+back) Dr. Rev 14''s CHECKs sales_invoice_line_customer_is_debit and _item_on_a_stock_credit are replaced by it (+ the CHECK
+sales_invoice_line_item_on_a_ledger_line: an item only on a ledger line).
 Rev 15 (R13): the cost lines: Dr 501040 Cost of Goods Sold (the total) · Cr 106020 Finished Goods per lot (FIFO) or per item
 (weighted average), each naming its item and quantity (and its lot under FIFO). B4-01, FIFO: 300 FG-101 from G-2604 at ₹540 +
 300 from G-2608 at ₹560 + 300 FG-102 from C-2607 at ₹760 = ₹5,58,000.00 (lot costs illustrative). The item has no foreign key:
@@ -1327,7 +1302,7 @@ COMMENT ON COLUMN "fin"."sales_invoice_line"."line_no" IS '1, 2, 3 … (Screen: 
 
 COMMENT ON COLUMN "fin"."sales_invoice_line"."side" IS 'Dr | Cr';
 
-COMMENT ON COLUMN "fin"."sales_invoice_line"."ledger_account_code" IS 'a ledger line: 401010 Sale of Products · 206011 Output CGST … (rev 17: given by the mapping for the line''s role; the AE may pick another, with a reason)';
+COMMENT ON COLUMN "fin"."sales_invoice_line"."ledger_account_code" IS 'a ledger line: 401010 Sale of Products · 206011 Output CGST … (rev 19: the AE picks it; rev 17''s mapping removed)';
 
 COMMENT ON COLUMN "fin"."sales_invoice_line"."debtor_account_id" IS 'the customer line (instead of a ledger): posts to the customer account''s own receivable ledger';
 
@@ -1338,20 +1313,6 @@ COMMENT ON COLUMN "fin"."sales_invoice_line"."quantity" IS 'rev 15: the quantity
 COMMENT ON COLUMN "fin"."sales_invoice_line"."stock_lot_id" IS 'rev 15: FIFO: the lot it came from (G-2604). NULL under weighted average (all lots, at the average)';
 
 COMMENT ON COLUMN "fin"."sales_invoice_line"."amount" IS '7,48,125.00';
-
-COMMENT ON COLUMN "fin"."sales_invoice_line"."rule_code" IS 'rev 17 (S1 part 2): the rule that wrote the line: SALES_INVOICE. NULL: a line typed by hand, or a line the AE added';
-
-COMMENT ON COLUMN "fin"."sales_invoice_line"."rule_version" IS 'rev 17: 1. With the rule, never without';
-
-COMMENT ON COLUMN "fin"."sales_invoice_line"."rule_case" IS 'rev 17: the case of the rule: R1 · R13. NULL: a line common to every case (the customer, GST, round-off)';
-
-COMMENT ON COLUMN "fin"."sales_invoice_line"."line_role_code" IS 'rev 17: what the line is for: revenue · output_cgst · cogs · customer. Must be one its rule writes (FK)';
-
-COMMENT ON COLUMN "fin"."sales_invoice_line"."account_determination_id" IS 'rev 17: the mapping row that gave the ledger (fin.account_determination). NULL: the customer line (its account''s own ledger) or no rule';
-
-COMMENT ON COLUMN "fin"."sales_invoice_line"."determined_ledger_code" IS 'rev 17: the ledger the mapping gave (401010); the FK proves it is that row''s ledger. = the posted ledger unless overridden';
-
-COMMENT ON COLUMN "fin"."sales_invoice_line"."override_reason" IS 'rev 17: why another ledger than the mapping gave (the AE''s edit, §8.4): required then, refused otherwise';
 
 COMMENT ON TABLE "fin"."sales_invoice_history" IS 'T24: the twin of fin.purchase_invoice_history. One row per version, append-only (trigger). Screen: Approval & history.';
 
@@ -1407,113 +1368,6 @@ COMMENT ON COLUMN "fin"."book_setting"."reason" IS 'why the setting changed (Ind
 
 COMMENT ON COLUMN "fin"."book_setting"."approved_by_contact_id" IS 'the Accounts Manager (Rajan)';
 
-COMMENT ON TABLE "fin"."line_role" IS 'S1 part 2 (rev 17): the FIXED list of line roles, shared by the code and the mapping. The posting code writes a role on
-each line, never a ledger code; the mapping turns the role into a ledger, and may only pick a ledger of the role''s kind and type
-(trigger account_determination_guard). A new role comes only with new code (a new rule version).
-Seeded with the 12 roles SALES_INVOICE v1 writes (t24_schema_test.sql). TCS (R7) has no role yet: the app does not compute it.';
-
-COMMENT ON COLUMN "fin"."line_role"."line_role_code" IS 'customer · revenue · output_cgst · cogs · stock …';
-
-COMMENT ON COLUMN "fin"."line_role"."display_name" IS 'Revenue from the line · Output CGST · Cost of goods sold (R13)';
-
-COMMENT ON COLUMN "fin"."line_role"."ledger_source" IS 'determination: fin.account_determination gives the ledger · party_account: the customer''s own ledger (debtor_account.ledger_account_code, from its category), as SAP takes it from the customer master';
-
-COMMENT ON COLUMN "fin"."line_role"."required_kind" IS 'the ledger must be of this kind: income (revenue) · liability (output GST) · asset · expense';
-
-COMMENT ON COLUMN "fin"."line_role"."required_account_type" IS 'and of exactly this account_type (NULL: a ledger with none): output_cgst → only a ledger typed output_cgst';
-
-COMMENT ON TABLE "fin"."posting_rule" IS 'S1 part 2 (rev 17): the REGISTER of the posting code: one row per released version of the one function per document type.
-The logic is CODE, tested against the CA''s answer keys; it is not data. This row lets every line name the version that wrote it
-(the FK from journal_line) and tells the completeness check which roles a version can write.
-BY HAND (out.sql): posting_rule_no_overlap EXCLUDE (one version of a rule in force on any day).
-Not per workspace: the code is the same for every company. What differs per book (the ledgers) is in fin.account_determination.';
-
-COMMENT ON COLUMN "fin"."posting_rule"."rule_code" IS 'SALES_INVOICE (T25 adds SALES_CREDIT_NOTE, T26 SALES_DEBIT_NOTE)';
-
-COMMENT ON COLUMN "fin"."posting_rule"."version" IS '1. Any change to the logic is a new version; the old one stays for the entries it made';
-
-COMMENT ON COLUMN "fin"."posting_rule"."document_type" IS 'the document it posts: sales_invoice';
-
-COMMENT ON COLUMN "fin"."posting_rule"."display_name" IS 'Sales invoice: the customer, revenue, GST and the cost of goods sold';
-
-COMMENT ON COLUMN "fin"."posting_rule"."effective_from" IS '01-Apr-2026. The version in force on the posting date is used: an old event replays under its old rule';
-
-COMMENT ON COLUMN "fin"."posting_rule"."effective_until" IS 'NULL = in force';
-
-COMMENT ON COLUMN "fin"."posting_rule"."code_ref" IS 'where the logic is: app/sales/src/sales/engine.ts postingFor() (later: the engine''s posting code)';
-
-COMMENT ON COLUMN "fin"."posting_rule"."casebook_ref" IS 'the tests it passed before release: casebook.test.ts · expected_postings.json (the CA''s answer keys)';
-
-COMMENT ON COLUMN "fin"."posting_rule"."change_note" IS 'what changed from the previous version';
-
-COMMENT ON TABLE "fin"."posting_rule_case" IS 'S1 part 2 (rev 17): the cases inside a rule version: which branch of the code wrote a line (R1 local goods, R13 the cost …).
-A line common to every case (the customer, GST, round-off) names none. 13 rows for SALES_INVOICE v1.';
-
-COMMENT ON COLUMN "fin"."posting_rule_case"."case_code" IS 'R1 … R13: the CA''s cases, as the app''s Posting rules screen lists them';
-
-COMMENT ON COLUMN "fin"."posting_rule_case"."display_name" IS 'Goods, domestic, local (place of supply = our branch''s state)';
-
-COMMENT ON TABLE "fin"."posting_rule_role" IS 'S1 part 2 (rev 17): the roles a rule version can write (SALES_INVOICE v1: 12). A line''s role must be one of its rule''s (FK);
-the completeness check (fin.account_determination_gaps) asks whether a book maps every one of them before it goes live.';
-
-COMMENT ON TABLE "fin"."account_determination" IS 'S1 part 2 (rev 17): THE LEDGER MAPPING: configuration, owned by the accounting administrators (a maker and a checker).
-Book + document type + line role + conditions → ledger, dated. The look-up (fin.determine_ledger, by hand) takes the approved rows
-in force on the posting date whose conditions are NULL or equal to the line''s facts; the most specific wins; none →
-ACCOUNT_NOT_DETERMINED, a tie → ACCOUNT_AMBIGUOUS: the exception queue, never a guess.
-The customer line is not mapped here: its ledger is the customer account''s own (debtor_account, from its category).
-BY HAND (out.sql): specificity GENERATED · account_determination_no_overlap EXCLUDE (two approved rows with the same book, role and
-conditions never overlap in time) · trigger account_determination_guard: the role is mapped here (ROLE_NOT_MAPPABLE); the ledger is
-postable (LEDGER_NOT_POSTABLE) and of the role''s kind and type (ROLE_LEDGER_TYPE_MISMATCH); a decided row is final, only its end
-date may be set, once (DETERMINATION_IS_FINAL); no start or end in a closed year (DETERMINATION_BACKDATED); never ended before a
-posted line that used it (DETERMINATION_IN_USE).
-Corrections never look up again: a reversal copies its lines'' ledgers (REVERSAL_NOT_A_MIRROR); a note against an invoice mirrors
-the invoice''s lines (T25 / T26). Only a brand-new line is looked up.
-Seeded (t24_schema_test.sql): 19 rows for Aikyat''s primary book = the app''s ledgers today (catalogue.ts LEDGERS + engine.ts
-caseOf); illustrative until the CA confirms the chart (G18).';
-
-COMMENT ON COLUMN "fin"."account_determination"."book_id" IS 'the BOOK, not only the company: an Ind AS book and an Indian GAAP book may map a role to different ledgers';
-
-COMMENT ON COLUMN "fin"."account_determination"."document_type" IS 'sales_invoice · NULL = every document (Output CGST is the same ledger for an invoice and its notes)';
-
-COMMENT ON COLUMN "fin"."account_determination"."line_role_code" IS 'revenue';
-
-COMMENT ON COLUMN "fin"."account_determination"."party_kind" IS 'condition: domestic | export | sez · NULL = any';
-
-COMMENT ON COLUMN "fin"."account_determination"."supply_scope" IS 'condition: intra_state | inter_state (place of supply vs our branch''s state) · NULL = any';
-
-COMMENT ON COLUMN "fin"."account_determination"."line_kind" IS 'condition: goods | service | charge | reimbursement · NULL = any';
-
-COMMENT ON COLUMN "fin"."account_determination"."taxability" IS 'condition: taxable | nil_rated | exempt | non_gst · NULL = any';
-
-COMMENT ON COLUMN "fin"."account_determination"."settlement_mode" IS 'condition: credit | cash | upi_card · NULL = any';
-
-COMMENT ON COLUMN "fin"."account_determination"."specificity" IS 'GENERATED (by hand): how many of the 6 conditions are set. The most specific matching row wins; a tie stops (ACCOUNT_AMBIGUOUS)';
-
-COMMENT ON COLUMN "fin"."account_determination"."ledger_account_code" IS '401010 Sale of Products: postable, of the role''s kind and type (trigger)';
-
-COMMENT ON COLUMN "fin"."account_determination"."effective_from" IS '01-Apr-2026. The look-up uses the POSTING DATE';
-
-COMMENT ON COLUMN "fin"."account_determination"."effective_until" IS 'NULL = in force. A change closes this row and adds a new one (replaces_…): nothing is edited';
-
-COMMENT ON COLUMN "fin"."account_determination"."status" IS 'proposed (the maker) → approved | rejected (the checker). Only approved rows are used';
-
-COMMENT ON COLUMN "fin"."account_determination"."reason" IS 'why: "R1, R2: goods sold in India". A change is a change of accounting policy (Ind AS 8)';
-
-COMMENT ON COLUMN "fin"."account_determination"."replaces_account_determination_id" IS 'the row this one replaces (closed on this one''s start date)';
-
-COMMENT ON COLUMN "fin"."account_determination"."made_by_contact_id" IS 'the maker: the Accounts Executive (Teja)';
-
-COMMENT ON COLUMN "fin"."account_determination"."checked_by_contact_id" IS 'the checker: the Accounts Manager (Rajan); never the maker';
-
-COMMENT ON TABLE "fin"."account_determination_history" IS 'S1 part 2 (rev 17): every step of a mapping row, append-only (as sales_invoice_history): who proposed it, who approved,
-rejected or closed it, and why. A mapping change is a change of accounting policy: this is its audit trail.';
-
-COMMENT ON COLUMN "fin"."account_determination_history"."operation" IS 'propose | approve | reject | close';
-
-COMMENT ON COLUMN "fin"."account_determination_history"."row_snapshot" IS 'the row as it then stood';
-
-COMMENT ON COLUMN "fin"."account_determination_history"."performer_contact_id" IS 'Teja (propose) · Rajan (approve, reject, close)';
-
 COMMENT ON TABLE "inv"."stock_lot" IS 'Rev 15: one row per lot received. Where the cost of goods sold comes from: FIFO takes the oldest lots, each at its own
 unit_cost; weighted average takes Σ(quantity_left × unit_cost) ÷ Σ quantity_left. A ROUGH STUB for the demo: the inventory
 module (receipts, issues, batches, its own history) replaces it (T8 / S4, G3). Σ(quantity_left × unit_cost) = the balance of
@@ -1535,6 +1389,39 @@ COMMENT ON COLUMN "inv"."stock_lot"."quantity_left" IS '300 → 0 after B4-01 (F
 
 COMMENT ON COLUMN "inv"."stock_lot"."unit_cost" IS '₹540.0000 (illustrative). Weighted average: rewritten to the average after each issue';
 
+COMMENT ON TABLE "inv"."stock_return" IS 'Rev 18 (T25): Stores'' Sales Return Receipt (scenario D-05), a STUB like inv.stock_lot: the inventory module owns it (G3).
+The credit note for a return waits for it (C-17) and reads from it the quantity and the cost the goods left at.
+BY HAND (out.sql): trigger stock_return_not_more_than_sold (Part C: never more than the invoice took from that batch, all
+receipts of that invoice and batch together; under weighted average, the item''s quantity on the invoice).
+Who posts the stock back is the book''s setting return_stock_posting: stores_receipt → this receipt posts the Stock back entry
+(journal_entry_id, voucher_type stock_return, rule SALES_RETURN_RECEIPT v1, as the CA''s E1) · with_credit_note → the note does.';
+
+COMMENT ON COLUMN "inv"."stock_return"."return_no" IS 'SRR-0001: Stores'' Sales Return Receipt (scenario D-05)';
+
+COMMENT ON COLUMN "inv"."stock_return"."branch_id" IS 'the branch that took the goods back: KA-01';
+
+COMMENT ON COLUMN "inv"."stock_return"."received_on" IS '20-Oct-2026';
+
+COMMENT ON COLUMN "inv"."stock_return"."debtor_account_id" IS 'the customer who returned them: Sri Lakshmi (C-01)';
+
+COMMENT ON COLUMN "inv"."stock_return"."against_sales_invoice_id" IS 'the invoice they were sold on: KA/INV/2627/0143';
+
+COMMENT ON COLUMN "inv"."stock_return"."item_code" IS 'FG-101 Glucose biscuit';
+
+COMMENT ON COLUMN "inv"."stock_return"."from_stock_lot_id" IS 'the batch they left from: G-2608 (Stores matches the DC and the batch)';
+
+COMMENT ON COLUMN "inv"."stock_return"."quantity" IS '40 cartons';
+
+COMMENT ON COLUMN "inv"."stock_return"."condition" IS 'saleable | damaged (damaged: held in quarantine, KA-QC)';
+
+COMMENT ON COLUMN "inv"."stock_return"."to_stock_lot_id" IS 'where they are now: a lot in KA-QC (damaged) or the batch they left from (saleable)';
+
+COMMENT ON COLUMN "inv"."stock_return"."unit_cost" IS '₹560: the cost they LEFT at (the invoice''s cost line for that batch), never the selling price';
+
+COMMENT ON COLUMN "inv"."stock_return"."journal_entry_id" IS 'the Stock back entry (Dr 106020 · Cr 501040), when the book''s setting is stores_receipt; NULL: the credit note posts it';
+
+COMMENT ON COLUMN "inv"."stock_return"."recorded_by_contact_id" IS 'Latha (Stores Officer)';
+
 ALTER TABLE "pc"."operated_party" ADD FOREIGN KEY ("party_id") REFERENCES "pc"."party" ("party_id") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "pc"."party" ADD FOREIGN KEY ("party_id") REFERENCES "pc"."private_anchor" ("anchor_id") DEFERRABLE INITIALLY IMMEDIATE;
@@ -1551,7 +1438,7 @@ ALTER TABLE "pc"."party_standing" ADD FOREIGN KEY ("party_id") REFERENCES "pc"."
 
 ALTER TABLE "pc"."party_standing" ADD FOREIGN KEY ("operated_party_id") REFERENCES "pc"."operated_party" ("operated_party_id") DEFERRABLE INITIALLY IMMEDIATE;
 
-ALTER TABLE "pc"."party_standing" ADD FOREIGN KEY ("trade_name_id") REFERENCES "pc"."party_trade_name" ("trade_name_id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "pc"."party_standing" ADD FOREIGN KEY ("workspace_id", "party_id", "trade_name_id") REFERENCES "pc"."party_trade_name" ("workspace_id", "party_id", "trade_name_id") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "pc"."contact_party_association" ADD FOREIGN KEY ("contact_id") REFERENCES "pc"."contact" ("contact_id") DEFERRABLE INITIALLY IMMEDIATE;
 
@@ -1613,11 +1500,11 @@ ALTER TABLE "fin"."debtor_account" ADD FOREIGN KEY ("workspace_id", "party_id") 
 
 ALTER TABLE "fin"."debtor_account" ADD FOREIGN KEY ("workspace_id", "operated_party_id") REFERENCES "pc"."operated_party" ("workspace_id", "operated_party_id") DEFERRABLE INITIALLY IMMEDIATE;
 
-ALTER TABLE "fin"."debtor_account" ADD FOREIGN KEY ("workspace_id", "party_standing_id") REFERENCES "pc"."party_standing" ("workspace_id", "party_standing_id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "fin"."debtor_account" ADD FOREIGN KEY ("party_standing_id") REFERENCES "pc"."party_standing" ("party_standing_id") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "fin"."debtor_account" ADD FOREIGN KEY ("workspace_id", "collection_owner_contact_id") REFERENCES "pc"."contact" ("workspace_id", "contact_id") DEFERRABLE INITIALLY IMMEDIATE;
 
-ALTER TABLE "fin"."debtor_tax_registration" ADD FOREIGN KEY ("workspace_id", "party_identifier_id") REFERENCES "pc"."party_identifier" ("workspace_id", "party_identifier_id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "fin"."debtor_tax_registration" ADD FOREIGN KEY ("party_identifier_id") REFERENCES "pc"."party_identifier" ("party_identifier_id") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "fin"."debtor_location" ADD FOREIGN KEY ("workspace_id", "business_location_id") REFERENCES "pc"."business_location" ("workspace_id", "business_location_id") DEFERRABLE INITIALLY IMMEDIATE;
 
@@ -1675,6 +1562,10 @@ ALTER TABLE "fin"."sales_invoice" ADD FOREIGN KEY ("workspace_id", "decided_by_c
 
 ALTER TABLE "fin"."sales_invoice" ADD FOREIGN KEY ("workspace_id", "journal_entry_id") REFERENCES "fin"."journal_entry" ("workspace_id", "journal_entry_id") DEFERRABLE INITIALLY IMMEDIATE;
 
+ALTER TABLE "fin"."sales_invoice" ADD FOREIGN KEY ("workspace_id", "against_sales_invoice_id") REFERENCES "fin"."sales_invoice" ("workspace_id", "sales_invoice_id") DEFERRABLE INITIALLY IMMEDIATE;
+
+ALTER TABLE "fin"."sales_invoice" ADD FOREIGN KEY ("workspace_id", "stock_return_id") REFERENCES "inv"."stock_return" ("workspace_id", "stock_return_id") DEFERRABLE INITIALLY IMMEDIATE;
+
 ALTER TABLE "fin"."sales_invoice_line" ADD FOREIGN KEY ("workspace_id", "sales_invoice_id") REFERENCES "fin"."sales_invoice" ("workspace_id", "sales_invoice_id") ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "fin"."sales_invoice_line" ADD FOREIGN KEY ("workspace_id", "debtor_account_id") REFERENCES "fin"."debtor_account" ("workspace_id", "debtor_account_id") DEFERRABLE INITIALLY IMMEDIATE;
@@ -1689,6 +1580,20 @@ ALTER TABLE "fin"."sales_invoice_history" ADD FOREIGN KEY ("workspace_id", "perf
 
 ALTER TABLE "inv"."stock_lot" ADD FOREIGN KEY ("workspace_id", "branch_id") REFERENCES "fin"."branch" ("workspace_id", "branch_id") DEFERRABLE INITIALLY IMMEDIATE;
 
+ALTER TABLE "inv"."stock_return" ADD FOREIGN KEY ("workspace_id", "branch_id") REFERENCES "fin"."branch" ("workspace_id", "branch_id") DEFERRABLE INITIALLY IMMEDIATE;
+
+ALTER TABLE "inv"."stock_return" ADD FOREIGN KEY ("workspace_id", "debtor_account_id") REFERENCES "fin"."debtor_account" ("workspace_id", "debtor_account_id") DEFERRABLE INITIALLY IMMEDIATE;
+
+ALTER TABLE "inv"."stock_return" ADD FOREIGN KEY ("workspace_id", "against_sales_invoice_id") REFERENCES "fin"."sales_invoice" ("workspace_id", "sales_invoice_id") DEFERRABLE INITIALLY IMMEDIATE;
+
+ALTER TABLE "inv"."stock_return" ADD FOREIGN KEY ("workspace_id", "from_stock_lot_id") REFERENCES "inv"."stock_lot" ("workspace_id", "stock_lot_id") DEFERRABLE INITIALLY IMMEDIATE;
+
+ALTER TABLE "inv"."stock_return" ADD FOREIGN KEY ("workspace_id", "to_stock_lot_id") REFERENCES "inv"."stock_lot" ("workspace_id", "stock_lot_id") DEFERRABLE INITIALLY IMMEDIATE;
+
+ALTER TABLE "inv"."stock_return" ADD FOREIGN KEY ("workspace_id", "journal_entry_id") REFERENCES "fin"."journal_entry" ("workspace_id", "journal_entry_id") DEFERRABLE INITIALLY IMMEDIATE;
+
+ALTER TABLE "inv"."stock_return" ADD FOREIGN KEY ("workspace_id", "recorded_by_contact_id") REFERENCES "pc"."contact" ("workspace_id", "contact_id") DEFERRABLE INITIALLY IMMEDIATE;
+
 ALTER TABLE "fin"."book" ADD FOREIGN KEY ("workspace_id", "operated_party_id") REFERENCES "pc"."operated_party" ("workspace_id", "operated_party_id") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "fin"."book_setting" ADD FOREIGN KEY ("workspace_id", "book_id") REFERENCES "fin"."book" ("workspace_id", "book_id") DEFERRABLE INITIALLY IMMEDIATE;
@@ -1696,40 +1601,6 @@ ALTER TABLE "fin"."book_setting" ADD FOREIGN KEY ("workspace_id", "book_id") REF
 ALTER TABLE "fin"."book_setting" ADD FOREIGN KEY ("setting_code") REFERENCES "fin"."setting_definition" ("setting_code") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "fin"."book_setting" ADD FOREIGN KEY ("workspace_id", "approved_by_contact_id") REFERENCES "pc"."contact" ("workspace_id", "contact_id") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."posting_rule_case" ADD FOREIGN KEY ("rule_code", "version") REFERENCES "fin"."posting_rule" ("rule_code", "version") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."posting_rule_role" ADD FOREIGN KEY ("rule_code", "version") REFERENCES "fin"."posting_rule" ("rule_code", "version") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."posting_rule_role" ADD FOREIGN KEY ("line_role_code") REFERENCES "fin"."line_role" ("line_role_code") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."account_determination" ADD FOREIGN KEY ("workspace_id", "book_id") REFERENCES "fin"."book" ("workspace_id", "book_id") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."account_determination" ADD FOREIGN KEY ("line_role_code") REFERENCES "fin"."line_role" ("line_role_code") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."account_determination" ADD FOREIGN KEY ("ledger_account_code") REFERENCES "fin"."ledger_account" ("account_code") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."account_determination" ADD FOREIGN KEY ("workspace_id", "replaces_account_determination_id") REFERENCES "fin"."account_determination" ("workspace_id", "account_determination_id") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."account_determination" ADD FOREIGN KEY ("workspace_id", "made_by_contact_id") REFERENCES "pc"."contact" ("workspace_id", "contact_id") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."account_determination" ADD FOREIGN KEY ("workspace_id", "checked_by_contact_id") REFERENCES "pc"."contact" ("workspace_id", "contact_id") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."account_determination_history" ADD FOREIGN KEY ("workspace_id", "account_determination_id") REFERENCES "fin"."account_determination" ("workspace_id", "account_determination_id") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."account_determination_history" ADD FOREIGN KEY ("workspace_id", "performer_contact_id") REFERENCES "pc"."contact" ("workspace_id", "contact_id") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."sales_invoice_line" ADD FOREIGN KEY ("rule_code", "rule_version", "line_role_code") REFERENCES "fin"."posting_rule_role" ("rule_code", "version", "line_role_code") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."sales_invoice_line" ADD FOREIGN KEY ("rule_code", "rule_version", "rule_case") REFERENCES "fin"."posting_rule_case" ("rule_code", "version", "case_code") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."sales_invoice_line" ADD FOREIGN KEY ("workspace_id", "account_determination_id", "line_role_code", "determined_ledger_code") REFERENCES "fin"."account_determination" ("workspace_id", "account_determination_id", "line_role_code", "ledger_account_code") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."journal_line" ADD FOREIGN KEY ("rule_code", "rule_version", "line_role_code") REFERENCES "fin"."posting_rule_role" ("rule_code", "version", "line_role_code") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."journal_line" ADD FOREIGN KEY ("rule_code", "rule_version", "rule_case") REFERENCES "fin"."posting_rule_case" ("rule_code", "version", "case_code") DEFERRABLE INITIALLY IMMEDIATE;
-
-ALTER TABLE "fin"."journal_line" ADD FOREIGN KEY ("workspace_id", "account_determination_id", "line_role_code", "determined_ledger_code") REFERENCES "fin"."account_determination" ("workspace_id", "account_determination_id", "line_role_code", "ledger_account_code") DEFERRABLE INITIALLY IMMEDIATE;
 
 -- ---------------------------------------------------------------- by hand (rev 14), as Manoj's 0005 does for purchase_invoice
 -- Billing's invoice number is booked once per GSTIN (branch) per financial year, ignoring case and spaces. A rejected or amended
@@ -1758,126 +1629,65 @@ END $$;
 CREATE TRIGGER book_setting_value_allowed BEFORE INSERT OR UPDATE ON fin.book_setting
   FOR EACH ROW EXECUTE FUNCTION fin.book_setting_value_allowed();
 
--- ---------------------------------------------------------------- by hand (rev 17), S1 part 2: posting rules and the ledger mapping
--- One version of a rule in force on any day: the posting date picks exactly one.
-ALTER TABLE "fin"."posting_rule" ADD CONSTRAINT "posting_rule_no_overlap"
-  EXCLUDE USING gist (rule_code WITH =, daterange(effective_from, effective_until, '[)') WITH &&);
-
--- Two approved mapping rows with the same book, role and conditions never overlap in time (a NULL condition = "any").
-ALTER TABLE "fin"."account_determination" ADD CONSTRAINT "account_determination_no_overlap"
-  EXCLUDE USING gist (workspace_id WITH =, book_id WITH =, line_role_code WITH =, (coalesce(document_type, '*')) WITH =,
-                      (coalesce(party_kind, '*')) WITH =, (coalesce(supply_scope, '*')) WITH =, (coalesce(line_kind, '*')) WITH =,
-                      (coalesce(taxability, '*')) WITH =, (coalesce(settlement_mode, '*')) WITH =,
-                      daterange(effective_from, effective_until, '[)') WITH &&) WHERE (status = 'approved');
-
--- What a CHECK cannot say (it cannot read another table, or the row before the change).
-CREATE FUNCTION fin.account_determination_guard() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE
-  r fin.line_role; l fin.ledger_account; company uuid; d date;
-  fail CONSTANT text := 'account_determination_guard';
+-- ---------------------------------------------------------------- by hand (rev 18), T25 / T26: the notes and the return receipt
+-- A credit or debit note corrects a POSTED invoice of the SAME customer and the SAME GSTIN (branch), and is not dated before it.
+CREATE FUNCTION fin.sales_note_against_invoice() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE inv fin.sales_invoice;
 BEGIN
-  IF TG_OP = 'UPDATE' THEN
-    -- Never edited: only the decision (proposed → approved / rejected) and, once approved, the end date (set once).
-    IF ROW(NEW.workspace_id, NEW.book_id, NEW.document_type, NEW.line_role_code, NEW.party_kind, NEW.supply_scope, NEW.line_kind,
-           NEW.taxability, NEW.settlement_mode, NEW.ledger_account_code, NEW.effective_from, NEW.reason,
-           NEW.replaces_account_determination_id, NEW.made_by_contact_id, NEW.made_at)
-       IS DISTINCT FROM
-       ROW(OLD.workspace_id, OLD.book_id, OLD.document_type, OLD.line_role_code, OLD.party_kind, OLD.supply_scope, OLD.line_kind,
-           OLD.taxability, OLD.settlement_mode, OLD.ledger_account_code, OLD.effective_from, OLD.reason,
-           OLD.replaces_account_determination_id, OLD.made_by_contact_id, OLD.made_at)
-       OR (OLD.status <> 'proposed' AND ROW(NEW.status, NEW.checked_by_contact_id, NEW.checked_at)
-                                         IS DISTINCT FROM ROW(OLD.status, OLD.checked_by_contact_id, OLD.checked_at))
-       OR (NEW.effective_until IS DISTINCT FROM OLD.effective_until AND (OLD.status <> 'approved' OR OLD.effective_until IS NOT NULL))
-    THEN
-      RAISE EXCEPTION 'DETERMINATION_IS_FINAL: a decided mapping row is never edited; close it and add a new one'
-        USING ERRCODE = 'check_violation', CONSTRAINT = fail;
-    END IF;
+  IF NEW.against_sales_invoice_id IS NULL THEN RETURN NEW; END IF;
+  SELECT * INTO inv FROM fin.sales_invoice WHERE workspace_id = NEW.workspace_id AND sales_invoice_id = NEW.against_sales_invoice_id;
+  IF NOT FOUND THEN RETURN NEW; END IF;  -- the foreign key answers
+  IF inv.document_type <> 'invoice' OR inv.stage <> 'posted' THEN
+    RAISE EXCEPTION 'NOTE_AGAINST_A_POSTED_INVOICE: % is a % (%), not a posted invoice', inv.internal_ref_no, inv.document_type, inv.stage
+      USING ERRCODE = 'check_violation', CONSTRAINT = 'sales_note_against_invoice';
   END IF;
-
-  SELECT * INTO r FROM fin.line_role WHERE line_role_code = NEW.line_role_code;
-  IF FOUND AND r.ledger_source <> 'determination' THEN
-    RAISE EXCEPTION 'ROLE_NOT_MAPPABLE: % takes its ledger from %, not from the mapping', NEW.line_role_code, r.ledger_source
-      USING ERRCODE = 'check_violation', CONSTRAINT = fail;
+  IF inv.debtor_account_id IS DISTINCT FROM NEW.debtor_account_id OR inv.branch_id <> NEW.branch_id THEN
+    RAISE EXCEPTION 'NOTE_SAME_CUSTOMER_AND_GSTIN: the note must name the invoice''s customer and be issued by its branch (GSTIN)'
+      USING ERRCODE = 'check_violation', CONSTRAINT = 'sales_note_against_invoice';
   END IF;
-  SELECT * INTO l FROM fin.ledger_account WHERE account_code = NEW.ledger_account_code;
-  IF FOUND AND l.is_group THEN
-    RAISE EXCEPTION 'LEDGER_NOT_POSTABLE: % % is a group', l.account_code, l.display_name
-      USING ERRCODE = 'check_violation', CONSTRAINT = fail;
-  END IF;
-  IF l.account_code IS NOT NULL AND r.line_role_code IS NOT NULL
-     AND (l.kind <> r.required_kind OR l.account_type IS DISTINCT FROM r.required_account_type) THEN
-    RAISE EXCEPTION 'ROLE_LEDGER_TYPE_MISMATCH: role % needs a ledger of kind % and type %; % is % / %', r.line_role_code,
-      r.required_kind, coalesce(r.required_account_type, '(none)'), l.account_code, l.kind, coalesce(l.account_type, '(none)')
-      USING ERRCODE = 'check_violation', CONSTRAINT = fail;
-  END IF;
-
-  -- No start (when made or approved) and no end (when set) inside a closed year of the book's company.
-  SELECT operated_party_id INTO company FROM fin.book WHERE workspace_id = NEW.workspace_id AND book_id = NEW.book_id;
-  FOREACH d IN ARRAY ARRAY[
-      CASE WHEN TG_OP = 'INSERT' OR NEW.status IS DISTINCT FROM OLD.status THEN NEW.effective_from END,
-      CASE WHEN NEW.effective_until IS NOT NULL AND (TG_OP = 'INSERT' OR OLD.effective_until IS NULL) THEN NEW.effective_until END] LOOP
-    IF d IS NOT NULL AND EXISTS (SELECT 1 FROM fin.fiscal_year y WHERE y.workspace_id = NEW.workspace_id
-                                   AND y.operated_party_id = company AND y.is_closed AND d BETWEEN y.start_date AND y.end_date) THEN
-      RAISE EXCEPTION 'DETERMINATION_BACKDATED: % is in a closed year', d USING ERRCODE = 'check_violation', CONSTRAINT = fail;
-    END IF;
-  END LOOP;
-
-  -- Never ended before a posted line that used it: history stays true.
-  IF NEW.effective_until IS NOT NULL AND (TG_OP = 'INSERT' OR OLD.effective_until IS NULL) AND EXISTS (
-       SELECT 1 FROM fin.journal_line jl JOIN fin.journal_entry je
-                  ON je.workspace_id = jl.workspace_id AND je.journal_entry_id = jl.journal_entry_id
-        WHERE jl.workspace_id = NEW.workspace_id AND jl.account_determination_id = NEW.account_determination_id
-          AND je.posting_date >= NEW.effective_until) THEN
-    RAISE EXCEPTION 'DETERMINATION_IN_USE: lines posted on or after % used this row', NEW.effective_until
-      USING ERRCODE = 'check_violation', CONSTRAINT = fail;
+  IF NEW.invoice_date < inv.invoice_date THEN
+    RAISE EXCEPTION 'NOTE_BEFORE_ITS_INVOICE: the note (%) is dated before the invoice (%)', NEW.invoice_date, inv.invoice_date
+      USING ERRCODE = 'check_violation', CONSTRAINT = 'sales_note_against_invoice';
   END IF;
   RETURN NEW;
 END $$;
-CREATE TRIGGER account_determination_guard BEFORE INSERT OR UPDATE ON fin.account_determination
-  FOR EACH ROW EXECUTE FUNCTION fin.account_determination_guard();
+CREATE TRIGGER sales_note_against_invoice BEFORE INSERT OR UPDATE ON fin.sales_invoice
+  FOR EACH ROW EXECUTE FUNCTION fin.sales_note_against_invoice();
 
--- The look-up (the engine calls it for each line the code wrote, on the posting date): the approved rows in force whose
--- conditions are NULL or equal to the line's facts; the most specific wins. None, or a tie: the exception queue, never a guess.
-CREATE FUNCTION fin.determine_ledger(p_workspace text, p_book uuid, p_document_type text, p_role text, p_on date,
-    p_party_kind text DEFAULT NULL, p_supply_scope text DEFAULT NULL, p_line_kind text DEFAULT NULL,
-    p_taxability text DEFAULT NULL, p_settlement_mode text DEFAULT NULL)
-  RETURNS uuid LANGUAGE plpgsql STABLE AS $$
-DECLARE n integer; found_id uuid;
+-- The side of the customer line and of a stock line depends on the document (rev 14's two CHECKs, moved here in rev 18).
+CREATE FUNCTION fin.sales_invoice_line_side() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE dt text;
 BEGIN
-  WITH m AS (
-    SELECT d.account_determination_id, d.specificity FROM fin.account_determination d
-     WHERE d.workspace_id = p_workspace AND d.book_id = p_book AND d.line_role_code = p_role AND d.status = 'approved'
-       AND d.effective_from <= p_on AND (d.effective_until IS NULL OR p_on < d.effective_until)
-       AND (d.document_type IS NULL OR d.document_type = p_document_type)
-       AND (d.party_kind IS NULL OR d.party_kind = p_party_kind)
-       AND (d.supply_scope IS NULL OR d.supply_scope = p_supply_scope)
-       AND (d.line_kind IS NULL OR d.line_kind = p_line_kind)
-       AND (d.taxability IS NULL OR d.taxability = p_taxability)
-       AND (d.settlement_mode IS NULL OR d.settlement_mode = p_settlement_mode))
-  SELECT count(*), min(account_determination_id::text)::uuid INTO n, found_id
-    FROM m WHERE specificity = (SELECT max(specificity) FROM m);
-  IF n = 0 THEN
-    RAISE EXCEPTION 'ACCOUNT_NOT_DETERMINED: no mapping row for % (%) on %', p_role, p_document_type, p_on
-      USING ERRCODE = 'P0001', CONSTRAINT = 'account_not_determined';
-  ELSIF n > 1 THEN
-    RAISE EXCEPTION 'ACCOUNT_AMBIGUOUS: % equally specific mapping rows for % (%) on %', n, p_role, p_document_type, p_on
-      USING ERRCODE = 'P0001', CONSTRAINT = 'account_ambiguous';
+  SELECT document_type INTO dt FROM fin.sales_invoice WHERE workspace_id = NEW.workspace_id AND sales_invoice_id = NEW.sales_invoice_id;
+  IF NEW.debtor_account_id IS NOT NULL AND NEW.side <> (CASE WHEN dt = 'credit_note' THEN 'Cr' ELSE 'Dr' END) THEN
+    RAISE EXCEPTION 'CUSTOMER_LINE_SIDE: on a % the customer line is %', coalesce(dt, 'invoice'), CASE WHEN dt = 'credit_note' THEN 'Cr (it owes less)' ELSE 'Dr (it owes more)' END
+      USING ERRCODE = 'check_violation', CONSTRAINT = 'sales_invoice_line_customer_side';
   END IF;
-  RETURN found_id;
+  IF NEW.inventory_item_code IS NOT NULL AND NEW.side <> (CASE WHEN dt = 'credit_note' THEN 'Dr' ELSE 'Cr' END) THEN
+    RAISE EXCEPTION 'STOCK_LINE_SIDE: on a % a stock line is %', coalesce(dt, 'invoice'), CASE WHEN dt = 'credit_note' THEN 'Dr (goods back)' ELSE 'Cr (goods out)' END
+      USING ERRCODE = 'check_violation', CONSTRAINT = 'sales_invoice_line_stock_side';
+  END IF;
+  RETURN NEW;
 END $$;
+CREATE TRIGGER sales_invoice_line_side BEFORE INSERT OR UPDATE ON fin.sales_invoice_line
+  FOR EACH ROW EXECUTE FUNCTION fin.sales_invoice_line_side();
 
--- Completeness, before a book goes live or a rule version is released: every role the rule versions in force can write
--- (except the customer's, which is the account's own ledger) has at least one approved row for the book on that date.
--- (A row per role, not per combination of facts: a missing combination still stops at ACCOUNT_NOT_DETERMINED, never guessed.)
-CREATE FUNCTION fin.account_determination_gaps(p_workspace text, p_book uuid, p_on date)
-  RETURNS TABLE (rule_code text, rule_version integer, document_type text, line_role_code text) LANGUAGE sql STABLE AS $$
-  SELECT r.rule_code, r.version, r.document_type, rr.line_role_code
-    FROM fin.posting_rule r
-    JOIN fin.posting_rule_role rr ON rr.rule_code = r.rule_code AND rr.version = r.version
-    JOIN fin.line_role lr ON lr.line_role_code = rr.line_role_code AND lr.ledger_source = 'determination'
-   WHERE r.effective_from <= p_on AND (r.effective_until IS NULL OR p_on < r.effective_until)
-     AND NOT EXISTS (SELECT 1 FROM fin.account_determination d
-                      WHERE d.workspace_id = p_workspace AND d.book_id = p_book AND d.line_role_code = rr.line_role_code
-                        AND d.status = 'approved' AND (d.document_type IS NULL OR d.document_type = r.document_type)
-                        AND d.effective_from <= p_on AND (d.effective_until IS NULL OR p_on < d.effective_until))
-   ORDER BY 1, 2, 4 $$;
+-- Part C (D-05): never more back than the invoice took from that batch (all receipts of that invoice and batch together).
+-- Under weighted average the invoice's stock lines name no batch: then the item's quantity on the invoice counts.
+CREATE FUNCTION inv.stock_return_not_more_than_sold() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE sold numeric; back numeric;
+BEGIN
+  SELECT coalesce(sum(l.quantity), 0) INTO sold FROM fin.sales_invoice_line l
+   WHERE l.workspace_id = NEW.workspace_id AND l.sales_invoice_id = NEW.against_sales_invoice_id AND l.inventory_item_code = NEW.item_code
+     AND (l.stock_lot_id = NEW.from_stock_lot_id OR l.stock_lot_id IS NULL);
+  SELECT coalesce(sum(r.quantity), 0) + NEW.quantity INTO back FROM inv.stock_return r
+   WHERE r.workspace_id = NEW.workspace_id AND r.against_sales_invoice_id = NEW.against_sales_invoice_id AND r.item_code = NEW.item_code
+     AND r.from_stock_lot_id = NEW.from_stock_lot_id AND r.stock_return_id <> NEW.stock_return_id;
+  IF back > sold THEN
+    RAISE EXCEPTION 'RETURN_MORE_THAN_SOLD: % back of % against % sold on the invoice from that batch', back, NEW.item_code, sold
+      USING ERRCODE = 'check_violation', CONSTRAINT = 'stock_return_not_more_than_sold';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER stock_return_not_more_than_sold BEFORE INSERT OR UPDATE ON inv.stock_return
+  FOR EACH ROW EXECUTE FUNCTION inv.stock_return_not_more_than_sold();

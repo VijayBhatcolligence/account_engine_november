@@ -8,7 +8,7 @@ import { fmtDate } from '../domain/dates';
 import { inr } from '../domain/money';
 import { PageHeader, SegmentedControl } from '../ui';
 import { LEDGERS, OPENING_DUE } from './catalogue';
-import { accountOf, customers, dueOf, r2, receivableOf, rupees } from './rules';
+import { accountOf, customers, DOC_LABEL, dueOf, r2, receivableOf, rupees } from './rules';
 import { useSalesCtx } from './SalesScreen';
 import type { JournalLine } from './types';
 
@@ -63,7 +63,7 @@ function DayBook() {
           <tr className="sv-daybook__head">
             <td>{fmtDate(e.date)}</td>
             <td colSpan={5}>
-              <strong>{e.voucherNo}</strong> · {e.kind === 'sales' ? (e.reverses ? 'Sales invoice cancelled (IRN): reversal' : 'Sales invoice') : 'Sales invoicete'}{e.branch ? ` · ${e.branch}` : ''} · <span className="mono">{e.id}</span>
+              <strong>{e.voucherNo}</strong> · {e.kind === 'stock_return' ? "Stock back: Stores' return receipt" : e.reverses ? 'Sales invoice cancelled (IRN): reversal' : DOC_LABEL[s.vouchers.find((x) => x.id === e.voucherId)?.docType ?? 'invoice'] === 'Invoice' ? 'Sales invoice' : DOC_LABEL[s.vouchers.find((x) => x.id === e.voucherId)?.docType ?? 'invoice']}{e.branch ? ` · ${e.branch}` : ''} · <span className="mono">{e.id}</span>
               {e.reverses ? ` reverses ${e.reverses}` : ''} · <span className="subtle">{e.narration}</span>
             </td>
           </tr>

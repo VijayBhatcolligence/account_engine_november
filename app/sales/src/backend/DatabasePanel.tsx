@@ -1,4 +1,4 @@
-// "Stored in PostgreSQL": the engine's 42 tables as they are in the database NOW (read back, not the app's memory),
+// "Stored in PostgreSQL": the engine's tables as they are in the database NOW (read back, not the app's memory),
 // the last saves (accepted or refused, with the constraint that refused), and the status pill for the top bar.
 import { useEffect, useState } from 'react';
 import { Database, RefreshCw } from 'lucide-react';
@@ -77,7 +77,7 @@ export function DatabasePanel() {
         </Callout>
       )}
       <p className="subtle small-note">
-        {d.url ?? ''} · the engine&apos;s schema (customer_onboarding_schema.dbml, rev 17: {info?.tables.length ?? '…'} tables, {filled} with rows). Every change in the app is saved here
+        {d.url ?? ''} · the engine&apos;s schema (customer_onboarding_schema.dbml, rev 19: {info?.tables.length ?? '…'} tables, {filled} with rows). Every change in the app is saved here
         in one transaction; the database&apos;s own keys, checks and triggers decide. What you see below is read back from the database, not from the app.
       </p>
       {error && <Callout tone="critical">{error}</Callout>}

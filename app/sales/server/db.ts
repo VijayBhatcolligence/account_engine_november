@@ -9,6 +9,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
+pg.types.setTypeParser(1082, (v: string) => v); // DATE → '2024-03-12' as stored (a JS Date would shift it by the time zone)
+
 export const APP_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const LOCAL_URL = 'postgresql://aikyat@localhost:55440/aikyat_ae';
 

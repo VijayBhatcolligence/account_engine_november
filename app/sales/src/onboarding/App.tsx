@@ -88,7 +88,7 @@ export function App() {
             value={top === 'rules' ? s.nav.tab : 'checks'}
             options={[
               { value: 'checks', label: 'Onboarding checks' },
-              { value: 'postingRules', label: 'Posting rules' },
+              { value: 'postingRules', label: 'Ledgers' },
               { value: 'backend', label: 'Backend view' },
             ]}
             onChange={(v) => s.navigate(v)}

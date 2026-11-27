@@ -9,7 +9,7 @@
 import { fmtDate, fmtDateTime } from '../domain/dates';
 import { STATES } from '../onboarding/catalogue';
 import { COMPANY, ENDORSEMENT } from './catalogue';
-import { accountOf, calcOf, countryName, dueDateOf, einvoiceRequired, ewbNeeded, issuerOf, partyOfAccount, placesOf, type SalesCtx } from './rules';
+import { accountOf, againstOf, calcOf, countryName, dueDateOf, einvoiceRequired, ewbNeeded, issuerOf, NOTE_REASON, partyOfAccount, placesOf, type SalesCtx } from './rules';
 import type { Voucher } from './types';
 import { rupeesInWords } from './words';
 
@@ -69,7 +69,8 @@ export function InvoiceDoc({ v, ctx }: { v: Voucher; ctx: SalesCtx }) {
   const intra = c.intra === true;
   const taxTotal = c.cgst + c.sgst + c.igst;
   const cur = c.currency === 'INR' ? 'Rs.' : c.currency;
-  const title = c.docType === 'export_invoice' ? 'EXPORT INVOICE' : bos ? 'BILL OF SUPPLY' : 'TAX INVOICE';
+  const inv = againstOf(ctx, v);
+  const title = v.docType === 'credit_note' ? 'CREDIT NOTE' : v.docType === 'debit_note' ? 'DEBIT NOTE' : c.docType === 'export_invoice' ? 'EXPORT INVOICE' : bos ? 'BILL OF SUPPLY' : 'TAX INVOICE';
   const goods = c.rows.some((r) => r.kind === 'goods');
   const third = v.thirdPartyShipTo;
   const meta: [string, string][] = [
@@ -77,6 +78,7 @@ export function InvoiceDoc({ v, ctx }: { v: Voucher; ctx: SalesCtx }) {
     ['Date', fmtDate(v.date)],
     ['Place of supply', c.posName ? `${c.posName} (${c.posCode})` : '—'],
     ['Reverse charge', 'No'],
+    ...(inv ? ([['Against invoice', `${inv.number} dated ${fmtDate(inv.date)}`], ['Reason', NOTE_REASON[v.noteReason!] + (v.schemeRef ? ` (${v.schemeRef})` : '')]] as [string, string][]) : []),
   ];
   if (v.settlement !== 'credit') meta.push(['Payment', `${v.settlement === 'cash' ? 'Cash' : 'UPI / card'}${v.paymentRef ? ` · Ref ${v.paymentRef}` : ''}`]);
   if (c.posBasis === 'service_immovable_property') meta.push(['Location of property', c.posName ?? '—']);
